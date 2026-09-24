@@ -3,9 +3,9 @@
 // questions tracked in RULES.md / BJS-128. Change them here, not in logic.
 
 export const RULES = {
-  // The page, in world units. A5-ish portrait notebook page.
+  // The page, in world units. A tall pocket-notebook page, to suit a phone.
   pageW: 1000,
-  pageH: 1400,
+  pageH: 1700,
   margin: 70, // left red margin line; bases can't be drawn over it
 
   // Setup: players alternate drawing bases.
@@ -18,7 +18,7 @@ export const RULES = {
 
   // Shoot: the soldier stays put, the line runs "almost to the end of the page".
   shootMinLen: 700,
-  shootMaxLen: 1500,
+  shootMaxLen: 1800,
   // Move: shorter; the soldier ends up where the ink stops.
   moveMinLen: 60,
   moveMaxLen: 380,

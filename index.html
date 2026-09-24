@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#2b2825" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Pen Flick Tactics</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%23f5f0e3'/><circle cx='12' cy='18' r='8' fill='none' stroke='%231f3a9e' stroke-width='2'/><path d='M12 18 L29 5' stroke='%23c2252f' stroke-width='2'/></svg>" />
+  </head>
+  <body>
+    <canvas id="page"></canvas>
+
+    <header id="top">
+      <div class="slip side" data-p="0"><span class="name">Blue</span><svg class="tally"></svg></div>
+      <button id="menu-btn" class="slip" aria-label="Menu">≡</button>
+      <div class="slip side" data-p="1"><span class="name">Red</span><svg class="tally"></svg></div>
+    </header>
+
+    <footer id="bottom">
+      <p id="status"></p>
+      <div class="slip strip">
+        <button id="fit-btn" aria-label="See whole page">page</button>
+        <div id="kind">
+          <button data-kind="move">move</button>
+          <button data-kind="shoot">shoot</button>
+        </div>
+        <span id="turn-no"></span>
+      </div>
+    </footer>
+
+    <div id="sheet" hidden><div class="card"></div></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
