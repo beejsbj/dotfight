@@ -34,6 +34,7 @@ let ghost: Overlay["ghost"];
 let anim: (NonNullable<Overlay["anim"]> & { t0: number; dur: number; done: () => void }) | null = null;
 let busy = false; // a flick is resolving or the bot is thinking
 let lastNote = "";
+let gen = 0; // bumps on every new/resumed game so stale bot timers stand down
 
 const $ = <T extends HTMLElement>(q: string) => document.querySelector(q) as T;
 const canvas = $<HTMLCanvasElement>("#page");
@@ -144,6 +145,7 @@ function status(msg?: string) {
 // --- flow -------------------------------------------------------------------
 
 function start(m: Mode) {
+  gen++;
   s = newGame();
   mode = m;
   kind = "shoot";
@@ -160,6 +162,9 @@ function start(m: Mode) {
 }
 
 function resume(v: Save) {
+  gen++;
+  busy = false;
+  anim = botAim = null;
   s = v.s;
   mode = v.mode;
   selected = undefined;
@@ -177,16 +182,18 @@ function next() {
   if (s.phase === "over") return setTimeout(showOver, 500);
   if (!isBot(s.current)) return;
   busy = true;
+  const g0 = gen;
+  const live = (fn: () => void) => () => { if (gen === g0) fn(); };
   if (s.phase === "setup") {
-    setTimeout(() => {
+    setTimeout(live(() => {
       const spot = botBase(s, (x, y) => !canPlaceBase(s, x, y));
       if (spot) drawBase(spot.x, spot.y);
       busy = false;
       next();
-    }, 550);
+    }), 550);
     return;
   }
-  setTimeout(() => {
+  setTimeout(live(() => {
     const f = botFlick(s, (mode as { level: Level }).level);
     const me = s.soldiers[f.soldierId];
     selected = f.soldierId;
@@ -197,15 +204,15 @@ function next() {
     kind = f.kind;
     hud();
     const t0 = performance.now();
-    const charge = () => {
+    const charge = live(() => {
       const p = Math.min(1, (performance.now() - t0) / 700);
       botAim = { soldierId: f.soldierId, angle: f.angle, power: Math.max(0, Math.min(1, power)) * p };
       dirty = true;
       if (p < 1) requestAnimationFrame(charge);
-      else setTimeout(() => { botAim = null; fire(f); }, 120);
-    };
+      else setTimeout(live(() => { botAim = null; fire(f); }), 120);
+    });
     setTimeout(charge, 350);
-  }, 450);
+  }), 450);
 }
 
 function drawBase(x: number, y: number) {
