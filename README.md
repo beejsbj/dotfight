@@ -1,12 +1,35 @@
 # Pen Flick Tactics
 
-A digital version of Daud's pen-and-paper flick tactics game. The feel of imprecise pen flicks and the hand-drawn notebook aesthetic are core constraints; the canonical rules still need Daud's review.
+A digital version of Daud's pen-and-paper flick tactics game. The feel of imprecise pen flicks and the hand-drawn notebook aesthetic are core constraints. The canonical rules still need Daud's review; see [RULES.md](RULES.md) for what the prototype assumes and what to ask him.
 
 The Linear board is canonical for status, decisions, and work history.
 
+## Play
+
+```bash
+npm install
+npm run dev      # http://localhost:5173
+npm run phone    # serves on bjslab's Tailscale address, for testing on a phone over the tailnet
+npm test         # game-logic tests
+npm run build    # static bundle in dist/
+```
+
+On your turn, touch one of your soldiers (the camera closes in), pull back from anywhere, and let go. Pick **move** or **shoot** at the bottom. Pinch to zoom; tap **page** to see the whole sheet. Pass & play shows a hand-off sheet between turns; Daud-bot plays red. A finished page can be saved as a PNG.
+
+## Shape
+
+- `src/rules.ts`: every tunable rule and the flick feel, in one place
+- `src/game.ts`: pure, seeded game state (setup, flick resolution, hits, win). No DOM.
+- `src/flick.ts`: turns a pull-back gesture into a flick, with wobble and release error
+- `src/ink.ts`: ballpoint and pencil drawing primitives (seeded, so the page redraws identically)
+- `src/view.ts`: camera and page rendering
+- `src/bot.ts`: Daud-bot
+- `src/main.ts`: input, turn flow, HUD and sheets
+- `src/sound.ts`: synthesised pen scratches and haptics
+
 ## Source prototype
 
-[Pen Flick Tactics in Google AI Studio](https://aistudio.google.com/apps/d2c29067-ed8f-4b5e-a98a-fb47ed65190a)
+An earlier [AI Studio build](https://aistudio.google.com/apps/d2c29067-ed8f-4b5e-a98a-fb47ed65190a) exists but sits behind Google sign-in and couldn't be imported. This repo started clean from Burooj's 2026-06-07 description of the game. If that build is exported later, compare its base shapes and soldier classes against [RULES.md](RULES.md) rather than merging it in wholesale.
 
 ## Relevant Linear issues
 
