@@ -1,7 +1,7 @@
 // Camera and page rendering. The page is redrawn from state every frame it
 // changes; marks are seeded so it looks the same every time.
 
-import { type GameState, type Pt } from "./game";
+import { pointAlong, type GameState, type Pt } from "./game";
 import { INK, drawPen, inkCircle, inkCross, inkDot, inkFlick, paperGrain, pencilLine } from "./ink";
 import { RULES } from "./rules";
 
@@ -176,7 +176,7 @@ function drawSoldiers(ctx: CanvasRenderingContext2D, s: GameState, o: Overlay) {
     let p: Pt = x;
     // a moving soldier rides the head of its own ink
     if (a && a.mover === x.id && a.path && a.p < 1) {
-      p = a.path[Math.min(a.path.length - 1, Math.floor(a.p * (a.path.length - 1)))];
+      p = pointAlong(a.path, a.p);
     }
     // the dead keep their dot; the cross is in the marks
     inkDot(ctx, p.x, p.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, x.alive ? 1 : 0.8);

@@ -212,6 +212,12 @@ export function preview(s: GameState, f: Flick): Outcome {
   return out;
 }
 
+// The point a fraction `t` of the way along a path (by vertex), clamped to its ends.
+export function pointAlong(pts: Pt[], t: number): Pt {
+  const i = Math.floor(Math.min(1, Math.max(0, t)) * (pts.length - 1));
+  return pts[Number.isFinite(i) ? i : 0];
+}
+
 export function pathLen(pts: Pt[]) {
   let l = 0;
   for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);

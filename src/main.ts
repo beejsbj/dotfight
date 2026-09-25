@@ -242,7 +242,7 @@ function fire(f: Flick) {
       const n = o.killed.length;
       const verb = f.kind === "shoot" ? "shot" : "run";
       lastNote = o.lost ? `${name(who)} flicked a soldier off the page.`
-        : n ? `${name(who)}'s ${verb} crossed out ${n}.` : `${name(who)} missed.`;
+        : n ? `${name(who)}'s ${verb} crossed out ${n}.` : f.kind === "move" ? `${name(who)} moved a soldier.` : `${name(who)} missed.`;
       if (s.phase === "play" && mode.kind === "pnp" && settings.handoff) showHandoff();
       else next();
     },
@@ -569,9 +569,12 @@ window.addEventListener("keydown", (e) => {
 // --- frame ------------------------------------------------------------------
 
 function frame(now: number) {
+  // schedule first: one bad frame must never stop the game
+  requestAnimationFrame(frame);
   let active = cam.tick(now);
   if (anim) {
-    anim.p = Math.min(1, (now - anim.t0) / anim.dur);
+    // rAF's timestamp can predate the flick by a few ms, so clamp at 0 too
+    anim.p = Math.min(1, Math.max(0, (now - anim.t0) / anim.dur));
     active = true;
     if (anim.p >= 1) { const done = anim.done; anim.p = 1; render(ctx, cam, s, overlay(now), W, H, dpr); done(); }
   }
@@ -580,7 +583,6 @@ function frame(now: number) {
     render(ctx, cam, s, overlay(now), W, H, dpr);
     dirty = false;
   }
-  requestAnimationFrame(frame);
 }
 
 function overlay(now: number): Overlay {

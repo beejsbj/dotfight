@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { act, alive, canPlaceBase, newGame, placeBase, preview, type GameState } from "./game";
+import { act, alive, canPlaceBase, newGame, placeBase, pointAlong, preview, type GameState } from "./game";
 import { RULES } from "./rules";
 
 // Two bases each, far apart, so tests can aim precisely.
@@ -91,5 +91,16 @@ describe("flicks", () => {
     act(s, { soldierId: me.id, kind: "shoot", angle: Math.atan2(last.y - me.y, last.x - me.x), length: 3000, bend: 0 });
     expect(s.phase).toBe("over");
     expect(s.winner).toBe(0);
+  });
+});
+
+describe("pointAlong", () => {
+  const path = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }];
+  it("clamps before the start and past the end", () => {
+    // regression: a negative animation progress crashed the render loop on moves
+    expect(pointAlong(path, -0.01)).toEqual(path[0]);
+    expect(pointAlong(path, 1.5)).toEqual(path[2]);
+    expect(pointAlong(path, NaN)).toEqual(path[0]);
+    expect(pointAlong(path, 0.5)).toEqual(path[1]);
   });
 });
