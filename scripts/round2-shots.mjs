@@ -26,8 +26,8 @@ const idle = async () => {
     if (await p.evaluate(() => !window.pft.busy && window.pft.fx.end(performance.now()) <= performance.now())) return;
   }
 };
-const zoom = (f) => p.evaluate((f) => { const c = window.pft.cam; c.to(f.x, f.y, c.fitZ * 2.4, 0); }, f);
-const fit = () => p.evaluate(() => window.pft.cam.fit());
+const zoom = (f) => p.evaluate((f) => { const c = window.pft.cam; c.to(f.x, f.y, c.fitZ * 2.4, 0); window.pft.renderNow(); }, f);
+const fit = () => p.evaluate(() => { window.pft.cam.fit(); window.pft.renderNow(); });
 for (const sc of scenes) {
   await p.evaluate((s) => window.pft.load(s), sc.state);
   await p.waitForTimeout(300);

@@ -136,6 +136,8 @@ export interface RuleSet {
   earn: null | {
     /** A shot must cross out at least this many to earn another flick (0 = never). */
     shoot: number;
+    /** Each extra flick already earned this turn raises that by this many (a streak gets harder to keep). */
+    rise?: number;
     /** A lunge that crosses out at least this many earns another lunge (0 = never). */
     move: number;
     /** The earned lunge must be the same soldier lunging on (false: any of yours). */

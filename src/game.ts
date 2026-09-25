@@ -530,7 +530,8 @@ export function act(s: GameState, f: Flick): Outcome {
   s.actions.push({ t: "flick", ...f });
   o.paths.forEach((pts, k) => s.marks.push({ t: "stroke", kind: f.kind, owner: who, pts: compact(pts), seed: seed + k * 31, turn: s.turn, ...(k && { branch: k }) }));
   o.events.forEach((e, k) => {
-    const kind = KINKS[e.kind] ?? (e.kind === "bounce" && e.on === "bank" ? "bank" : e.jolt ? "wobble" : undefined);
+    // a jolt worth seeing (the line's own kink shows the small ones)
+    const kind = KINKS[e.kind] ?? (e.kind === "bounce" && e.on === "bank" ? "bank" : Math.abs(e.jolt ?? 0) >= 0.08 ? "wobble" : undefined);
     if (kind) s.marks.push({ t: "kink", kind, owner: who, x: e.at.x, y: e.at.y, dir: e.dir ?? 0, seed: seed + 700 + k * 13, turn: s.turn });
   });
   for (const b of o.breaches) {
@@ -780,7 +781,7 @@ export function earns(s: GameState, kind: ActionKind | undefined, hits: number, 
   const E = s.rules.earn;
   if (capLeft(s) <= 0 || !kind || hits <= 0) return false;
   if (!E) return true;
-  if (kind === "shoot") return E.shoot > 0 && hits >= E.shoot;
+  if (kind === "shoot") return E.shoot > 0 && hits >= E.shoot + (E.rise ?? 0) * (s.streak ?? 0);
   return E.move > 0 && hits >= E.move && alive;
 }
 

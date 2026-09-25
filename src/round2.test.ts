@@ -391,6 +391,19 @@ describe("snipe: another flick only when one line takes two or more", () => {
     const me = alive(s, 0)[0];
     expect(steadiness(s, me.id, "shoot")).toBe(1);
   });
+  it("with rise 1, each extra flick needs one more: two, then three", () => {
+    const s = setup(quiet({ earn: { shoot: 2, move: 1, sameMover: true, shake: 0.3, rise: 1 }, extraTurn: "chain" }));
+    const me = alive(s, 0)[0], foes = alive(s, 1).slice(0, 4);
+    clear(s, [me, ...foes]);
+    at(s, me, { x: 500, y: 1500 });
+    foes.slice(0, 2).forEach((f, i) => at(s, f, { x: 500, y: 1100 - i * 100 }));
+    foes.slice(2).forEach((f, i) => at(s, f, { x: 300, y: 1100 - i * 100 }));
+    act(s, flick(me, -Math.PI / 2, 800));
+    expect(s.current).toBe(0);
+    at(s, me, { x: 300, y: 1500 });
+    act(s, flick(me, -Math.PI / 2, 800));
+    expect(s.current).toBe(1);
+  });
   it("chains for as long as it keeps taking two (no cap)", () => {
     const { s } = snipe(2);
     for (let k = 0; k < 4; k++) {

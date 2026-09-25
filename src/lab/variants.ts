@@ -139,5 +139,23 @@ export const LAB2: RuleSet[] = [
   v(R2, "r2-shapes12", { kit: KIT2, shapes: SHAPES2, soldiersPerBase: 12 }),
 ];
 
-export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2, ...ROUND3, ...ROUND4, ...LAB2.filter((r) => r !== LAST_STAND)];
+// Round-2 lab, second pass: the foundation ran 3x longer than Last stand
+// with few comebacks, and a wobble of 0.06 per crossing stalled late games.
+const EARN = { shoot: 2, move: 1, sameMover: true, shake: 0.35 };
+export const LAB2B: RuleSet[] = [
+  // streaks: the lightest limits on snipe chains
+  v(R2, "r2-cap3", { chainCap: 3 }),
+  v(R2, "r2-rise", { earn: { ...EARN, rise: 1 } }),
+  // length and comebacks
+  v(R2, "r2-ls", { lastStand: { at: 4, hits: 1, steady: 0.6, shots: 2, grow: 1 } }),
+  v(R2, "r2-pos0", { position: { reach: 0 } }),
+  v(R2, "r2-pos-ls", { position: { reach: 40 }, lastStand: { at: 4, hits: 1, steady: 0.6, shots: 2, grow: 1 } }),
+  // gentler wobble
+  v(R2, "r2-wobble02", { ink: { wobble: 0.02 } }),
+  v(R2, "r2-wobble035", { ink: { wobble: 0.035 } }),
+  v(R2, "r2-dawood-wobble02", { ink: { wobble: 0.02, boost: 150, drag: 150 } }),
+  v(R2, "r2-pen-soft", { ink: { ...PEN, wobble: 0.025 }, shapes: { circle: { wobble: 0.03 } } }),
+];
+
+export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2, ...ROUND3, ...ROUND4, ...LAB2.filter((r) => r !== LAST_STAND), ...LAB2B];
 export const byId = (id: string) => EXPERIMENTS.find((r) => r.id === id);
