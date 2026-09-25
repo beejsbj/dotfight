@@ -39,8 +39,38 @@ interface Surf {
   base?: number; edge?: number; poly?: Pt[]; fx?: WallFx;
   /** For a stroke: which mark it is. */
   stroke?: number;
+  /** Last grid query that returned it (so a segment in several cells counts once). */
+  q?: number;
 }
 interface Group { box: Box; surfs: Surf[]; ink?: boolean }
+
+// Ink on a late page is hundreds of lines: they're kept in a coarse grid so a
+// step of the pen only looks at the segments near it.
+const CELL = 64;
+class Grid {
+  cells = new Map<number, Surf[]>();
+  private stamp = 0;
+  add(sf: Surf) {
+    const x0 = Math.floor(Math.min(sf.a.x, sf.b.x) / CELL), x1 = Math.floor(Math.max(sf.a.x, sf.b.x) / CELL);
+    const y0 = Math.floor(Math.min(sf.a.y, sf.b.y) / CELL), y1 = Math.floor(Math.max(sf.a.y, sf.b.y) / CELL);
+    for (let cx = x0; cx <= x1; cx++) for (let cy = y0; cy <= y1; cy++) {
+      const k = (cx + 64) * 4096 + (cy + 64);
+      const list = this.cells.get(k);
+      if (list) list.push(sf); else this.cells.set(k, [sf]);
+    }
+  }
+  /** Segments whose cells meet the box [x0,x1]×[y0,y1]. */
+  near(x0: number, y0: number, x1: number, y1: number, out: Surf[]) {
+    out.length = 0;
+    const q = ++this.stamp;
+    for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx++) for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy++) {
+      const list = this.cells.get((cx + 64) * 4096 + (cy + 64));
+      if (list) for (const sf of list) if (sf.q !== q) { sf.q = q; out.push(sf); }
+    }
+    return out;
+  }
+}
+interface Page { groups: Group[]; ink: Grid; inkCount: number }
 
 export interface TraceEvent {
   kind: "bounce" | "stop" | "split" | "friction" | "edge" | "wall" | "cross" | "groove" | "absorb" | "crash";
@@ -110,10 +140,10 @@ function strokeGroup(m: { pts: Pt[]; owner: Player }, idx: number, mine: boolean
 
 // The page only changes when a mark is added (every action adds one), so the
 // surfaces are cached per state, player and kind until the next mark.
-const memo = new WeakMap<GameState, Map<string, Group[]>>();
+const memo = new WeakMap<GameState, Map<string, Page>>();
 
 /** Everything on the page a line from `who` can interact with. */
-function surfaces(s: GameState, who: Player, shot: boolean): Group[] {
+function surfaces(s: GameState, who: Player, shot: boolean): Page {
   let m = memo.get(s);
   const key = `${s.marks.length}|${s.bases.length}|${who}|${shot}`;
   if (!m || !m.has(key)) {
@@ -132,7 +162,7 @@ export const inkActs = (ink: Ink) => inkFx(ink) || ink.ownBounces > 0 || ink.ene
 // Circles are traced as a 32-sided polygon: within half a percent of the drawn ring.
 const CIRCLE_SIDES = 32;
 
-function build(s: GameState, who: Player, shot: boolean): Group[] {
+function build(s: GameState, who: Player, shot: boolean): Page {
   const R = s.rules;
   const W = RULES.pageW, H = RULES.pageH;
   const groups: Group[] = [];
@@ -172,6 +202,8 @@ function build(s: GameState, who: Player, shot: boolean): Group[] {
     if (surfs.length) groups.push({ box: boxOf(poly, 1), surfs });
   }
   const ink = R.ink;
+  const grid = new Grid();
+  let inkCount = 0;
   if (inkActs(ink)) {
     // wet ink: only each player's newest lines count (0 = all the ink on the page)
     const fresh = ink.fresh ?? 0;
@@ -180,10 +212,10 @@ function build(s: GameState, who: Player, shot: boolean): Group[] {
       const m = s.marks[i];
       if (m.t !== "stroke") continue;
       if (fresh && seen[m.owner]++ >= fresh) continue;
-      groups.push(strokeGroup(m, i, m.owner === who));
+      for (const sf of strokeGroup(m, i, m.owner === who).surfs) { grid.add(sf); inkCount++; }
     }
   }
-  return groups;
+  return { groups, ink: grid, inkCount };
 }
 
 /** The arc as a turtle walks it: a first heading, then each step's turn and length. */
@@ -204,11 +236,13 @@ function stepsOf(arc: Pt[]): Steps {
   return { h0, turn, len };
 }
 
-const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+const wrap = (a: number) => { a %= 2 * Math.PI; return a > Math.PI ? a - 2 * Math.PI : a <= -Math.PI ? a + 2 * Math.PI : a; };
 
 interface Ctx {
   groups: Group[];
-  strokes: Group[];
+  lines: Grid;
+  inkCount: number;
+  near: Surf[];
   branches: Branch[];
   events: TraceEvent[];
   ink: Ink;
@@ -230,7 +264,7 @@ interface Ctx {
 const START_SKIP = 14; // at least; a rule set can widen it (ink.clear)
 /** A groove pulls the pen once it's this close to the line, and it's riding once this close. */
 const LOOK = 20, RIDING = 5;
-const SUB = 10;
+const SUB = 14;
 
 // What a branch may still use: bounces left and wall edges it has spent. A
 // split-off branch starts with a copy of its parent's, so neither steals from the other.
@@ -245,31 +279,31 @@ interface PenAt { at: Pt; h: number; sign: number; j: number; rem: number }
  * little toward it, more the closer, the more parallel, and the slower the pen.
  */
 function pull(ctx: Ctx, p: Pt, h: number, left: number, step: number): { turn: number; riding: boolean; own: boolean } {
-  const ink = ctx.ink, G = ink.grooveReach ?? 24, max = ink.groove!;
+  const ink = ctx.ink, G = ink.grooveReach ?? 24, max = ink.groove!, cosMax = Math.cos(max);
+  const hx = Math.cos(h), hy = Math.sin(h);
   let best = 0, delta = 0, own = false, near = Infinity, angle = 0;
-  for (const g of ctx.strokes) {
-    if (p.x < g.box.x0 - G || p.x > g.box.x1 + G || p.y < g.box.y0 - G || p.y > g.box.y1 + G) continue;
-    for (const sf of g.surfs) {
-      const vx = sf.b.x - sf.a.x, vy = sf.b.y - sf.a.y;
-      const l2 = vx * vx + vy * vy || 1;
-      const t = Math.max(0, Math.min(1, ((p.x - sf.a.x) * vx + (p.y - sf.a.y) * vy) / l2));
-      const qx = sf.a.x + vx * t, qy = sf.a.y + vy * t;
-      const rho = Math.hypot(p.x - qx, p.y - qy);
-      if (rho > G) continue;
-      let diff = wrap(Math.atan2(vy, vx) - h);
-      if (Math.abs(diff) > Math.PI / 2) diff = wrap(diff + Math.PI);
-      const phi = Math.abs(diff);
-      if (phi >= max) continue;
-      const w = (1 - rho / G) * (1 - phi / max);
-      if (w <= best) continue;
-      best = w;
-      // along the line, leaning in toward it
-      const side = Math.cos(h) * (qy - p.y) - Math.sin(h) * (qx - p.x);
-      delta = diff + Math.sign(side) * Math.atan2(rho, LOOK);
-      own = sf.kind === "own";
-      near = rho;
-      angle = phi;
-    }
+  for (const sf of ctx.lines.near(p.x - G, p.y - G, p.x + G, p.y + G, ctx.near)) {
+    const vx = sf.b.x - sf.a.x, vy = sf.b.y - sf.a.y;
+    const l2 = vx * vx + vy * vy;
+    if (l2 < 1e-9) continue;
+    const t = Math.max(0, Math.min(1, ((p.x - sf.a.x) * vx + (p.y - sf.a.y) * vy) / l2));
+    const qx = sf.a.x + vx * t, qy = sf.a.y + vy * t;
+    const rho = Math.hypot(p.x - qx, p.y - qy);
+    if (rho > G) continue;
+    const l = Math.sqrt(l2);
+    const c = (hx * vx + hy * vy) / l; // cos of the angle between pen and line
+    if (Math.abs(c) <= cosMax) continue; // steeper than a groove: a crossing, not a pull
+    const phi = Math.acos(Math.min(1, Math.abs(c)));
+    const w = (1 - rho / G) * (1 - phi / max);
+    if (w <= best) continue;
+    best = w;
+    // turn along the line (whichever way along it is nearer the pen's heading), leaning in toward it
+    const cross = ((hx * vy - hy * vx) / l) * Math.sign(c);
+    const side = hx * (qy - p.y) - hy * (qx - p.x);
+    delta = Math.sign(cross) * phi + Math.sign(side) * Math.atan2(rho, LOOK);
+    own = sf.kind === "own";
+    near = rho;
+    angle = phi;
   }
   if (!best) return { turn: 0, riding: false, own };
   // a flick slows as it runs out: speed goes as the root of the line it has left
@@ -317,7 +351,8 @@ function walk(ctx: Ctx, left: Left, pen: PenAt, budget: number, canSplit: boolea
     const L = seg;
     const box = boxOf([pos, nxt], 0.5);
     const hits: { t: number; s: Surf }[] = [];
-    for (const g of ctx.groups) {
+    const inkNear = ctx.inkCount ? ctx.lines.near(box.x0, box.y0, box.x1, box.y1, ctx.near) : [];
+    for (const g of [...ctx.groups, { box, surfs: inkNear }]) {
       if (!boxesMeet(g.box, box)) continue;
       for (const sf of g.surfs) {
         if (sf.key === skip || left.used.has(sf.key)) continue;
@@ -499,12 +534,14 @@ function segT(a: Pt, b: Pt, c: Pt, d: Pt): number | null {
 /** Trace a flick's arc from `from` across the page as `who` sees it. `wob` seeds the hand's wobble (none if undefined). */
 export function trace(s: GameState, who: Player, from: Pt, arc: Pt[], shot: boolean, wob?: number): Trace {
   const R = s.rules;
-  const groups = surfaces(s, who, shot);
+  const page = surfaces(s, who, shot);
   const steps = stepsOf(arc);
   const total = pathLen(arc);
   const ctx: Ctx = {
-    groups,
-    strokes: groups.filter((g) => g.ink),
+    groups: page.groups,
+    lines: page.ink,
+    inkCount: page.inkCount,
+    near: [],
     branches: [],
     events: [],
     ink: R.ink,

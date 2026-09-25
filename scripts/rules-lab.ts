@@ -79,6 +79,13 @@ if (!isMainThread) {
   for (const s of sums) {
     console.log(`| ${s.rules} | ${s.games} | ${f1(s.turns.mean)} (${s.turns.p10}–${s.turns.p90}) | ${f1(s.flicksPerGame)} | ${pct(s.firstWins)} | ${pct(s.draws)} | ${s.perFlick.mean.toFixed(2)} | ${pct(s.perFlick.three + s.perFlick.fourPlus)} | ${pct(s.comeback)} (${pct(s.bigComeback)}) | ${f1(s.drag.mean)} | ${f1(s.drag.acts)} (${pct(s.drag.actShare)}) | ${pct(s.moveShare)} | ${pct(s.transferShare)} | ${pct(s.materialShare)} | ${f1(s.longestChain)} | ${f1(s.lostOffPage)} |`);
   }
+  console.log("\nround 2:");
+  console.log("| rules | longest turn (flicks: mean, p90, max) | lunge share | lunge chains (n, mean, 1/2/3/4-5/6+, max) | snipe 2+ | sends/game | grooves (touches) | banks | splits | wobbles | absorbs | crashes | refills (games) | arranged | hit rate by shot length |");
+  console.log("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+  for (const s of sums) {
+    const L = s.lungeChain;
+    console.log(`| ${s.rules} | ${f1(s.longestFlicks.mean)}, ${s.longestFlicks.p90}, ${s.longestFlicks.max} | ${pct(s.moveShare)} | ${L.n}, ${L.mean.toFixed(2)}, ${[L.one, L.two, L.three, L.fourFive, L.sixPlus].map(pct).join("/")}, ${L.max} | ${pct(s.doubleRate)} | ${f1(s.transfersPerGame)} | ${f1(s.grooves)} (${f1(s.grooveTouches)}) | ${f1(s.banks)} | ${f1(s.splits)} | ${f1(s.wobbles)} | ${f1(s.absorbs)} | ${f1(s.crashes)} | ${f1(s.refilled)} (${pct(s.refillGames)}) | ${f1(s.arranged)} | ${s.hitByLength.map(pct).join(" ")} |`);
+  }
   console.log("\nmechanics per game:");
   for (const s of sums) console.log(`  ${s.rules}: bounces ${f1(s.bounces)}, splits ${f1(s.splits)}, stops ${f1(s.stops)}, cuts ${f1(s.cuts)}, wounds ${f1(s.wounds)}, bases fallen ${f1(s.fell)}, founded ${f1(s.founded)}, last stand in ${pct(s.lastStandRate)}, longest chain ${f1(s.longestChain)}, flicks ${f1(s.flicksPerGame)}, max kills ${s.perFlick.max}`);
   console.log(`\n${((Date.now() - t0) / 1000).toFixed(0)}s on ${threads} threads`);

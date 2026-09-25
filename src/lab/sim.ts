@@ -1,7 +1,7 @@
 // The rules lab: bot-vs-bot games, headless, and what they tell us.
 // Pure and seeded: the same rules and seed always play the same game.
 
-import { botAction, botBase, HUMAN, type Skill } from "../bot";
+import { botAction, botArrange, botBase, HUMAN, type Skill } from "../bot";
 import { act, alive, apply, canPlaceBase, newGame, pass, stuck, transfer, type Action, type GameState, type Player } from "../game";
 import { rng } from "../geom";
 import type { RuleSet } from "../rules";
@@ -43,6 +43,31 @@ export interface GameRecord {
   longestChain: number;
   /** Soldiers each side started with. */
   army: number;
+  // round 2
+  /** Lengths of each lunge chain: lunges in a row by one player in one turn (1 = a lunge that earned nothing). */
+  lungeChains: number[];
+  /** Shots that crossed out two or more. */
+  doubles: number;
+  /** Grooves the pen ran in for 40+ units, and all groove contacts. */
+  grooves: number;
+  grooveTouches: number;
+  /** Bank-wall bounces (billiards). */
+  banks: number;
+  /** Hand jolts from crossing ink or walls. */
+  wobbles: number;
+  /** Lines soaked up by scribbles. */
+  absorbs: number;
+  /** Lungers who died at an enemy wall. */
+  crashes: number;
+  /** Empty rings filled again by their own side. */
+  refilled: number;
+  /** Soldiers moved in the positioning phase. */
+  arranged: number;
+  /** Most flicks one player made in one turn (sends not counted). */
+  longestFlicks: number;
+  /** Shots by length band (300-600, -900, -1200, -1500, more) and how many of them crossed someone out. */
+  shotBands: number[];
+  shotBandHits: number[];
 }
 
 export type Agent = (s: GameState, seed: number) => Action;
@@ -65,10 +90,19 @@ export function playGame(rules: RuleSet, seed: number, opts: Opts = {}): { rec: 
     rules: rules.id, seed, winner: -1, turns: 0, actions: 0, perFlick: [], shots: 0, moves: 0, transfers: 0,
     materialTurns: 0, midLeaderLost: null, bigLeadLost: null, drag: 0, dragActs: 0, lostOffPage: 0, bounces: 0, splits: 0,
     stops: 0, cuts: 0, wounds: 0, fell: 0, founded: 0, lastStands: 0, chainTurns: 0, longestChain: 0, army,
+    lungeChains: [], doubles: 0, grooves: 0, grooveTouches: 0, banks: 0, wobbles: 0, absorbs: 0, crashes: 0, refilled: 0, arranged: 0,
+    longestFlicks: 0, shotBands: [0, 0, 0, 0, 0], shotBandHits: [0, 0, 0, 0, 0],
   };
+  // positioning: each side arranges its soldiers in one go
+  while (s.phase === "position") {
+    for (const a of botArrange(s, (rand() * 2 ** 32) >>> 0)) {
+      try { apply(s, a); if (a.t === "arrange") rec.arranged++; } catch { /* a spot another move took */ }
+      if (a.t === "ready") break;
+    }
+  }
   const counts: [number, number][] = []; // alive at the end of each turn
   let dragFrom = -1, dragFromActs = -1;
-  let turnActs = 0, turnChanged = false;
+  let turnActs = 0, turnFlicks = 0, turnChanged = false, lungeRun = 0;
   const hpSum = (p: Player) => alive(s, p).reduce((a, x) => a + (x.hp ?? 1), 0);
   let lastHp = [hpSum(0), hpSum(1)];
   while (s.phase === "play" && s.turn <= maxTurns) {
@@ -80,13 +114,26 @@ export function playGame(rules: RuleSet, seed: number, opts: Opts = {}): { rec: 
       rec.actions++;
       turnActs++;
       if (a.t === "flick" && o) {
-        if (a.kind === "shoot") rec.shots++; else rec.moves++;
-        rec.perFlick.push(o.killed.length + o.cut.reduce((n, c) => n + c.ids.length, 0) + o.wounded.length * 0.5);
-        if (o.lost) rec.lostOffPage++;
+        turnFlicks++;
+        const took = o.killed.length + o.cut.reduce((n, c) => n + c.ids.length, 0) + o.wounded.length * 0.5;
+        if (a.kind === "shoot") {
+          rec.shots++;
+          if (took >= 2) rec.doubles++;
+          const band = Math.min(4, Math.max(0, Math.floor((a.length - 300) / 300)));
+          rec.shotBands[band]++;
+          if (took > 0) rec.shotBandHits[band]++;
+          if (lungeRun) { rec.lungeChains.push(lungeRun); lungeRun = 0; }
+        } else { rec.moves++; lungeRun++; }
+        rec.perFlick.push(took);
+        if (o.lost && o.crashed === undefined) rec.lostOffPage++;
+        if (o.crashed !== undefined) rec.crashes++;
         for (const e of o.events) {
-          if (e.kind === "bounce") rec.bounces++;
+          if (e.kind === "bounce") { rec.bounces++; if (e.on === "bank") rec.banks++; }
           else if (e.kind === "split") rec.splits++;
           else if (e.kind === "stop") rec.stops++;
+          else if (e.kind === "groove") { rec.grooveTouches++; if ((e.len ?? 0) >= 40) rec.grooves++; }
+          else if (e.kind === "absorb") rec.absorbs++;
+          if (e.jolt) rec.wobbles++;
         }
         rec.cuts += o.cut.length;
         rec.wounds += o.wounded.length;
@@ -94,6 +141,7 @@ export function playGame(rules: RuleSet, seed: number, opts: Opts = {}): { rec: 
       if (o) {
         rec.fell += o.fell?.length ?? 0;
         rec.founded += o.founded?.length ?? 0;
+        rec.refilled += o.refilled?.length ?? 0;
         rec.lastStands += o.stood?.length ?? 0;
       }
     }
@@ -104,9 +152,12 @@ export function playGame(rules: RuleSet, seed: number, opts: Opts = {}): { rec: 
     if (s.turn !== turn || s.phase !== "play") {
       counts.push([alive(s, 0).length, alive(s, 1).length]);
       if (turnChanged) rec.materialTurns++;
-      if (turnActs > 1) rec.chainTurns++;
+      if (turnFlicks > 1) rec.chainTurns++;
       rec.longestChain = Math.max(rec.longestChain, turnActs);
+      rec.longestFlicks = Math.max(rec.longestFlicks, turnFlicks);
+      if (lungeRun) { rec.lungeChains.push(lungeRun); lungeRun = 0; }
       turnActs = 0;
+      turnFlicks = 0;
       turnChanged = false;
     }
   }
@@ -144,8 +195,16 @@ export interface Summary {
   lostOffPage: number; // per game
   bounces: number; splits: number; stops: number; cuts: number; wounds: number; fell: number; founded: number;
   lastStandRate: number;
-  chainShare: number; // share of turns with an extra action
-  longestChain: number; // mean per game
+  chainShare: number; // share of turns with an extra flick
+  longestChain: number; // mean per game (actions, sends included)
+  // round 2
+  longestFlicks: { mean: number; p90: number; max: number }; // flicks in one player's turn, worst of the game
+  lungeChain: { n: number; mean: number; one: number; two: number; three: number; fourFive: number; sixPlus: number; max: number };
+  doubleRate: number; // shots that took 2+
+  transfersPerGame: number;
+  grooves: number; grooveTouches: number; banks: number; wobbles: number; absorbs: number; crashes: number;
+  refilled: number; refillGames: number; arranged: number;
+  hitByLength: number[]; // share of shots that crossed someone out, by length band
 }
 
 const q = (xs: number[], p: number) => {
@@ -201,5 +260,36 @@ export function summarise(recs: GameRecord[]): Summary {
     lastStandRate: mean(recs.map((r) => (r.lastStands > 0 ? 1 : 0))),
     chainShare: recs.reduce((a, r) => a + r.chainTurns, 0) / Math.max(1, recs.reduce((a, r) => a + r.turns, 0)),
     longestChain: mean(recs.map((r) => r.longestChain)),
+    ...round2(recs),
+  };
+}
+
+function round2(recs: GameRecord[]) {
+  const chains = recs.flatMap((r) => r.lungeChains ?? []);
+  const share = (f: (k: number) => boolean) => chains.filter(f).length / Math.max(1, chains.length);
+  const lf = recs.map((r) => r.longestFlicks ?? 0);
+  const shots = recs.reduce((a, r) => a + r.shots, 0);
+  const bands = [0, 1, 2, 3, 4].map((b) => {
+    const n = recs.reduce((a, r) => a + (r.shotBands?.[b] ?? 0), 0);
+    return n ? recs.reduce((a, r) => a + (r.shotBandHits?.[b] ?? 0), 0) / n : 0;
+  });
+  return {
+    longestFlicks: { mean: mean(lf), p90: q(lf, 0.9), max: lf.reduce((a, b) => Math.max(a, b), 0) },
+    lungeChain: {
+      n: chains.length, mean: mean(chains), one: share((k) => k === 1), two: share((k) => k === 2), three: share((k) => k === 3),
+      fourFive: share((k) => k >= 4 && k <= 5), sixPlus: share((k) => k >= 6), max: chains.reduce((a, b) => Math.max(a, b), 0),
+    },
+    doubleRate: recs.reduce((a, r) => a + (r.doubles ?? 0), 0) / Math.max(1, shots),
+    transfersPerGame: mean(recs.map((r) => r.transfers)),
+    grooves: mean(recs.map((r) => r.grooves ?? 0)),
+    grooveTouches: mean(recs.map((r) => r.grooveTouches ?? 0)),
+    banks: mean(recs.map((r) => r.banks ?? 0)),
+    wobbles: mean(recs.map((r) => r.wobbles ?? 0)),
+    absorbs: mean(recs.map((r) => r.absorbs ?? 0)),
+    crashes: mean(recs.map((r) => r.crashes ?? 0)),
+    refilled: mean(recs.map((r) => r.refilled ?? 0)),
+    refillGames: mean(recs.map((r) => ((r.refilled ?? 0) > 0 ? 1 : 0))),
+    arranged: mean(recs.map((r) => r.arranged ?? 0)),
+    hitByLength: bands,
   };
 }

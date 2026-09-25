@@ -2,7 +2,7 @@
 // The playable ones live in src/rulesets.ts; these are experiments.
 // Run any of them: npm run lab -- --sets <id,id> --games 400
 
-import { CLASSIC } from "../rulesets";
+import { CLASSIC, LAST_STAND } from "../rulesets";
 import { PROTOTYPE, variant, type Change, type RuleSet } from "../rules";
 
 const v = (parent: RuleSet, id: string, change: Change) => variant(parent, { id, name: id, motto: id, ...change });
@@ -90,5 +90,59 @@ export const ROUND4: RuleSet[] = [
   v(find3("c2-wet-both"), "c2-wet-both-open", { openingExtra: false }),
 ];
 
-export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2, ...ROUND3, ...ROUND4];
+// --- Rules lab, round 2 (Burooj's new direction, 2026-09-25) -------------------
+// Foundation "r2": the canon's five circles of ten, plus lunge and snipe
+// (a lunge kill earns another lunge by the same soldier, shakier each link;
+// a shot earns another flick only by taking two), free sends that walk the
+// page, and empty bases left as rings you can refill. No streak cap.
+export const R2 = v(CLASSIC, "r2", {
+  lunge: { baseDeath: true },
+  earn: { shoot: 2, move: 1, sameMover: true, shake: 0.35 },
+  extraTurn: "chain",
+  chainCap: 0,
+  transfer: { max: 5, ambush: "all", free: true, pace: 150, refill: "own" },
+  empty: "ring",
+});
+const PEN = { wobble: 0.06, groove: 0.3, grooveReach: 24, groovePull: 0.03, grooveOwn: 0.6, grooveEnemy: 1.6, scribble: 3, scribbleSpan: 40, taperHit: 0.25, taperWall: 0.15 };
+const KIT2 = ["circle", "circle", "tri", "hex", "hex"] as RuleSet["kit"];
+const SHAPES2 = {
+  circle: { soldiers: 12, wobble: 0 },
+  tri: { soldiers: 6, prism: true, wobble: 0.04 },
+  hex: { soldiers: 8, wall: "bank" as const, prism: false, wobble: 0.04 },
+};
+export const LAB2: RuleSet[] = [
+  // round 1's recommendation, re-run on this engine as the baseline
+  LAST_STAND,
+  R2,
+  // chains: do the stricter triggers self-limit?
+  v(R2, "r2-anylunger", { earn: { shoot: 2, move: 1, sameMover: false, shake: 0.35 } }),
+  v(R2, "r2-noshake", { earn: { shoot: 2, move: 1, sameMover: true, shake: 0 } }),
+  v(R2, "r2-shake60", { earn: { shoot: 2, move: 1, sameMover: true, shake: 0.6 } }),
+  v(R2, "r2-snipe1", { earn: { shoot: 1, move: 1, sameMover: true, shake: 0.35 } }),
+  v(R2, "r2-open", { openingExtra: false }),
+  v(R2, "r2-nodeath", { lunge: { baseDeath: false } }),
+  // sends
+  v(R2, "r2-slow", { transfer: { max: 5, ambush: "all", free: true, pace: 90, refill: "own" } }),
+  v(R2, "r2-fast", { transfer: { max: 5, ambush: "all", free: true, pace: 300, refill: "own" } }),
+  v(R2, "r2-costly", { transfer: { max: 5, ambush: "all", free: false, pace: 150, refill: "own" } }),
+  v(R2, "r2-capture", { capture: true, transfer: { max: 5, ambush: "all", free: true, pace: 150, refill: "any" } }),
+  v(R2, "r2-crumble", { empty: "crumble" }),
+  // positioning
+  v(R2, "r2-pos", { position: { reach: 40 } }),
+  // ink physics, one at a time, then together
+  v(R2, "r2-wobble", { ink: { wobble: 0.06 } }),
+  v(R2, "r2-dawood", { ink: { boost: 150, drag: 150 } }),
+  v(R2, "r2-wobble-dawood", { ink: { wobble: 0.06, boost: 150, drag: 150 } }),
+  v(R2, "r2-groove", { ink: { groove: 0.3, grooveReach: 24, groovePull: 0.03, grooveOwn: 0.6, grooveEnemy: 1.6 } }),
+  v(R2, "r2-scribble", { ink: { scribble: 3, scribbleSpan: 40 } }),
+  v(R2, "r2-taper", { ink: { taperHit: 0.25, taperWall: 0.15 } }),
+  v(R2, "r2-walls", { shapes: { circle: { wobble: 0.05 } } }),
+  v(R2, "r2-pen", { ink: PEN, shapes: { circle: { wobble: 0.05 } } }),
+  // shapes
+  v(R2, "r2-shapes", { kit: KIT2, shapes: SHAPES2 }),
+  v(R2, "r2-shapes-glance30", { kit: KIT2, shapes: SHAPES2, bankGlance: 0.52 }),
+  v(R2, "r2-shapes-glance50", { kit: KIT2, shapes: SHAPES2, bankGlance: 0.87 }),
+];
+
+export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2, ...ROUND3, ...ROUND4, ...LAB2.filter((r) => r !== LAST_STAND)];
 export const byId = (id: string) => EXPERIMENTS.find((r) => r.id === id);
