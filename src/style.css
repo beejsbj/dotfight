@@ -235,6 +235,11 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .card.drawer .page:nth-child(2n) canvas { transform: rotate(1.2deg); }
 .card.drawer .page span { display: block; font-family: var(--hand); font-size: 16px; line-height: 1.1; margin-top: 5px; color: var(--pencil); }
 
+/* wide windows: the HUD stays a phone's width, centred on the near edge */
+@media (min-width: 700px) {
+  #top, #bottom { max-width: 640px; margin: 0 auto; }
+}
+
 /* short landscape phones: the page is portrait, so keep the chrome thin */
 @media (orientation: landscape) and (max-height: 500px) {
   #top { justify-content: center; }

@@ -106,8 +106,10 @@ function resize() {
   sdpr = Math.min(2, dpr);
   W = window.innerWidth;
   H = window.innerHeight;
-  const top = $("#top").getBoundingClientRect().bottom;
-  const bottom = H - $("#bottom").getBoundingClientRect().top;
+  // a hidden bar takes no room (a zero rect would otherwise read as full height)
+  const tr = $("#top").getBoundingClientRect(), br = $("#bottom").getBoundingClientRect();
+  const top = tr.height ? tr.bottom : 0;
+  const bottom = br.height ? H - br.top : 0;
   cam.resize(W, H, top, bottom);
   const cw = W + cam.ox * 2, ch = H + cam.oy + cam.ob;
   stage.style.left = `${-cam.ox}px`;
