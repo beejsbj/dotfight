@@ -179,7 +179,7 @@ export function summarise(recs: GameRecord[]): Summary {
       three: flicks.filter((k) => k >= 2.75 && k < 3.75).length / (flicks.length || 1),
       fourPlus: flicks.filter((k) => k >= 3.75).length / (flicks.length || 1),
       mean: mean(flicks),
-      max: flicks.length ? Math.max(...flicks) : 0,
+      max: flicks.reduce((a, b) => (b > a ? b : a), 0),
     },
     comeback: rate(recs.map((r) => r.midLeaderLost)),
     bigComeback: rate(recs.map((r) => r.bigLeadLost)),

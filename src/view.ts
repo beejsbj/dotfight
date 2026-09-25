@@ -151,6 +151,7 @@ export function drawLive(ctx: CanvasRenderingContext2D, cam: Camera, s: GameStat
     ctx.globalCompositeOperation = "source-over";
   }
   const px = 1 / cam.z; // one css pixel in world units
+  drawWet(ctx, s, ink);
   if (o.hint) for (const b of o.hint.bases) {
     pencilLoop(ctx, b.x, b.y, b.r + 12, 900 + b.id * 17, Math.max(1.4, px * 0.9), o.hint.p, 0.6);
   }
@@ -180,6 +181,33 @@ export function drawLive(ctx: CanvasRenderingContext2D, cam: Camera, s: GameStat
   if (o.teach) drawTeach(ctx, o.teach);
   if (o.aim) drawAim(ctx, s, o.aim, px);
   if (o.pen) drawPen(ctx, o.pen.x, o.pen.y, o.pen.angle, o.pen.pull, INK.pens[o.pen.owner], 1, o.pen.lift);
+}
+
+// Wet ink (rules with ink.fresh): each player's newest lines still shine a
+// little. It's only a sheen over the ink; when a line dries the sheen goes
+// and the ink underneath is exactly as it was.
+function drawWet(ctx: CanvasRenderingContext2D, s: GameState, ink: Ink) {
+  const I = s.rules.ink;
+  if (!I.fresh || !(I.ownBounces || I.enemyStops || I.friction)) return;
+  const seen = [0, 0];
+  for (let i = s.marks.length - 1; i >= 0; i--) {
+    const m = s.marks[i];
+    if (m.t !== "stroke" || seen[m.owner]++ >= I.fresh) continue;
+    const p = ink.p(`m${i}`);
+    if (p < 1) continue;
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx.lineWidth = 1.1;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    const n = Math.floor((m.pts.length - 1) * 0.75);
+    for (let k = 0; k <= n; k++) {
+      const a = m.pts[Math.max(0, k - 1)], b = m.pts[Math.min(m.pts.length - 1, k + 1)];
+      const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1;
+      const x = m.pts[k].x - (dy / l) * 0.7, y = m.pts[k].y + (dx / l) * 0.7;
+      if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
 }
 
 function pencilRing(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, w: number, dashed = true) {

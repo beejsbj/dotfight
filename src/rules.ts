@@ -69,6 +69,8 @@ export interface RuleSet {
   extraTurn: "none" | "once" | "chain";
   /** With "chain": most extra flicks in one turn (0 = no limit). */
   chainCap: number;
+  /** Can the very first turn of the game earn an extra flick? (false softens the first-move edge) */
+  openingExtra: boolean;
 
   // --- transfers (Dawood canon: exists; the details are designed) ----------
   /** Instead of flicking, send soldiers from one of your bases to another. They arrive after the opponent's next action. */
@@ -113,6 +115,8 @@ export interface RuleSet {
     edgeBounces: number;
     /** Dried ink this close to where the pen rests doesn't count (your own lines all start near you). */
     clear: number;
+    /** Wet ink: only each player's newest this-many lines act as terrain (0 = every line on the page). */
+    fresh: number;
   };
   /** Who flicks first once the bases are drawn: whoever drew first (0) or whoever drew last (1). */
   firstFlick: 0 | 1;
@@ -150,11 +154,12 @@ export const PROTOTYPE: RuleSet = {
   hitSlop: 1.5,
   extraTurn: "none",
   chainCap: 0,
+  openingExtra: true,
   transfer: null,
   win: "soldiers",
   capture: false,
   lastStand: null,
-  ink: { friction: 0, ownBounces: 0, enemyStops: false, edgeBounces: 0, clear: 14 },
+  ink: { friction: 0, ownBounces: 0, enemyStops: false, edgeBounces: 0, clear: 14, fresh: 0 },
   firstFlick: 0,
   prismSpread: 0.2,
 };

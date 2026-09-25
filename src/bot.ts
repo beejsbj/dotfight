@@ -232,7 +232,7 @@ function gain(c: Ctx, o: Outcome, moverId: number): { v: number; hit: boolean } 
 
 const bonusFor = (s: GameState, hit: boolean) => {
   const earned = s.streak ?? (s.bonus ? 1 : 0);
-  const cap = s.rules.extraTurn === "once" ? 1 : s.rules.extraTurn === "chain" ? s.rules.chainCap || Infinity : 0;
+  const cap = s.turn === 1 && s.rules.openingExtra === false ? 0 : s.rules.extraTurn === "once" ? 1 : s.rules.extraTurn === "chain" ? s.rules.chainCap || Infinity : 0;
   return (hit && earned < cap) || s.owed > 1;
 };
 

@@ -414,6 +414,15 @@ describe("ink as terrain", () => {
     expect(o.events[0].kind).toBe("stop");
     expect(o.path.at(-1)!.y).toBeCloseTo(1000, 0);
   });
+  it("wet ink: only a player's newest line counts", () => {
+    const { s } = across({ ownBounces: 1, fresh: 1 }, 0);
+    const me = alive(s, 0)[0];
+    const f: Flick = { soldierId: me.id, kind: "shoot", angle: -Math.PI / 2 + 0.3, length: 1200, bend: 0 };
+    expect(preview(s, f).events[0]?.kind).toBe("bounce");
+    // a newer blue line somewhere else: the old one has dried
+    s.marks.push({ t: "stroke", kind: "shoot", owner: 0, pts: [{ x: 900, y: 100 }, { x: 950, y: 150 }], seed: 2, turn: 1 });
+    expect(preview(s, f).events.some((e) => e.kind === "bounce")).toBe(false);
+  });
   it("the page edge can bounce a line", () => {
     const s = setup(quiet({ ink: { ...CLASSIC.ink, edgeBounces: 1 } }));
     const me = alive(s, 0)[0];

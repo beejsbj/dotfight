@@ -581,7 +581,7 @@ function after(s: GameState, who: Player, o: Outcome, seed: number, hit: boolean
   s.owed -= 1;
   // a hit earns another flick, up to the cap for the turn (once = 1, chain = chainCap or no limit)
   const earned = s.streak ?? (s.bonus ? 1 : 0);
-  const cap = R.extraTurn === "once" ? 1 : R.extraTurn === "chain" ? R.chainCap || Infinity : 0;
+  const cap = s.turn === 1 && R.openingExtra === false ? 0 : R.extraTurn === "once" ? 1 : R.extraTurn === "chain" ? R.chainCap || Infinity : 0;
   if (hit && earned < cap) { s.owed += 1; s.bonus = true; s.streak = earned + 1; }
   o.again = s.owed > 0 && ready(s, who).length > 0;
   if (!o.again) {

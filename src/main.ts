@@ -140,7 +140,7 @@ function choices(): { key: string; label: string }[] {
   return [
     { key: "move", label: "move" },
     { key: "shoot", label: "shoot" },
-    ...(s.rules.transfer ? [{ key: "send", label: "send" }] : []),
+    ...(s.rules.transfer && !(s.rules.transfer.free && s.sent) ? [{ key: "send", label: "send" }] : []),
   ];
 }
 

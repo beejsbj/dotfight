@@ -39,8 +39,8 @@ export const ROUND1: RuleSet[] = [
   v(CLASSIC, "ink-both", { ink: { friction: 200, ownBounces: 1 } }),
   v(CLASSIC, "edge-bounce", { ink: { edgeBounces: 1 } }),
   // bases as the objective
-  v(CLASSIC, "siege", { win: "bases", capture: true }),
-  v(CLASSIC, "siege-nocapture", { win: "bases", capture: false }),
+  v(CLASSIC, "classic-siege", { win: "bases", capture: true }),
+  v(CLASSIC, "classic-siege-nocapture", { win: "bases", capture: false }),
 ];
 
 // Round 2: "once" won round 1 as a foundation (chain snowballs); build on it.
@@ -63,5 +63,32 @@ export const ROUND2: RuleSet[] = [
   v(ONCE, "once-pierce2", { pierce: 2 }),
 ];
 
-export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2];
+// Round 3: a chain capped at two extra flicks kept the canon's streaks without
+// the snowball, and was the fairest foundation in round 2. Combine on it.
+const C2 = ROUND2.find((r) => r.id === "chain2")!;
+const KIT = ["circle", "circle", "tri", "square", "hex"] as RuleSet["kit"];
+export const ROUND3: RuleSet[] = [
+  v(C2, "c2-ls", { lastStand: { at: 4, hits: 1, steady: 0.6, shots: 2, grow: 1 } }),
+  v(C2, "c2-ls-hero", { lastStand: { at: 4, hits: 2, steady: 0.6, shots: 2, grow: 1.5 } }),
+  v(C2, "c2-shapes", { kit: KIT }),
+  v(C2, "c2-shapes-edge", { kit: KIT, ink: { edgeBounces: 1 } }),
+  v(C2, "c2-wet-mirror", { ink: { ownBounces: 1, fresh: 1 } }),
+  v(C2, "c2-wet-trench", { ink: { enemyStops: true, fresh: 1 } }),
+  v(C2, "c2-wet-both", { ink: { ownBounces: 1, enemyStops: true, fresh: 1 } }),
+  v(C2, "c2-wet-both-edge", { ink: { ownBounces: 1, enemyStops: true, fresh: 1, edgeBounces: 1 } }),
+  v(C2, "c2-siege", { win: "bases", capture: true }),
+  v(C2, "c2-siege-free", { win: "bases", capture: true, transfer: { max: 5, ambush: "all", free: true } }),
+  v(C2, "c2-free", { transfer: { max: 5, ambush: "all", free: true } }),
+  v(C2, "c2-pierce2", { pierce: 2 }),
+];
+
+// Round 4: soften the first-move edge: the opening turn earns no extra flick.
+const find3 = (id: string) => ROUND3.find((r) => r.id === id)!;
+export const ROUND4: RuleSet[] = [
+  v(C2, "c2-open", { openingExtra: false }),
+  v(find3("c2-ls"), "c2-ls-open", { openingExtra: false }),
+  v(find3("c2-wet-both"), "c2-wet-both-open", { openingExtra: false }),
+];
+
+export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2, ...ROUND3, ...ROUND4];
 export const byId = (id: string) => EXPERIMENTS.find((r) => r.id === id);

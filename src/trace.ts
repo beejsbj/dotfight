@@ -99,9 +99,15 @@ function build(s: GameState, who: Player, shot: boolean): Group[] {
   }
   const ink = R.ink;
   if (ink.friction > 0 || ink.ownBounces > 0 || ink.enemyStops) {
-    s.marks.forEach((m, i) => {
-      if (m.t === "stroke") groups.push(strokeGroup(m, i, m.owner === who));
-    });
+    // wet ink: only each player's newest lines count (0 = all the ink on the page)
+    const fresh = ink.fresh ?? 0;
+    const seen = [0, 0];
+    for (let i = s.marks.length - 1; i >= 0; i--) {
+      const m = s.marks[i];
+      if (m.t !== "stroke") continue;
+      if (fresh && seen[m.owner]++ >= fresh) continue;
+      groups.push(strokeGroup(m, i, m.owner === who));
+    }
   }
   return groups;
 }
