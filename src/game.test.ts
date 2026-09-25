@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { act, alive, canPlaceBase, newGame, placeBase, pointAlong, preview, type GameState } from "./game";
-import { RULES } from "./rules";
+import { PROTOTYPE as RULES } from "./rules";
 
 // Two bases each, far apart, so tests can aim precisely.
 function setup(): GameState {
-  const s = newGame(42);
+  const s = newGame(RULES, 42);
   const spots = [
     [300, 1200], [300, 200], [700, 1200], [700, 200], [500, 1000], [500, 400],
   ];
@@ -25,7 +25,7 @@ describe("setup", () => {
   });
 
   it("refuses bases over the margin, overlapping, or on top of the enemy", () => {
-    const s = newGame(1);
+    const s = newGame(RULES, 1);
     expect(canPlaceBase(s, 40, 700)).toMatch(/edge/);
     placeBase(s, 400, 700);
     expect(canPlaceBase(s, 450, 700)).toMatch(/enemy/);
@@ -49,7 +49,7 @@ describe("flicks", () => {
     const s = setup();
     const me = alive(s, 0)[0];
     const o = preview(s, { soldierId: me.id, kind: "shoot", angle: Math.PI / 2, length: 5000, bend: 0 });
-    expect(o.path.at(-1)!.y).toBeCloseTo(RULES.pageH, 1);
+    expect(o.path.at(-1)!.y).toBeCloseTo(1700, 1);
   });
 
   it("move relocates the soldier and crosses out the old spot", () => {

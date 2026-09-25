@@ -2,8 +2,9 @@
 // imprecision of a real pen flick: a visible wobble if you hold a charged
 // flick too long, and a small unseen error on release.
 
-import type { ActionKind, Flick } from "./game";
-import { FEEL, RULES } from "./rules";
+import { reachOf, type ActionKind, type Flick } from "./game";
+import { gauss } from "./geom";
+import { FEEL, type RuleSet } from "./rules";
 
 export interface Aim {
   soldierId: number;
@@ -40,27 +41,20 @@ export function sigma(power: number) {
   return FEEL.jitterBase + FEEL.jitterPower * power * power;
 }
 
-export function reach(kind: ActionKind, power: number) {
-  const p = Math.pow(power, 0.9);
-  return kind === "shoot"
-    ? RULES.shootMinLen + (RULES.shootMaxLen - RULES.shootMinLen) * p
-    : RULES.moveMinLen + (RULES.moveMaxLen - RULES.moveMinLen) * p;
+export function reach(R: RuleSet, kind: ActionKind, power: number) {
+  return reachOf(R, kind, power);
 }
 
-function gauss(rand: () => number) {
-  const u = Math.max(1e-9, rand()), v = rand();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
-
-// Let go of the pen.
-export function release(a: Aim, now: number, rand: () => number = Math.random): Flick | null {
+// Let go of the pen. `steady` < 1 narrows the hidden error (a last stand's
+// focus); the engine never lets it reach zero, so a flick is never a click.
+export function release(a: Aim, now: number, R: RuleSet, rand: () => number = Math.random, steady = 1): Flick | null {
   const p = pull(a);
   if (!p.live) return null;
   return {
     soldierId: a.soldierId,
     kind: a.kind,
-    angle: p.angle + wobble(a, now) + gauss(rand) * sigma(p.power),
-    length: reach(a.kind, p.power) * (1 + gauss(rand) * FEEL.lengthJitter),
+    angle: p.angle + wobble(a, now) * steady + gauss(rand) * sigma(p.power) * steady,
+    length: reach(R, a.kind, p.power) * (1 + gauss(rand) * FEEL.lengthJitter * steady),
     bend: (rand() * 2 - 1) * FEEL.bendMax * (0.3 + 0.7 * p.power),
   };
 }

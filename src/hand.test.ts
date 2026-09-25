@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { alive, newGame, placeBase, type GameState } from "./game";
 import { jotOrder, pickSoldier } from "./hand";
-import { RULES } from "./rules";
+import { PROTOTYPE as RULES } from "./rules";
 import { Timeline, reachFraction } from "./timeline";
 
 function setup(): GameState {
-  const s = newGame(42);
+  const s = newGame(RULES, 42);
   const spots = [[300, 1200], [300, 200], [700, 1200], [700, 200], [500, 1000], [500, 400]];
   for (const [x, y] of spots.slice(0, RULES.basesPerPlayer * 2)) placeBase(s, x, y);
   return s;
