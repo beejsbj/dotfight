@@ -244,7 +244,7 @@ export const PROTOTYPE: RuleSet = {
   position: null,
   ink: {
     friction: 0, ownBounces: 0, enemyStops: false, edgeBounces: 0, clear: 14, fresh: 0,
-    wobble: 0, boost: 0, drag: 0, groove: 0, grooveReach: 24, groovePull: 0.02, grooveOwn: 1, grooveEnemy: 1, scribble: 0, scribbleSpan: 40, taperHit: 0, taperWall: 0,
+    wobble: 0, boost: 0, drag: 0, groove: 0, grooveReach: 24, groovePull: 0.03, grooveOwn: 1, grooveEnemy: 1, scribble: 0, scribbleSpan: 40, taperHit: 0, taperWall: 0,
   },
   firstFlick: 0,
   prismSpread: 0.2,

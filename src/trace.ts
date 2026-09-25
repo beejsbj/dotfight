@@ -217,7 +217,8 @@ interface Ctx {
   clear: number;
   glance: number;
   steps: Steps;
-  total: number;
+  /** The longest flick there is: how fast a pen is going depends on how much line it has left. */
+  vmax: number;
   /** Gravity: the pen moves in sub-steps this long, so a groove can bend it. */
   sub: number;
   /** The hand's wobble, drawn from the flick's seed (undefined: a perfect hand, no wobble). */
@@ -243,9 +244,9 @@ interface PenAt { at: Pt; h: number; sign: number; j: number; rem: number }
  * and within the groove angle of parallel bends the heading along it and a
  * little toward it, more the closer, the more parallel, and the slower the pen.
  */
-function pull(ctx: Ctx, p: Pt, h: number, speed: number, step: number): { turn: number; riding: boolean; own: boolean } {
+function pull(ctx: Ctx, p: Pt, h: number, left: number, step: number): { turn: number; riding: boolean; own: boolean } {
   const ink = ctx.ink, G = ink.grooveReach ?? 24, max = ink.groove!;
-  let best = 0, delta = 0, own = false, near = Infinity;
+  let best = 0, delta = 0, own = false, near = Infinity, angle = 0;
   for (const g of ctx.strokes) {
     if (p.x < g.box.x0 - G || p.x > g.box.x1 + G || p.y < g.box.y0 - G || p.y > g.box.y1 + G) continue;
     for (const sf of g.surfs) {
@@ -267,11 +268,15 @@ function pull(ctx: Ctx, p: Pt, h: number, speed: number, step: number): { turn: 
       delta = diff + Math.sign(side) * Math.atan2(rho, LOOK);
       own = sf.kind === "own";
       near = rho;
+      angle = phi;
     }
   }
   if (!best) return { turn: 0, riding: false, own };
-  const rate = (ink.groovePull ?? 0.02) * best * (1 - 0.6 * Math.min(1, speed)) * step;
-  return { turn: Math.max(-rate, Math.min(rate, delta)), riding: near < RIDING && Math.abs(delta) < max, own };
+  // a flick slows as it runs out: speed goes as the root of the line it has left
+  const speed = Math.sqrt(Math.max(0, Math.min(1, left / ctx.vmax)));
+  const rate = (ink.groovePull ?? 0.03) * best * (1 - speed) * step;
+  // riding it: right on the line and running along it, not just crossing
+  return { turn: Math.max(-rate, Math.min(rate, delta)), riding: near < RIDING && angle < max * 0.4, own };
 }
 
 function walk(ctx: Ctx, left: Left, pen: PenAt, budget: number, canSplit: boolean, parent?: { idx: number; d: number }): number {
@@ -285,13 +290,19 @@ function walk(ctx: Ctx, left: Left, pen: PenAt, budget: number, canSplit: boolea
   let guard = 0;
   let groove: TraceEvent | null = null; // the groove being ridden, if any
   const crossings: number[] = []; // distances where this branch crossed a line (scribble cover)
-  outer: while (j < S.len.length && guard++ < 4000) {
-    if (fresh) { h += sign * S.turn[j]; rem = S.len[j]; fresh = false; }
+  // one crossing of a wall or a line where two of its segments meet counts once
+  let last = { key: "", d: -1 };
+  outer: while ((j < S.len.length || budget > 1e-6) && guard++ < 4000) {
+    if (fresh) {
+      // past the arc's end with range to spare (a boost): straight on
+      if (j >= S.len.length) { rem = Math.min(budget, 60); fresh = false; }
+      else { h += sign * S.turn[j]; rem = S.len[j]; fresh = false; }
+    }
     if (rem < 1e-9) { j++; fresh = true; continue; }
     const seg = gravity ? Math.min(rem, ctx.sub) : rem;
     let k = 1;
     if (gravity && (parent !== undefined || d >= Math.max(ctx.clear, (ink.grooveReach ?? 24) * 1.5))) {
-      const g = pull(ctx, pos, h, budget / ctx.total, seg);
+      const g = pull(ctx, pos, h, budget, seg);
       h += g.turn;
       if (g.riding) {
         k = g.own ? ink.grooveOwn ?? 1 : ink.grooveEnemy ?? 1;
@@ -334,6 +345,9 @@ function walk(ctx: Ctx, left: Left, pen: PenAt, budget: number, canSplit: boolea
       t0 = hit.t;
       const at = lerp(pos, nxt, hit.t);
       const sf = hit.s;
+      const who = sf.base !== undefined ? `b${sf.base}` : sf.stroke !== undefined ? `i${sf.stroke}` : sf.key;
+      if (who === last.key && Math.abs(d - last.d) < 1e-3) continue;
+      last = { key: who, d };
       const ev = (kind: TraceEvent["kind"], on: SurfKind, extra: Partial<TraceEvent> = {}) =>
         ctx.events.push({ kind, on, at, d, branch: idx, base: sf.base, edge: sf.edge, dir: h, ...extra });
       // carry on from `at` with a new heading: the rest of this step is still to go
@@ -499,7 +513,7 @@ export function trace(s: GameState, who: Player, from: Pt, arc: Pt[], shot: bool
     clear: Math.max(START_SKIP, R.ink.clear ?? 0),
     glance: R.bankGlance ?? 0.6,
     steps,
-    total,
+    vmax: Math.max(R.shoot.max, R.move.max),
     sub: SUB,
     rand: wob === undefined ? undefined : rng(wob),
   };
