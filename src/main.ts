@@ -317,7 +317,8 @@ function afterBase() {
 }
 
 function handOver() {
-  const turned = mode.kind === "pnp" && Math.abs(Math.cos(cam.tgt.rot - rotFor(s.current))) < 0.5;
+  // does the sheet need turning round to face whoever's go it is?
+  const turned = mode.kind === "pnp" && Math.cos(cam.tgt.rot - rotFor(s.current)) < 0.5;
   if (turned) {
     cam.overview();
     cam.turnTo(rotFor(s.current));
@@ -1013,6 +1014,7 @@ window.addEventListener("keydown", (e) => {
 
 let last = performance.now();
 const frameTimes: number[] = []; // raw ms between frames, for the dev perf probe
+const scriptTimes: number[] = []; // ms of main-thread script per rendered frame (drawing is recorded, not rastered)
 let wasLive = false;
 let lastCss = "";
 
@@ -1039,7 +1041,10 @@ function frame(now: number) {
     sfx.creak(p.power, Math.abs(wobble(aim, T)) * 12);
   }
   if (active || dirty) {
+    const t0 = performance.now();
     renderNow();
+    scriptTimes.push(performance.now() - t0);
+    if (scriptTimes.length > 240) scriptTimes.shift();
     dirty = false;
   }
 }
@@ -1142,13 +1147,29 @@ if (import.meta.env.DEV) {
     poke: () => { dirty = true; },
     frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view }; },
     frames: (reset = false) => {
-      const a = [...frameTimes].sort((x, y) => x - y);
-      if (reset) frameTimes.length = 0;
-      const q = (k: number) => a[Math.min(a.length - 1, Math.floor(a.length * k))] ?? 0;
-      return { n: a.length, mean: a.reduce((x, y) => x + y, 0) / (a.length || 1), p50: q(0.5), p95: q(0.95), max: a[a.length - 1] ?? 0 };
+      const stats = (src: number[]) => {
+        const a = [...src].sort((x, y) => x - y);
+        const q = (k: number) => a[Math.min(a.length - 1, Math.floor(a.length * k))] ?? 0;
+        return { n: a.length, mean: a.reduce((x, y) => x + y, 0) / (a.length || 1), p50: q(0.5), p95: q(0.95), max: a[a.length - 1] ?? 0 };
+      };
+      const r = { ...stats(frameTimes), script: stats(scriptTimes) };
+      if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
+      return r;
     },
     dbg, stageStats, cam, fx, inkTL, pageCanvas, ink: inkLib, INK, stage, canvas: over, renderNow, worldTransform, page, pen: PEN,
     start, showTitle, replay: () => replay(file(s, mode)), apply: (st: Step) => { apply(s, st); dirty = true; },
     unfile, file: () => file(s, mode), act: (f: Flick) => fire(f, 0.6, 0.3),
+    /** A whole seeded bot-v-bot war, filed in the drawer. Returns the record. */
+    fileWar: (seed = 7, maxTurns = 400) => {
+      const st = newGame(seed, pageStamp());
+      let k = seed;
+      while (st.phase === "setup") { const spot = botBase(st, (x, y) => !canPlaceBase(st, x, y), k++)!; apply(st, { t: "base", x: spot.x, y: spot.y }); }
+      while (st.phase === "play" && st.turn < maxTurns) apply(st, { t: "flick", f: botFlick(st, 1, k++) });
+      const r = file(st, { kind: "bot", level: 1 });
+      localStorage.setItem("pft:drawer", JSON.stringify(addToDrawer(drawer(), r)));
+      return r;
+    },
+    view: (r: Filed) => viewPage(r), replayRecord: (r: Filed) => replay(r),
+    resumeRecord: (r: Filed) => resume({ s: unfile(r), mode: r.mode }),
   };
 }

@@ -40,6 +40,29 @@ export function woodTexture(size = 512, seed = 5): HTMLCanvasElement {
   return c;
 }
 
+// The desk around the sheet, painted once in page units at low resolution:
+// walnut, and the sheet's soft shadow on it. One plain image draw per frame
+// instead of a transformed pattern fill (the wood sits in shadow and out of
+// focus, so its resolution never shows).
+export const DESK = { pad: 1400, S: 0.4 };
+export function deskTexture(pw: number, ph: number): HTMLCanvasElement {
+  const { pad, S } = DESK;
+  const c = document.createElement("canvas");
+  c.width = Math.round((pw + pad * 2) * S);
+  c.height = Math.round((ph + pad * 2) * S);
+  const g = c.getContext("2d")!;
+  const wood = g.createPattern(woodTexture(), "repeat")!;
+  wood.setTransform(new DOMMatrix().scale(1.5 * S));
+  g.fillStyle = wood;
+  g.fillRect(0, 0, c.width, c.height);
+  // the sheet's shadow, thrown down and to the right of an up-left lamp
+  const sh = sheetShadow(pw, ph);
+  g.globalAlpha = 0.6;
+  g.drawImage(sh, (pad - SHADOW_PAD + 6) * S, (pad - SHADOW_PAD + 10) * S, (pw + SHADOW_PAD * 2) * S, (ph + SHADOW_PAD * 2) * S);
+  g.globalAlpha = 1;
+  return c;
+}
+
 // A soft, feathered rectangle: the shadow a sheet of paper throws on the desk.
 // Drawn small and stretched: blur is free at low resolution.
 export function sheetShadow(w: number, h: number): HTMLCanvasElement {

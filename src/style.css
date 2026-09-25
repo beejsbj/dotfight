@@ -54,7 +54,7 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .tag.on, .tag.won { opacity: 1; }
 .tag.on[data-p="0"], .tag.won[data-p="0"] { transform: rotate(-1.6deg) translateY(2px) scale(1.04); }
 .tag.on[data-p="1"], .tag.won[data-p="1"] { transform: rotate(1.3deg) translateY(2px) scale(1.04); }
-.tag .name { font-family: var(--hand); font-weight: 700; font-size: 25px; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag .name { font-family: var(--hand); font-weight: 700; font-size: clamp(19px, 6vw, 25px); padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tag .count { font-family: var(--hand); font-size: 17px; color: #5a534b; margin-top: 1px; white-space: nowrap; }
 /* the ink left in that player's pen */
 .tag::after {

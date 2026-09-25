@@ -74,7 +74,10 @@ export class Camera {
 
   /** Stand up: the whole page, flat. */
   overview(rot = this.tgt.rot) {
-    this.tgt = { x: RULES.pageW / 2, y: RULES.pageH / 2, m: 1, rot, tilt: 0, fy: this.fitFy };
+    // the same facing, reached the short way round from wherever we are
+    const TAU = Math.PI * 2;
+    const r = rot + Math.round((this.cur.rot - rot) / TAU) * TAU;
+    this.tgt = { x: RULES.pageW / 2, y: RULES.pageH / 2, m: 1, rot: r, tilt: 0, fy: this.fitFy };
   }
   /** Sit down behind a soldier: low, close, the page running away from you. */
   sit(at: Pt, m = 2.3, tilt = 0.62, fy = 0.66) {
@@ -109,7 +112,13 @@ export class Camera {
 
   /** Ease toward the target. Returns true while anything is still moving. */
   tick(dt: number) {
-    if (this.settled) { this.cur = { ...this.tgt }; return false; }
+    if (this.settled) {
+      // keep the page's turn in [0, 2pi) so it never winds up over a long war
+      const TAU = Math.PI * 2, k = Math.floor(this.tgt.rot / TAU) * TAU;
+      this.tgt.rot -= k;
+      this.cur = { ...this.tgt };
+      return false;
+    }
     const s = dt / 1000;
     const k = (r: number) => 1 - Math.exp(-r * s);
     const a = this.cur, b = this.tgt;

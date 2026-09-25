@@ -58,7 +58,7 @@ export async function placeAt(T, x, y) {
 }
 
 // Flick soldier `id` toward world point (tx, ty) with a pull of `px` screen px.
-export async function flickAt(T, id, tx, ty, px = 110, { kind = "shoot", hold = 200 } = {}) {
+export async function flickAt(T, id, tx, ty, px = 110, { kind = "shoot", hold = 200, shot } = {}) {
   await T.page.evaluate((k) => document.querySelector(`#kind [data-kind="${k}"]`)?.click(), kind);
   const me = await T.page.evaluate((id) => window.pft.s.soldiers[id], id);
   const a = await T.world(me.x, me.y);
@@ -69,5 +69,10 @@ export async function flickAt(T, id, tx, ty, px = 110, { kind = "shoot", hold = 
   const ang = Math.atan2(t.y - b.y, t.x - b.x);
   // pull from a comfortable spot low on the screen
   const sx = 195, sy = 700;
-  await T.drag(sx, sy, sx - Math.cos(ang) * px, sy - Math.sin(ang) * px, { hold: 60, ms: hold });
+  await T.drag(sx, sy, sx - Math.cos(ang) * px, sy - Math.sin(ang) * px, { hold: 60, ms: hold, release: !shot });
+  if (shot) {
+    await T.page.waitForTimeout(350);
+    await T.shot(shot);
+    await T.touch("touchEnd", []);
+  }
 }

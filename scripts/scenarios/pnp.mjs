@@ -33,7 +33,7 @@ export default async function (T, out) {
         foes.sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y));
         return { me, foe: foes[0] };
       });
-      await flickAt(T, me.id, foe.x, foe.y, t === 2 ? 70 : 115, { kind: t === 2 ? "move" : "shoot" });
+      await flickAt(T, me.id, foe.x, foe.y, t === 2 ? 70 : 115, { kind: t === 2 ? "move" : "shoot", shot: t === 1 ? `${out}/p3b-red-aim.png` : t === 2 ? `${out}/p3c-move-aim.png` : undefined });
       await page.waitForTimeout(250);
       if (t === 0) await T.shot(`${out}/p3-ink.png`);
       await idle(T);
@@ -64,20 +64,20 @@ export default async function (T, out) {
     await page.waitForSelector("#sheet:not([hidden])", { timeout: 20000 });
     await page.waitForTimeout(600);
     await T.shot(`${out}/p6-over.png`);
-    await page.getByText("look at it").click();
+    await page.click("[data-a=look]");
     await page.waitForTimeout(600);
     await T.shot(`${out}/p7-page.png`);
     // the drawer
     await page.click("#menu-btn");
     await page.waitForTimeout(900);
     await T.shot(`${out}/p8-title-after.png`);
-    await page.getByText(/the drawer/).click();
+    await page.click("[data-a=drawer]");
     await page.waitForTimeout(700);
     await T.shot(`${out}/p9-drawer.png`);
     await page.click(".pages .page");
     await page.waitForTimeout(800);
     await page.evaluate(() => { window.pft.speed = 3; });
-    await page.getByText("replay").click();
+    await page.click("[data-v=replay]");
     await page.waitForTimeout(2500);
     await T.shot(`${out}/pa-replay.png`);
     await log("replaying");

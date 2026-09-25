@@ -6,10 +6,10 @@ import type { GameState, Pt } from "./game";
 import { INK, handText, inkFlick, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { farColour, lightAt, lightGradient, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, pendingKills, PageLayer, SETTLED, type Ink, type Signature } from "./page";
-import { drawPen, drawPenShadow, type PenPose } from "./pen";
-import type { View } from "./projection";
+import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
+import { project, type View } from "./projection";
 import { RULES } from "./rules";
-import { SHADOW_PAD, sheetShadow, woodTexture } from "./textures";
+import { DESK, deskTexture } from "./textures";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -45,9 +45,7 @@ export interface Frame {
   age: number;
 }
 
-let wood: CanvasPattern | null = null;
-let woodImg: HTMLCanvasElement | null = null;
-let shadow: HTMLCanvasElement | null = null;
+let desk: HTMLCanvasElement | null = null;
 
 export const page = new PageLayer();
 /** Dev switches for profiling layers. */
@@ -60,50 +58,60 @@ export function worldTransform(g: Ctx, v: View, dpr: number) {
   g.setTransform(dpr * c, dpr * s, -dpr * s, dpr * c, dpr * (lx - (c * v.x - s * v.y)), dpr * (ly - (s * v.x + c * v.y)));
 }
 
-// The lit desk is composited once and reused while nothing under the light
-// changes: aiming, waiting and the bot's thinking then cost one image copy
-// plus the pencil and the pen. Only a moving camera (or lamp, or ink being
-// drawn on) pays for the full stack.
+// The lit desk (wood, sheet, dried ink, lamp) is composited once and reused
+// while the camera and lamp are still. Everything that changes (living
+// soldiers, ink being drawn on) is multiplied on top afterwards: paper, ink
+// and light are all multiplied, and multiplying is order-free, so the result
+// is the same as lighting it all together. Aiming, the bot's turn, and a
+// flick watched from a still camera then cost one image copy plus the ink.
 const lit = { c: null as HTMLCanvasElement | null, key: "" };
 export const stageStats = { full: 0, cached: 0 };
 
 export function renderStage(g: Ctx, f: Frame, still: boolean) {
   const { view: v, lamp, dpr, s } = f;
   const ink = f.ink ?? SETTLED;
-  const grew = page.sync(s, ink, pageState.S, pageState.epoch, f.sig);
+  const synced = page.sync(s, ink, pageState.S, pageState.epoch, f.sig);
   const W = g.canvas.width, H = g.canvas.height;
-  const canCache = still && !ink.live.size && !f.mover;
-  if (canCache) {
-    const alive = s.soldiers.reduce((a, x) => a + (x.alive ? x.x * 3 + x.y : 0), 0);
-    const key = [v.x, v.y, v.z, v.rot, v.tilt, v.px, v.py, lamp.x, lamp.y, lamp.h, lamp.on, lamp.dawn, f.age, s.marks.length, s.bases.length, alive, page.isSigned, pageState.epoch, W, H].join("|");
+  if (still) {
+    const key = [v.x, v.y, v.z, v.rot, v.tilt, v.px, v.py, lamp.x, lamp.y, lamp.h, lamp.on, lamp.dawn, f.age, pageState.epoch, W, H].join("|");
     if (!lit.c) lit.c = document.createElement("canvas");
     if (lit.c.width !== W || lit.c.height !== H) { lit.c.width = W; lit.c.height = H; lit.key = ""; }
-    if (lit.key !== key || grew) {
-      drawLitDesk(lit.c.getContext("2d")!, f, ink);
+    const lg = lit.c.getContext("2d")!;
+    if (lit.key !== key || synced.fresh) {
+      drawLitDesk(lg, f, true);
       lit.key = key;
       stageStats.full++;
-    } else stageStats.cached++;
+    } else {
+      if (synced.added.length) {
+        // freshly dried marks: multiply them onto the lit copy too
+        worldTransform(lg, v, dpr);
+        lg.globalCompositeOperation = "multiply";
+        for (const draw of synced.added) draw(lg);
+        lg.globalCompositeOperation = "source-over";
+      }
+      stageStats.cached++;
+    }
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalCompositeOperation = "source-over";
     g.globalAlpha = 1;
     g.drawImage(lit.c, 0, 0);
   } else {
     lit.key = "";
-    drawLitDesk(g, f, ink);
+    drawLitDesk(g, f, false);
     stageStats.full++;
   }
   worldTransform(g, v, dpr);
+  // living soldiers, and anything still being drawn on
+  g.globalCompositeOperation = "multiply";
+  if (dbg.live) drawLive(g, f, ink);
+  if (f.pen) drawPenShadow(g, f.pen, lamp);
+  g.globalCompositeOperation = "source-over";
   drawGuides(g, f);
-  if (f.pen) {
-    g.globalCompositeOperation = "multiply";
-    drawPenShadow(g, f.pen, lamp);
-    g.globalCompositeOperation = "source-over";
-  }
   // fresh ink still wet: it catches the lamp
   if (dbg.sheen) drawSheen(g, f);
 }
 
-function drawLitDesk(g: Ctx, f: Frame, ink: Ink) {
+function drawLitDesk(g: Ctx, f: Frame, hq: boolean) {
   const { view: v, lamp, dpr } = f;
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.globalCompositeOperation = "source-over";
@@ -112,30 +120,15 @@ function drawLitDesk(g: Ctx, f: Frame, ink: Ink) {
   const { pageW: pw, pageH: ph } = RULES;
   const BIG = 4000;
 
-  // the desk and the sheet's shadow, only where the sheet isn't
-  g.save();
-  g.beginPath();
-  g.rect(-BIG, -BIG, pw + BIG * 2, ph + BIG * 2);
-  g.rect(0, 0, pw, ph);
-  g.clip("evenodd");
-  woodImg ??= woodTexture();
-  wood ??= g.createPattern(woodImg, "repeat");
-  if (wood && dbg.wood) {
-    wood.setTransform(new DOMMatrix().scale(1.5));
-    g.fillStyle = wood;
-  } else g.fillStyle = "#4a3426";
+  // the desk (with the sheet's shadow on it); past its edge the room is dark
+  desk ??= deskTexture(pw, ph);
+  g.fillStyle = "#1a120c";
   g.fillRect(-BIG, -BIG, pw + BIG * 2, ph + BIG * 2);
-  if (dbg.shadow) {
-    shadow ??= sheetShadow(pw, ph);
-    const away = Math.atan2(ph / 2 - lamp.y, pw / 2 - lamp.x);
-    g.globalAlpha = 0.55;
-    g.drawImage(shadow, -SHADOW_PAD + Math.cos(away) * 10, -SHADOW_PAD + Math.sin(away) * 10, pw + SHADOW_PAD * 2, ph + SHADOW_PAD * 2);
-    g.globalAlpha = 1;
-  }
-  g.restore();
+  if (dbg.wood) g.drawImage(desk, -DESK.pad, -DESK.pad, pw + DESK.pad * 2, ph + DESK.pad * 2);
 
-  // the page, and everything dry on it
-  g.imageSmoothingQuality = dbg.hq ? "high" : "low";
+  // the page, and everything dry on it. Moving frames can resample cheaply:
+  // motion hides it, and still frames are cached at full quality.
+  g.imageSmoothingQuality = dbg.hq && hq ? "high" : "low";
   if (dbg.page) g.drawImage(page.c!, 0, 0, pw, ph);
 
   // the paper yellows as the war goes on
@@ -144,8 +137,6 @@ function drawLitDesk(g: Ctx, f: Frame, ink: Ink) {
     g.fillStyle = `rgba(236, 214, 170, ${0.55 * f.age})`;
     g.fillRect(0, 0, pw, ph);
   }
-  // living soldiers, and anything still being drawn on
-  if (dbg.live) drawLive(g, f, ink);
 
   // the lamp
   g.fillStyle = lightGradient(g, lamp);
@@ -221,11 +212,13 @@ function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
   g.globalAlpha = 1;
 }
 
+const aimShow = (a: Aim) => (a.kind === "move" ? a.reach * 0.55 : Math.min(a.reach, 110 + a.reach * 0.2));
+
 function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   const me = s.soldiers[a.soldierId];
   const dx = Math.cos(a.angle), dy = Math.sin(a.angle);
   // only the first stretch is pencilled in: you still have to judge the rest
-  const show = a.kind === "move" ? a.reach * 0.55 : Math.min(a.reach, 110 + a.reach * 0.2);
+  const show = aimShow(a);
   if (a.power <= 0) return;
   // the cone of doubt, faint graphite
   g.fillStyle = "rgba(60,58,56,0.09)";
@@ -318,14 +311,36 @@ function edgeFade(g: Ctx, f: Frame) {
 
 // --- overlay: the standing pen -------------------------------------------------
 
-let overlayInked = true;
+// Only the pen's own box is cleared and redrawn, not the whole screen.
+let inked: { x: number; y: number; w: number; h: number } | null = { x: 0, y: 0, w: 1e5, h: 1e5 };
 export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: number) {
-  if (!f.pen && !overlayInked) return; // nothing standing, nothing to clear
+  if (!f.pen && !inked) return; // nothing standing, nothing to clear
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, W, H);
-  overlayInked = !!f.pen;
+  if (inked) g.clearRect(inked.x, inked.y, inked.w, inked.h);
+  inked = null;
   if (!f.pen) return;
+  const box = penBox(f.pen, f.view, W, H);
+  if (!box) return;
+  inked = box;
+  g.save();
+  g.beginPath();
+  g.rect(box.x, box.y, box.w, box.h);
+  g.clip();
   drawPen(g, f.pen, f.view);
+  // the pencil guide, seen through the clear barrel
+  if (f.aim && f.aim.power > 0) {
+    const me = f.s.soldiers[f.aim.soldierId];
+    const show = aimShow(f.aim);
+    const dx = Math.cos(f.aim.angle), dy = Math.sin(f.aim.angle);
+    g.strokeStyle = "rgba(58, 56, 54, 0.5)";
+    g.lineCap = "round";
+    const step = 14;
+    for (let d = 8; d < show; d += step * 1.8) {
+      const a = project(f.view, me.x + dx * d, me.y + dy * d), b = project(f.view, me.x + dx * Math.min(show, d + step), me.y + dy * Math.min(show, d + step));
+      g.lineWidth = Math.max(1.2, 2.2 * a.k);
+      g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+    }
+  }
   // the pen stands in the same light as everything else
   const lit = lightAt(f.lamp, f.pen.x, f.pen.y);
   g.globalCompositeOperation = "source-atop";
@@ -334,4 +349,15 @@ export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: numbe
   g.fillStyle = `rgba(255, 196, 120, ${0.1 * f.lamp.on * (1 - f.lamp.dawn)})`;
   g.fillRect(0, 0, W, H);
   g.globalCompositeOperation = "source-over";
+  g.restore();
+}
+
+// The pen's bounding box on screen, padded, clamped to the screen.
+function penBox(p: PenPose, v: View, W: number, H: number) {
+  const pts = [0, 0.5, 1].map((t) => project(v, p.x + p.ax * PEN.L * t, p.y + p.ay * PEN.L * t, p.h + p.az * PEN.L * t));
+  const pad = Math.max(...pts.map((q) => q.k)) * PEN.R * 2.5 + 6;
+  const x0 = Math.max(0, Math.min(...pts.map((q) => q.x)) - pad), x1 = Math.min(W, Math.max(...pts.map((q) => q.x)) + pad);
+  const y0 = Math.max(0, Math.min(...pts.map((q) => q.y)) - pad), y1 = Math.min(H, Math.max(...pts.map((q) => q.y)) + pad);
+  if (x1 <= x0 || y1 <= y0) return null;
+  return { x: Math.floor(x0), y: Math.floor(y0), w: Math.ceil(x1 - x0) + 1, h: Math.ceil(y1 - y0) + 1 };
 }

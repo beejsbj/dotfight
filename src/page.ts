@@ -128,29 +128,37 @@ export class PageLayer {
   hasDead(id: number) { return this.dead.has(id); }
   get isSigned() { return this.signed; }
 
-  /** Bring the cached page up to date. `S` is page-canvas px per world unit. */
+  /**
+   * Bring the cached page up to date. `S` is page-canvas px per world unit.
+   * Returns whether the page was redrawn from scratch, and the marks that
+   * were added (as draw calls in page units), so a caller holding its own
+   * copy of the page can multiply the same marks onto it.
+   */
   sync(s: GameState, ink: Ink, S: number, epoch: number, sig?: Signature) {
     const fresh = !this.c || this.src !== s || this.S !== S || this.epoch !== epoch || s.marks.length < this.marks.filter(Boolean).length;
     if (fresh) this.rebuild(s, S, epoch);
-    const g = this.g!;
-    g.setTransform(S, 0, 0, S, 0, 0);
-    g.globalCompositeOperation = "multiply";
+    const added: ((g: Ctx) => void)[] = [];
     for (const b of s.bases) {
-      const k = `b${b.id}`;
-      if (!this.bases.has(b.id) && !ink.live.has(k)) { drawBase(g, b); this.bases.add(b.id); }
+      if (!this.bases.has(b.id) && !ink.live.has(`b${b.id}`)) { added.push((g) => drawBase(g, b)); this.bases.add(b.id); }
     }
     s.marks.forEach((m, i) => {
-      if (!this.marks[i] && !ink.live.has(`m${i}`)) { drawMark(g, m); this.marks[i] = true; }
+      if (!this.marks[i] && !ink.live.has(`m${i}`)) { added.push((g) => drawMark(g, m)); this.marks[i] = true; }
     });
     const pending = pendingKills(s, ink);
     for (const x of s.soldiers) {
       if (x.alive || this.dead.has(x.id) || ink.live.has(`d${x.id}`) || pending.has(`${x.x},${x.y}`)) continue;
-      drawDot(g, x, 0.8);
+      added.push((g) => drawDot(g, x, 0.8));
       this.dead.add(x.id);
     }
-    if (sig && !this.signed && !ink.live.has("sign")) { drawSignature(g, sig); this.signed = true; }
-    g.globalCompositeOperation = "source-over";
-    return fresh;
+    if (sig && !this.signed && !ink.live.has("sign")) { added.push((g) => drawSignature(g, sig)); this.signed = true; }
+    if (added.length) {
+      const g = this.g!;
+      g.setTransform(S, 0, 0, S, 0, 0);
+      g.globalCompositeOperation = "multiply";
+      for (const draw of added) draw(g);
+      g.globalCompositeOperation = "source-over";
+    }
+    return { fresh, added };
   }
 
   private rebuild(s: GameState, S: number, epoch: number) {
