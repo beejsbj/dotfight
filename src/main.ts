@@ -66,16 +66,24 @@ function resize() {
   dpr = Math.min(3, window.devicePixelRatio || 1);
   W = window.innerWidth;
   H = window.innerHeight;
-  canvas.width = Math.round(W * dpr);
-  canvas.height = Math.round(H * dpr);
+  const cw = Math.round(W * dpr), ch = Math.round(H * dpr);
+  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
   const top = $("#top").getBoundingClientRect().bottom;
   const bottom = $("#bottom").getBoundingClientRect().top;
+  const vh = Math.max(100, bottom - top);
+  if (cam.vy === top && cam.vh === vh && cam.vw === W) return void (dirty = true);
   const wasFit = Math.abs(cam.z - cam.fitZ) < 1e-3;
-  cam.setViewport(0, top, W, Math.max(100, bottom - top));
+  cam.setViewport(0, top, W, vh);
   if (wasFit || cam.z < cam.fitZ) cam.fit(); else cam.clamp();
   dirty = true;
 }
 window.addEventListener("resize", resize);
+// the HUD can change height (a two-line status on a narrow phone): re-frame the page
+new ResizeObserver(() => resize()).observe($("#bottom"));
+new ResizeObserver(() => resize()).observe($("#top"));
+// iOS only unlocks audio inside some gestures; try on all of them
+for (const ev of ["touchend", "click", "keydown"]) window.addEventListener(ev, sfx.unlock, { passive: true });
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) fx.speed = 0.35;
 
 // --- hud --------------------------------------------------------------------
 
