@@ -244,12 +244,13 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   g.rotate(-t.rot);
   const pencil = "rgba(52, 50, 48, 0.85)";
   if (t.kind === "place") {
-    handText(g, "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.3, weight: 400, rot: -0.03, align: "center" });
-    handText(g, "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.3 - 0.4, weight: 400, rot: -0.03, align: "center" });
+    handText(g, "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
+    handText(g, "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
   } else {
-    pencilArrow(g, { x: 18, y: 26 }, { x: 44, y: 150 }, 0.2, 77, 2.4, Math.min(1, p * 1.6), 0.9);
-    handText(g, "pull back from anywhere,", 64, 128, 38, pencil, { upTo: p * 2 - 0.5, weight: 400, rot: -0.05 });
-    handText(g, "then let go", 76, 168, 38, pencil, { upTo: p * 2 - 1, weight: 400, rot: -0.05 });
+    // under the soldier, toward you: the way your thumb pulls
+    pencilArrow(g, { x: 6, y: 34 }, { x: 14, y: 128 }, 0.12, 77, 2.4, Math.min(1, p * 1.6), 0.9);
+    handText(g, "pull back from anywhere,", 0, 176, 32, pencil, { upTo: p * 2 - 0.5, weight: 400, rot: -0.03, align: "center" });
+    handText(g, "then let go", 0, 210, 32, pencil, { upTo: p * 2 - 1, weight: 400, rot: -0.03, align: "center" });
   }
   g.restore();
 }

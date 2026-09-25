@@ -54,7 +54,7 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .tag.on, .tag.won { opacity: 1; }
 .tag.on[data-p="0"], .tag.won[data-p="0"] { transform: rotate(-1.6deg) translateY(2px) scale(1.04); }
 .tag.on[data-p="1"], .tag.won[data-p="1"] { transform: rotate(1.3deg) translateY(2px) scale(1.04); }
-.tag .name { font-family: var(--hand); font-weight: 700; font-size: clamp(19px, 6vw, 25px); padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag .name { font-family: var(--hand); font-weight: 700; font-size: clamp(18px, 5.6vw, 25px); padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tag .count { font-family: var(--hand); font-size: 17px; color: #5a534b; margin-top: 1px; white-space: nowrap; }
 /* the ink left in that player's pen */
 .tag::after {
@@ -237,15 +237,22 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 
 /* short landscape phones: the page is portrait, so keep the chrome thin */
 @media (orientation: landscape) and (max-height: 500px) {
+  #top { justify-content: center; }
+  .tag { flex: 0 1 240px; }
   .tag .name { font-size: 20px; }
   .tag .count { display: none; }
   .tab { width: 38px; height: 38px; }
   #status { font-size: 17px; margin-bottom: 4px; }
-  #status::after { content: " · best played upright"; opacity: .6; }
+  #status:not(:empty)::after { content: " · best played upright"; opacity: .6; }
   #kind { width: min(420px, 100%); margin: 0 auto; }
   #kind button { height: 44px; }
   #kind button b { font-size: 24px; }
   #kind button i { display: none; }
+  /* the cover opens out: label on the left, the slip beside it */
+  .book { width: min(680px, 100%); display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; padding: 18px 16px 16px 28px; }
+  .label h1 { font-size: 36px; }
+  .menu { margin: 0; }
+  .menu .ink { font-size: 26px; }
 }
 
 @keyframes fade { from { opacity: 0; } }

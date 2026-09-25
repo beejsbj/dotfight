@@ -11,7 +11,7 @@ if (!scenario) throw new Error("usage: node scripts/playtest.mjs <scenario> [url
 const url = process.argv[3] ?? "http://localhost:5173/";
 const out = process.argv[4] ?? "/tmp/pft-playtest";
 mkdirSync(out, { recursive: true });
-const T = await phone({ url, w: +(process.env.W ?? 390), h: +(process.env.H ?? 844), dpr: +(process.env.DPR ?? 3) });
+const T = await phone({ url, w: +(process.env.W ?? 390), h: +(process.env.H ?? 844), dpr: +(process.env.DPR ?? 3), taught: process.env.TAUGHT !== "0" });
 try {
   const mod = await import(`./scenarios/${scenario}.mjs`);
   await mod.default(T, out);
