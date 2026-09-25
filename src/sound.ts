@@ -40,8 +40,10 @@ export function scratch(dur: number, gain = 0.5, pitch = 2600, delay = 0) {
 }
 
 export const tap = () => scratch(0.05, 0.35, 3800);
-export const cross = (delay = 0) => { scratch(0.07, 0.45, 3000, delay); scratch(0.07, 0.4, 3300, delay + 0.09); };
-export const circle = () => scratch(0.5, 0.3, 2200);
+export const cross = (delay = 0, gain = 1) => { scratch(0.07, 0.45 * gain, 3000, delay); scratch(0.07, 0.4 * gain, 3300, delay + 0.09); };
+export const circle = () => scratch(0.38, 0.3, 2200);
+// a dot jotted with the ballpoint: a short, bright tick
+export const dot = (delay = 0) => scratch(0.035, 0.22, 4000 + Math.random() * 700, delay);
 
 export function buzz(pattern: number | number[]) {
   navigator.vibrate?.(pattern);

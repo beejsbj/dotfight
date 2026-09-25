@@ -12,6 +12,8 @@ import {
 import { INK } from "./ink";
 import { RULES } from "./rules";
 import * as sfx from "./sound";
+import { jotOrder } from "./hand";
+import { Timeline, reachFraction } from "./timeline";
 import { Camera, render, type Overlay } from "./view";
 
 // --- state ------------------------------------------------------------------
@@ -31,7 +33,9 @@ let selected: number | undefined;
 let aim: Aim | null = null;
 let botAim: { soldierId: number; angle: number; power: number } | null = null;
 let ghost: Overlay["ghost"];
-let anim: (NonNullable<Overlay["anim"]> & { t0: number; dur: number; done: () => void }) | null = null;
+// marks being drawn on, and the flick currently resolving
+const fx = new Timeline();
+let anim: { key: string; path: Pt[]; mover?: number; owner: Player; power: number; t0: number; end: number; done: () => void } | null = null;
 let busy = false; // a flick is resolving or the bot is thinking
 let lastNote = "";
 let gen = 0; // bumps on every new/resumed game so stale bot timers stand down
@@ -152,6 +156,7 @@ function start(m: Mode) {
   selected = undefined;
   aim = botAim = null;
   anim = null;
+  fx.clear();
   busy = false;
   lastNote = "";
   save();
@@ -165,6 +170,7 @@ function resume(v: Save) {
   gen++;
   busy = false;
   anim = botAim = null;
+  fx.clear();
   s = v.s;
   mode = v.mode;
   selected = undefined;
@@ -190,7 +196,7 @@ function next() {
       if (spot) drawBase(spot.x, spot.y);
       busy = false;
       next();
-    }), 550);
+    }), 450 + Math.max(0, fx.end(performance.now()) - performance.now()));
     return;
   }
   setTimeout(live(() => {
@@ -209,33 +215,67 @@ function next() {
       botAim = { soldierId: f.soldierId, angle: f.angle, power: Math.max(0, Math.min(1, power)) * p };
       dirty = true;
       if (p < 1) requestAnimationFrame(charge);
-      else setTimeout(live(() => { botAim = null; fire(f); }), 120);
+      else setTimeout(live(() => { const pw = botAim?.power ?? 0; botAim = null; fire(f, pw); }), 120);
     });
     setTimeout(charge, 350);
   }), 450);
 }
 
+// The circle goes round, then the soldiers are jotted in, one tap each.
 function drawBase(x: number, y: number) {
-  placeBase(s, x, y);
+  const b = placeBase(s, x, y);
+  const now = performance.now();
+  fx.add(`b${b.id}`, now, 0, 380, "out");
   sfx.circle();
   sfx.buzz(10);
+  const dots = s.soldiers.slice(-RULES.soldiersPerBase);
+  jotOrder(dots).forEach((i, k) => {
+    const delay = 430 + k * 62;
+    fx.add(`d${dots[i].id}`, now, delay, 90, "out");
+    sfx.dot((delay * fx.speed) / 1000);
+  });
   save();
   if (s.phase === "play") lastNote = "";
 }
 
-function fire(f: Flick) {
-  const turn = s.turn;
+function nearestIndex(pts: Pt[], p: Pt) {
+  let bi = 0, bd = Infinity;
+  pts.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; bi = i; } });
+  return bi;
+}
+
+// `power` is how hard the pen was pulled back: it springs forward on release.
+function fire(f: Flick, power: number) {
   const who = s.current;
+  const first = s.marks.length; // act() appends the stroke, then its crosses
   const o = act(s, f);
   save();
   selected = undefined;
   aim = null;
   busy = true;
+  const now = performance.now();
   const dur = Math.min(650, Math.max(220, 160 + pathLen(o.path) * 0.3));
+  const n = o.path.length - 1;
+  fx.add(`m${first}`, now, 0, dur, "out2");
+  // each cross lands when the ink reaches it: two quick strokes
+  for (let i = first + 1; i < s.marks.length; i++) {
+    const m = s.marks[i];
+    if (m.t !== "cross") continue;
+    const delay = m.kind === "kill" ? reachFraction(nearestIndex(o.path, m), n) * dur
+      : m.kind === "lost" ? dur + 40 : dur + 140;
+    fx.add(`m${i}`, now, delay, m.kind === "moved" ? 150 : 170);
+    const at = delay * fx.speed;
+    if (m.kind === "moved") sfx.cross(at / 1000, 0.5);
+    else {
+      sfx.cross(at / 1000 + 0.02);
+      setTimeout(() => sfx.buzz([18, 30, 18]), at);
+    }
+  }
+  fx.add("pen", now, dur, 300, "out"); // then the pen lifts off the page
   anim = {
-    turn, p: 0, t0: performance.now(), dur,
+    key: `m${first}`, path: o.path, owner: who, power, t0: now,
     mover: f.kind === "move" ? f.soldierId : undefined,
-    path: o.path,
+    end: fx.end(now) + 120 * fx.speed,
     done: () => {
       anim = null;
       busy = false;
@@ -247,16 +287,8 @@ function fire(f: Flick) {
       else next();
     },
   };
-  sfx.scratch(dur / 1000 + 0.05, f.kind === "shoot" ? 0.6 : 0.45);
+  sfx.scratch((dur * fx.speed) / 1000 + 0.05, f.kind === "shoot" ? 0.6 : 0.45);
   sfx.buzz(12);
-  o.killed.forEach((id, i) => {
-    const v = s.soldiers[id];
-    let k = 0, bd = Infinity;
-    o.path.forEach((q, j) => { const d = Math.hypot(q.x - v.x, q.y - v.y); if (d < bd) { bd = d; k = j; } });
-    const at = (k / (o.path.length - 1)) * dur;
-    sfx.cross(at / 1000 + 0.02);
-    setTimeout(() => sfx.buzz([18, 30, 18]), at + i);
-  });
   // pull back to see what the ink did
   if (settings.closeUp) setTimeout(() => cam.fit(true), 60);
   hud();
@@ -517,8 +549,9 @@ function up(e: PointerEvent) {
     const tapped = Math.hypot(p.x - g.sx, p.y - g.sy) < TAP;
     if (aim && e.type === "pointerup") {
       const f = release(aim, performance.now());
+      const pw = pull(aim).power;
       aim = null;
-      if (f && canAct(s, f.soldierId)) fire(f);
+      if (f && canAct(s, f.soldierId)) fire(f, pw);
     } else if (tapped && g.tapOn === undefined) {
       selected = undefined; // tap on empty paper puts the pen down
     }
@@ -568,26 +601,45 @@ window.addEventListener("keydown", (e) => {
 
 // --- frame ------------------------------------------------------------------
 
+let wasLive = false;
 function frame(now: number) {
   // schedule first: one bad frame must never stop the game
   requestAnimationFrame(frame);
   let active = cam.tick(now);
-  if (anim) {
-    // rAF's timestamp can predate the flick by a few ms, so clamp at 0 too
-    anim.p = Math.min(1, Math.max(0, (now - anim.t0) / anim.dur));
-    active = true;
-    if (anim.p >= 1) { const done = anim.done; anim.p = 1; render(ctx, cam, s, overlay(now), W, H, dpr); done(); }
-  }
-  if (aim || botAim) active = true;
+  if (anim && now >= anim.end) { const done = anim.done; anim = null; dirty = true; done(); }
+  const live = fx.end(now) > now;
+  if (live || wasLive || anim || aim || botAim) active = true; // one more frame once the ink settles
+  wasLive = live;
   if (active || dirty) {
     render(ctx, cam, s, overlay(now), W, H, dpr);
     dirty = false;
   }
 }
 
+// where the head of a line is at progress p, and which way it is going
+function headAt(pts: Pt[], p: number) {
+  const n = pts.length - 1, h = Math.min(n, Math.max(0, p * n));
+  const i = Math.min(n - 1, Math.floor(h)), f = h - i;
+  const a = pts[i], b = pts[i + 1];
+  return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, angle: Math.atan2(b.y - a.y, b.x - a.x) };
+}
+
 function overlay(now: number): Overlay {
-  const o: Overlay = { selected, ghost };
-  if (anim) o.anim = { turn: anim.turn, p: 1 - Math.pow(1 - anim.p, 2), mover: anim.mover, path: anim.path };
+  const o: Overlay = { selected, ghost, ink: { p: (k) => fx.p(k, now), live: fx.live(now) } };
+  if (anim) {
+    const sp = fx.p(anim.key, now);
+    const h = headAt(anim.path, sp);
+    if (anim.mover !== undefined && sp < 1) o.mover = { id: anim.mover, at: h };
+    const lift = fx.p("pen", now);
+    if (lift < 1) {
+      // the pen skids along with its ink, then comes up off the page
+      const drift = lift * 22;
+      o.pen = {
+        x: h.x + Math.cos(h.angle) * drift, y: h.y + Math.sin(h.angle) * drift, angle: h.angle,
+        pull: anim.power * Math.max(0, 1 - (now - anim.t0) / 90), lift, owner: anim.owner,
+      };
+    }
+  }
   if (aim) {
     const p = pull(aim);
     o.aim = {
@@ -610,4 +662,4 @@ requestAnimationFrame(frame);
 showTitle();
 
 // dev-only handle for scripted playtests
-if (import.meta.env.DEV) (window as unknown as { pft: object }).pft = { get s() { return s; }, cam };
+if (import.meta.env.DEV) (window as unknown as { pft: object }).pft = { get s() { return s; }, cam, fx };

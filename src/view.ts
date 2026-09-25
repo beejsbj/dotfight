@@ -1,7 +1,7 @@
 // Camera and page rendering. The page is redrawn from state every frame it
 // changes; marks are seeded so it looks the same every time.
 
-import { pointAlong, type GameState, type Pt } from "./game";
+import { type GameState, type Player, type Pt } from "./game";
 import { INK, drawPen, inkCircle, inkCross, inkDot, inkFlick, paperGrain, pencilLine } from "./ink";
 import { RULES } from "./rules";
 
@@ -65,31 +65,63 @@ export class Camera {
   }
 }
 
+// How far along each mark is being drawn. Keys: `b<id>` base circle,
+// `d<soldier>` a soldier's dot being jotted, `m<index>` a mark.
+export interface Ink {
+  p(key: string): number; // 0..1; anything not scheduled is settled (1)
+  live: Set<string>; // keys still being drawn: kept out of the settled layer
+}
+
+export interface Pen { x: number; y: number; angle: number; pull: number; lift: number; owner: Player }
+
 export interface Overlay {
   selected?: number;
   aim?: { soldierId: number; angle: number; power: number; spread: number; reach: number };
-  anim?: { turn: number; p: number; mover?: number; path?: Pt[] }; // p: 0..1 progress of the latest stroke
   ghost?: { x: number; y: number; ok: boolean }; // base placement preview
+  ink?: Ink;
+  mover?: { id: number; at: Pt }; // a moving soldier rides the head of its own ink
+  pen?: Pen; // the pen after release: riding the ink, then lifting away
 }
 
+const SETTLED: Ink = { p: () => 1, live: new Set() };
 let grain: HTMLCanvasElement | null = null;
 
-export function render(ctx: CanvasRenderingContext2D, cam: Camera, s: GameState, o: Overlay, W: number, H: number, dpr: number) {
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // desk
-  ctx.fillStyle = "#2b2825";
-  ctx.fillRect(0, 0, W, H);
-
+export function worldTransform(ctx: CanvasRenderingContext2D, cam: Camera, dpr: number) {
   ctx.setTransform(dpr * cam.z, 0, 0, dpr * cam.z, dpr * (cam.cx - cam.x * cam.z), dpr * (cam.cy - cam.y * cam.z));
-  drawPaper(ctx);
+}
 
-  ctx.globalCompositeOperation = "multiply";
-  drawMarks(ctx, s, o.anim);
-  drawSoldiers(ctx, s, o);
+export function render(ctx: CanvasRenderingContext2D, cam: Camera, s: GameState, o: Overlay, W: number, H: number, dpr: number) {
+  const ink = o.ink ?? SETTLED;
+  drawSettled(ctx, cam, s, o, ink, W, H, dpr);
+  worldTransform(ctx, cam, dpr);
+  drawLive(ctx, cam, s, o, ink);
+}
+
+// Desk, paper, and every mark that is finished: the page as a record.
+export function drawSettled(ctx: CanvasRenderingContext2D, cam: Camera, s: GameState, o: Overlay, ink: Ink, W: number, H: number, dpr: number) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = "#2b2825"; // desk
+  ctx.fillRect(0, 0, W, H);
+  worldTransform(ctx, cam, dpr);
+  drawPaper(ctx);
+  ctx.globalCompositeOperation = "multiply";
+  drawMarks(ctx, s, ink, false);
+  drawSoldiers(ctx, s, o, ink, false);
+  ctx.globalCompositeOperation = "source-over";
+}
 
+// Everything still moving: marks being drawn, pencil guides, the pen.
+// Marks use multiply, so drawing them after the settled ones gives the same page.
+export function drawLive(ctx: CanvasRenderingContext2D, cam: Camera, s: GameState, o: Overlay, ink: Ink) {
+  if (ink.live.size || o.mover) {
+    ctx.globalCompositeOperation = "multiply";
+    drawMarks(ctx, s, ink, true);
+    drawSoldiers(ctx, s, o, ink, true);
+    ctx.globalCompositeOperation = "source-over";
+  }
   const px = 1 / cam.z; // one css pixel in world units
-  if (o.selected !== undefined && !o.aim) {
+  if (o.selected !== undefined && !o.aim && !o.pen) {
     const x = s.soldiers[o.selected];
     pencilRing(ctx, x.x, x.y, RULES.soldierRadius + 9, 1.6);
   }
@@ -99,6 +131,7 @@ export function render(ctx: CanvasRenderingContext2D, cam: Camera, s: GameState,
     ctx.globalAlpha = 1;
   }
   if (o.aim) drawAim(ctx, s, o.aim, px);
+  if (o.pen) drawPen(ctx, o.pen.x, o.pen.y, o.pen.angle, o.pen.pull, INK.pens[o.pen.owner], 1, o.pen.lift);
 }
 
 function pencilRing(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, w: number, dashed = true) {
@@ -139,47 +172,43 @@ function drawPaper(ctx: CanvasRenderingContext2D) {
   ctx.fillText("No. ______", margin + 30, 70);
 }
 
-function drawMarks(ctx: CanvasRenderingContext2D, s: GameState, anim?: Overlay["anim"]) {
-  for (const b of s.bases) inkCircle(ctx, b.x, b.y, b.r, INK.pens[b.owner], b.seed);
-  // the stroke being animated, so crosses can wait for the ink to reach them
-  const live = anim && s.marks.find((m) => m.t === "stroke" && m.turn === anim.turn);
-  for (const m of s.marks) {
-    const animating = anim && m.turn === anim.turn;
-    if (m.t === "stroke") {
-      inkFlick(ctx, m.pts, INK.pens[m.owner], m.seed, RULES.inkWidth, animating ? anim!.p : 1);
-    } else {
-      if (animating && live && live.t === "stroke") {
-        const idx = nearestIndex(live.pts, m);
-        if (m.kind !== "moved" && anim!.p < idx / (live.pts.length - 1)) continue;
-      }
-      if (m.kind === "moved") {
-        inkDot(ctx, m.x, m.y, RULES.soldierRadius, INK.pens[m.owner], m.seed);
-        inkCross(ctx, m.x, m.y, RULES.soldierRadius * 1.2, INK.pens[m.owner], m.seed, 1.6, 0.7);
-      } else if (m.kind === "kill") {
-        inkCross(ctx, m.x, m.y, RULES.soldierRadius * 2, INK.pens[m.owner], m.seed, 2.6);
-      } else {
-        inkCross(ctx, m.x, m.y, RULES.soldierRadius * 1.6, INK.pens[m.owner], m.seed, 2);
-      }
-    }
+// live=false draws the settled marks, live=true only the ones being drawn.
+function drawMarks(ctx: CanvasRenderingContext2D, s: GameState, ink: Ink, live: boolean) {
+  for (const b of s.bases) {
+    const k = `b${b.id}`;
+    if (ink.live.has(k) !== live) continue;
+    inkCircle(ctx, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.6, 2, live ? ink.p(k) : 1);
   }
+  s.marks.forEach((m, i) => {
+    const k = `m${i}`;
+    if (ink.live.has(k) !== live) return;
+    const p = live ? ink.p(k) : 1;
+    const pen = INK.pens[m.owner];
+    if (m.t === "stroke") inkFlick(ctx, m.pts, pen, m.seed, RULES.inkWidth, p);
+    else if (m.kind === "moved") {
+      // the old dot stays; the little cross comes after the move
+      inkDot(ctx, m.x, m.y, RULES.soldierRadius, pen, m.seed);
+      inkCross(ctx, m.x, m.y, RULES.soldierRadius * 1.2, pen, m.seed, 1.6, 0.7, p);
+    } else if (m.kind === "kill") inkCross(ctx, m.x, m.y, RULES.soldierRadius * 2, pen, m.seed, 2.6, 1, p);
+    else inkCross(ctx, m.x, m.y, RULES.soldierRadius * 1.6, pen, m.seed, 2, 1, p);
+  });
 }
 
-function nearestIndex(pts: Pt[], p: Pt) {
-  let bi = 0, bd = Infinity;
-  pts.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; bi = i; } });
-  return bi;
-}
-
-function drawSoldiers(ctx: CanvasRenderingContext2D, s: GameState, o: Overlay) {
-  const a = o.anim;
+function drawSoldiers(ctx: CanvasRenderingContext2D, s: GameState, o: Overlay, ink: Ink, live: boolean) {
+  // the fallen whose cross is still coming keep their full dot until it lands
+  const crossing = new Map<string, string>();
+  if (ink.live.size) s.marks.forEach((m, i) => {
+    if (m.t === "cross" && m.kind === "kill" && ink.live.has(`m${i}`)) crossing.set(`${m.x},${m.y}`, `m${i}`);
+  });
   for (const x of s.soldiers) {
-    let p: Pt = x;
-    // a moving soldier rides the head of its own ink
-    if (a && a.mover === x.id && a.path && a.p < 1) {
-      p = pointAlong(a.path, a.p);
-    }
+    const jot = `d${x.id}`;
+    const cross = x.alive ? undefined : crossing.get(`${x.x},${x.y}`);
+    const moving = o.mover?.id === x.id;
+    if ((ink.live.has(jot) || !!cross || moving) !== live) continue;
+    const p = moving ? o.mover!.at : x;
+    const fallen = !x.alive && !(cross && ink.p(cross) <= 0);
     // the dead keep their dot; the cross is in the marks
-    inkDot(ctx, p.x, p.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, x.alive ? 1 : 0.8);
+    inkDot(ctx, p.x, p.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, fallen ? 0.8 : 1, live ? ink.p(jot) : 1);
   }
 }
 
