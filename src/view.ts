@@ -92,9 +92,35 @@ export function worldTransform(ctx: CanvasRenderingContext2D, cam: Camera, dpr: 
   ctx.setTransform(dpr * cam.z, 0, 0, dpr * cam.z, dpr * (cam.cx - cam.x * cam.z), dpr * (cam.cy - cam.y * cam.z));
 }
 
+// The settled page is cached per target canvas: a late-game page is hundreds
+// of seeded strokes (~56ms a frame on a throttled phone CPU), and it only
+// changes when the camera moves or a mark settles. Aiming and animation then
+// cost one image copy plus the live layer.
+const pageCache = new WeakMap<HTMLCanvasElement, { c: HTMLCanvasElement; key: string }>();
+let epoch = 0; // bump to throw every cached page away (e.g. once fonts load)
+export const renderOpts = { cache: true };
+export function invalidatePage() { epoch++; }
+
 export function render(ctx: CanvasRenderingContext2D, cam: Camera, s: GameState, o: Overlay, W: number, H: number, dpr: number) {
   const ink = o.ink ?? SETTLED;
-  drawSettled(ctx, cam, s, o, ink, W, H, dpr);
+  const target = ctx.canvas;
+  if (!renderOpts.cache || typeof document === "undefined") {
+    drawSettled(ctx, cam, s, o, ink, W, H, dpr);
+  } else {
+    const key = [epoch, cam.x, cam.y, cam.z, cam.vx, cam.vy, cam.vw, cam.vh, W, H, dpr, target.width, target.height,
+      s.bases.length, s.marks.length, s.turn, s.phase, s.page?.no, o.mover?.id ?? "", [...ink.live].sort().join()].join("|");
+    let hit = pageCache.get(target);
+    if (!hit) { hit = { c: document.createElement("canvas"), key: "" }; pageCache.set(target, hit); }
+    if (hit.key !== key) {
+      if (hit.c.width !== target.width || hit.c.height !== target.height) { hit.c.width = target.width; hit.c.height = target.height; }
+      drawSettled(hit.c.getContext("2d")!, cam, s, o, ink, W, H, dpr);
+      hit.key = key;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    ctx.drawImage(hit.c, 0, 0);
+  }
   worldTransform(ctx, cam, dpr);
   drawLive(ctx, cam, s, o, ink);
 }

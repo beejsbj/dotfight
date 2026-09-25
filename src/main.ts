@@ -15,7 +15,7 @@ import { RULES } from "./rules";
 import * as sfx from "./sound";
 import { inBase, jotOrder, pickSoldier } from "./hand";
 import { Timeline, reachFraction } from "./timeline";
-import { Camera, render, type Overlay } from "./view";
+import { Camera, invalidatePage, render, renderOpts, type Overlay } from "./view";
 
 // --- state ------------------------------------------------------------------
 
@@ -701,9 +701,9 @@ function overlay(now: number): Overlay {
 
 resize();
 hud();
-document.fonts?.ready.then(() => { dirty = true; });
+document.fonts?.ready.then(() => { invalidatePage(); dirty = true; });
 requestAnimationFrame(frame);
 showTitle();
 
 // dev-only handle for scripted playtests
-if (import.meta.env.DEV) (window as unknown as { pft: object }).pft = { get s() { return s; }, cam, fx, pageCanvas, ink: inkLib, INK };
+if (import.meta.env.DEV) (window as unknown as { pft: object }).pft = { get s() { return s; }, cam, fx, pageCanvas, ink: inkLib, INK, renderOpts, canvas, renderNow: () => render(ctx, cam, s, overlay(performance.now()), W, H, dpr) };
