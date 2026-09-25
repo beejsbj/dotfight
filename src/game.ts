@@ -121,6 +121,8 @@ export interface GameState {
   bonus: boolean;
   /** Extra flicks earned this turn (missing in older saves: read from `bonus`). */
   streak?: number;
+  /** Has the current player used this turn's free send? (transfer.free) */
+  sent?: boolean;
   /** Turn each side's last stand began (0: not yet). */
   stand: [number, number];
   bases: Base[];
@@ -459,6 +461,7 @@ export function canTransfer(s: GameState, from: number, to: number, n: number): 
   if (a.fallen || b.fallen) return "that base has fallen";
   if (!Number.isInteger(n) || n < 1) return "send at least one";
   if (n > T.max) return `at most ${T.max} at a time`;
+  if (T.free && s.sent) return "one send a turn";
   if (garrison(s, a).length - n < 1) return "leave at least one behind";
   return null;
 }
@@ -494,12 +497,18 @@ export function transfer(s: GameState, from: number, to: number, n: number): Out
   }
   s.marks.push({ t: "road", owner: who, a: road[0], b: road[1], n, transit: t.id, seed, turn: s.turn });
   const o: Outcome = { path: [...road], paths: [[...road]], killed: [], wounded: [], lost: false, events: [], breaches: [], cut: [] };
+  if (s.rules.transfer!.free) {
+    // a free send: the flick is still to come, and it isn't a strike (nobody's convoy arrives)
+    s.sent = true;
+    o.arrived = []; o.fell = []; o.founded = []; o.stood = []; o.again = true;
+    return o;
+  }
   after(s, who, o, seed, false);
   return o;
 }
 
 // Their convoys arrive after this player's action.
-function arrive(s: GameState, actor: Player, seed: number): number[] {
+function arrive(s: GameState, actor: Player, seed: number, founded: number[]): number[] {
   const out: number[] = [];
   for (const t of s.transits) {
     if (t.state !== "road" || t.owner === actor) continue;
@@ -517,7 +526,8 @@ function arrive(s: GameState, actor: Player, seed: number): number[] {
       x.transit = undefined;
       out.push(id);
     });
-    if (b.fallen && s.rules.capture && walking.length) refound(s, b, t.owner, seed);
+    // they walk into the ruins of a base that fell while they were on the road
+    if (b.fallen && s.rules.capture && walking.length) { refound(s, b, t.owner, seed); founded.push(b.id); }
   }
   return out;
 }
@@ -540,18 +550,20 @@ export function pass(s: GameState) {
 // last stands begin, someone may win, and the turn passes (or doesn't).
 function after(s: GameState, who: Player, o: Outcome, seed: number, hit: boolean, mover?: Soldier) {
   const R = s.rules;
-  o.arrived = arrive(s, who, seed);
-  o.founded = [];
-  if (mover && R.capture) {
-    const b = s.bases.find((b) => b.fallen && insideBase(b, mover));
-    if (b) { refound(s, b, who, seed); o.founded.push(b.id); }
-  }
+  // the strike lands first: any base it emptied falls...
   o.fell = [];
   for (const b of s.bases) {
     if (b.fallen || garrison(s, b).length) continue;
     b.fallen = s.turn;
     o.fell.push(b.id);
     s.marks.push({ t: "raze", owner: who, base: b.id, seed: seed + 300 + b.id, turn: s.turn });
+  }
+  // ...then convoys arrive, and a mover standing in a fallen base takes it
+  o.founded = [];
+  o.arrived = arrive(s, who, seed, o.founded);
+  if (mover && R.capture && mover.alive) {
+    const b = s.bases.find((b) => b.fallen && insideBase(b, mover));
+    if (b) { refound(s, b, who, seed); o.founded.push(b.id); }
   }
   o.stood = [];
   if (R.lastStand) for (const p of [0, 1] as Player[]) {
@@ -578,6 +590,7 @@ function after(s: GameState, who: Player, o: Outcome, seed: number, hit: boolean
     s.owed = allotment(s, foe);
     s.bonus = false;
     s.streak = 0;
+    s.sent = false;
   }
 }
 

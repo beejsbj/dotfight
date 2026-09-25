@@ -213,15 +213,17 @@ function gain(c: Ctx, o: Outcome, moverId: number): { v: number; hit: boolean } 
   if (c.R.win === "bases") {
     // a base emptied by this flick
     const killed = new Set([...o.killed, ...(o.lost ? [moverId] : [])]);
+    const emptied = new Set<number>();
     for (const b of s.bases) {
       if (b.fallen) continue;
       const g = garrison(s, b);
       if (!g.length) continue;
       const left = g.filter((x) => !killed.has(x.id) && !(x.id === moverId && o.movedTo && !insideBase(b, o.movedTo)));
-      if (!left.length) v += b.owner === c.me ? -c.bases : c.bases;
+      if (!left.length) { v += b.owner === c.me ? -c.bases : c.bases; emptied.add(b.id); }
     }
-    if (o.movedTo) {
-      const b = s.bases.find((b) => b.fallen && c.R.capture && insideBase(b, o.movedTo!));
+    // standing in a fallen base (or one this very flick emptied) takes it
+    if (o.movedTo && c.R.capture) {
+      const b = s.bases.find((b) => (b.fallen || emptied.has(b.id)) && insideBase(b, o.movedTo!));
       if (b) v += c.bases * 0.9;
     }
   }
@@ -291,7 +293,10 @@ function transfers(c: Ctx): Action[] {
   return out;
 }
 
-function scoreTransfer(c: Ctx, a: Extract<Action, { t: "transfer" }>, base: { mine: Dot[]; theirs: Dot[] }): number {
+// A send's worth: where everyone stands after it (now, and once they arrive),
+// minus what an ambush might cost, against the same measure before it.
+// `again`: the sender still acts this turn (a free send, or shots left).
+function scoreTransfer(c: Ctx, a: Extract<Action, { t: "transfer" }>, base: { mine: Dot[]; theirs: Dot[] }, again: boolean, before: number): number {
   const s = c.s;
   const from = s.bases[a.from], to = s.bases[a.to];
   const go = new Set(garrison(s, from).sort((p, q) => dist(p, to) - dist(q, to)).slice(0, a.n).map((x) => x.id));
@@ -303,15 +308,18 @@ function scoreTransfer(c: Ctx, a: Extract<Action, { t: "transfer" }>, base: { mi
     const { w } = worth(s, { ...p, owner: c.me });
     return { ...p, id, w, base: to.id };
   })];
-  const now = outlook(c, mine, base.theirs, false);
-  const next = outlook(c, later, base.theirs, false);
+  const now = outlook(c, mine, base.theirs, again);
+  const next = outlook(c, later, base.theirs, again);
   const T = c.R.transfer!;
   const road = dist(from, to);
   // an enemy who sees a convoy on the road will usually try to cut it
   const pCut = Math.min(0.9, 0.25 + road / 1400);
   const risk = T.ambush === "none" ? 0 : T.ambush === "all" ? a.n * pCut : Math.min(a.n, 1) * pCut;
-  return 0.35 * now + 0.65 * next - risk;
+  return 0.35 * now + 0.65 * next - risk - before;
 }
+
+/** Lab instrumentation: how the best flick and the best transfer scored. */
+export const botDebug: { on?: (flick: number, send: number) => void } = {};
 
 /** What Dawood-bot does now. Always a legal action. */
 export function botAction(s: GameState, level: Level | Skill = 1, seed = Date.now()): Action {
@@ -320,9 +328,20 @@ export function botAction(s: GameState, level: Level | Skill = 1, seed = Date.no
   const me = s.current;
   const c: Ctx = { s, R: s.rules, me, sk, reach: s.rules.soldierRadius + RULES.inkWidth / 2 + s.rules.hitSlop, bases: 2.5 };
   const base = { mine: dots(s, me, new Set()), theirs: dots(s, other(me), new Set()) };
+  const free = !!s.rules.transfer?.free;
+  if (free && !s.sent) {
+    // a free send comes before the flick: take it if it's worth anything
+    const before = outlook(c, base.mine, base.theirs, true);
+    let pick: Action | null = null, pv = 0.2;
+    for (const t of transfers(c)) {
+      const v = scoreTransfer(c, t as Extract<Action, { t: "transfer" }>, base, true, before);
+      if (v > pv) { pv = v; pick = t; }
+    }
+    if (pick) return pick;
+  }
   const cands = intents(c, rand);
   if (!cands.length) {
-    const t = transfers(c)[0];
+    const t = free ? null : transfers(c)[0];
     return t ?? { t: "pass" };
   }
   // 1. noiseless: what would each do if the hand were perfect?
@@ -360,10 +379,14 @@ export function botAction(s: GameState, level: Level | Skill = 1, seed = Date.no
     if (!best || v > best.v) best = { act: k.it, v };
   }
   const now0 = outlook(c, base.mine, base.theirs, false);
-  for (const t of transfers(c)) {
-    const v = scoreTransfer(c, t as Extract<Action, { t: "transfer" }>, base) - now0;
+  const bestFlick = best?.v ?? -Infinity;
+  let bestSend = -Infinity;
+  for (const t of free ? [] : transfers(c)) {
+    const v = scoreTransfer(c, t as Extract<Action, { t: "transfer" }>, base, s.owed > 1, now0);
+    bestSend = Math.max(bestSend, v);
     if (!best || v > best.v) best = { act: t, v };
   }
+  botDebug.on?.(bestFlick, bestSend);
   const pick = best!.act;
   if ("t" in pick) return pick;
   return { t: "flick", ...shake(s, pick, sk, rand) };

@@ -424,3 +424,56 @@ describe("ink as terrain", () => {
     expect(o.path.at(-1)!.x).toBeCloseTo(700, 0);
   });
 });
+
+describe("found in review", () => {
+  it("a mover who crosses out a base's last defender and stands in it takes it", () => {
+    const s = setup(quiet({ win: "bases", capture: true }));
+    const b = standing(s, 1)[0];
+    const [last, ...rest] = garrison(s, b);
+    rest.forEach((x) => (s.soldiers[x.id].alive = false));
+    const me = alive(s, 0)[0];
+    clear(s, [me, last, ...alive(s, 1)]);
+    at(s, last, { x: b.x, y: b.y + 20 });
+    at(s, me, { x: b.x, y: b.y + 320 });
+    const o = act(s, { soldierId: me.id, kind: "move", angle: -Math.PI / 2, length: 320, bend: 0 });
+    expect(o.killed).toContain(last.id);
+    expect(o.fell).toContain(b.id);
+    expect(o.founded).toContain(b.id);
+    expect(s.bases[b.id].owner).toBe(0);
+  });
+  it("a convoy arriving at a base that fell to this strike walks into the ruins (and retakes it with capture)", () => {
+    const s = setup(quiet({ transfer: { max: 5, ambush: "none" }, capture: true }));
+    const [from, to] = standing(s, 0);
+    transfer(s, from.id, to.id, 3);
+    const gar = garrison(s, s.bases[to.id]);
+    gar.slice(1).forEach((x) => (s.soldiers[x.id].alive = false));
+    const foe = alive(s, 1)[0];
+    clear(s, [foe, gar[0], ...alive(s, 0).filter((x) => x.transit !== undefined)]);
+    at(s, foe, { x: gar[0].x, y: gar[0].y - 400 });
+    const o = act(s, { soldierId: foe.id, kind: "shoot", angle: Math.PI / 2, length: 500, bend: 0 });
+    expect(o.fell).toContain(to.id);
+    expect(o.arrived).toHaveLength(3);
+    expect(o.founded).toContain(to.id);
+    expect(s.bases[to.id].fallen).toBeUndefined();
+  });
+  it("a free send keeps the flick, once a turn, and isn't a strike", () => {
+    const s = setup(quiet({ transfer: { max: 5, ambush: "all", free: true } }));
+    const [a, b, c] = standing(s, 0);
+    const o = transfer(s, a.id, b.id, 2);
+    expect(o.again).toBe(true);
+    expect(s.current).toBe(0);
+    expect(canTransfer(s, c.id, b.id, 1)).toMatch(/one send/);
+    const me = ready(s, 0)[0];
+    act(s, { soldierId: me.id, kind: "shoot", angle: 0, length: 300, bend: 0 });
+    expect(s.current).toBe(1);
+    expect(s.transits[0].state).toBe("road");
+  });
+  it("a split line's two halves each get their own page-edge bounce", () => {
+    const s = setup(quiet({ kit: ["tri", "circle", "circle", "circle", "circle"], ink: { ...CLASSIC.ink, edgeBounces: 1 } }));
+    const tri = s.bases.find((b) => b.owner === 0 && b.shape === "tri")!;
+    const me = garrison(s, tri)[0];
+    const o = preview(s, { soldierId: me.id, kind: "shoot", angle: -Math.PI / 2, length: 3200, bend: 0 });
+    expect(o.paths).toHaveLength(2);
+    expect(new Set(o.events.filter((e) => e.kind === "bounce").map((e) => e.branch)).size).toBe(2);
+  });
+});

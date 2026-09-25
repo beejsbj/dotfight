@@ -110,13 +110,10 @@ interface Ctx {
   groups: Group[];
   branches: Branch[];
   events: TraceEvent[];
-  ownBounces: number;
-  edgeBounces: number;
   enemyStops: boolean;
   friction: number;
   spread: number;
   clear: number;
-  used: Set<string>; // wall edges already used up by this line
 }
 
 const lerp = (a: Pt, b: Pt, t: number): Pt => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
@@ -125,7 +122,11 @@ const lerp = (a: Pt, b: Pt, t: number): Pt => ({ x: a.x + (b.x - a.x) * t, y: a.
 // earlier lines all start on his dot.
 const START_SKIP = 14; // at least; a rule set can widen it (ink.clear)
 
-function walk(ctx: Ctx, start: Pt, rest: Pt[], budget: number, canSplit: boolean, parent?: { idx: number; d: number }): number {
+// What a branch may still use: bounces left and wall edges it has spent. A
+// split-off branch starts with a copy of its parent's, so neither steals from the other.
+interface Left { own: number; edge: number; used: Set<string> }
+
+function walk(ctx: Ctx, left: Left, start: Pt, rest: Pt[], budget: number, canSplit: boolean, parent?: { idx: number; d: number }): number {
   const idx = ctx.branches.length;
   const br: Branch = { pts: [start], end: "spent", ...(parent && { parent: parent.idx, parentD: parent.d }) };
   ctx.branches.push(br);
@@ -140,7 +141,7 @@ function walk(ctx: Ctx, start: Pt, rest: Pt[], budget: number, canSplit: boolean
     for (const g of ctx.groups) {
       if (!boxesMeet(g.box, box)) continue;
       for (const sf of g.surfs) {
-        if (sf.key === skip || ctx.used.has(sf.key)) continue;
+        if (sf.key === skip || left.used.has(sf.key)) continue;
         const h = segHit(cur, nxt, sf.a, sf.b);
         if (!h || h.t * L < 1e-6) continue;
         if ((sf.kind === "own" || sf.kind === "enemy") && parent === undefined && d + h.t * L < ctx.clear) continue;
@@ -150,7 +151,7 @@ function walk(ctx: Ctx, start: Pt, rest: Pt[], budget: number, canSplit: boolean
           if (!insidePoly(lerp(cur, nxt, Math.max(0, h.t - e)), sf.poly!) || insidePoly(lerp(cur, nxt, Math.min(1, h.t + e)), sf.poly!)) continue;
           if (!canSplit) continue;
         }
-        if (sf.kind === "own" && ctx.ownBounces <= 0 && ctx.friction <= 0) continue;
+        if (sf.kind === "own" && left.own <= 0 && ctx.friction <= 0) continue;
         if (sf.kind === "enemy" && !ctx.enemyStops && ctx.friction <= 0) continue;
         hits.push({ t: h.t, s: sf });
       }
@@ -179,8 +180,8 @@ function walk(ctx: Ctx, start: Pt, rest: Pt[], budget: number, canSplit: boolean
         skip = sf.key;
       };
       if (sf.kind === "edge") {
-        if (ctx.edgeBounces > 0) {
-          ctx.edgeBounces--;
+        if (left.edge > 0) {
+          left.edge--;
           redirect((p) => reflectPt(p, sf.a, sf.b), "bounce");
           continue outer;
         }
@@ -192,22 +193,22 @@ function walk(ctx: Ctx, start: Pt, rest: Pt[], budget: number, canSplit: boolean
       if (sf.kind === "stop" || (sf.kind === "enemy" && ctx.enemyStops)) {
         br.pts.push(at);
         br.end = "stop";
-        if (sf.kind === "stop") ctx.used.add(sf.key);
+        if (sf.kind === "stop") left.used.add(sf.key);
         ctx.events.push({ kind: "stop", on: sf.kind, at, d, branch: idx, base: sf.base, edge: sf.edge });
         break outer;
       }
-      if (sf.kind === "mirror" || (sf.kind === "own" && ctx.ownBounces > 0)) {
-        if (sf.kind === "own") ctx.ownBounces--;
-        else ctx.used.add(sf.key);
+      if (sf.kind === "mirror" || (sf.kind === "own" && left.own > 0)) {
+        if (sf.kind === "own") left.own--;
+        else left.used.add(sf.key);
         redirect((p) => reflectPt(p, sf.a, sf.b), "bounce");
         continue outer;
       }
       if (sf.kind === "prism") {
-        const left = rest.slice(i).map((p) => rotatePt(p, at, -ctx.spread));
+        const side = rest.slice(i).map((p) => rotatePt(p, at, -ctx.spread));
         redirect((p) => rotatePt(p, at, ctx.spread), "split");
         const ev = ctx.events[ctx.events.length - 1];
         canSplit = false;
-        ev.child = walk(ctx, at, left, budget, false, { idx, d });
+        ev.child = walk(ctx, { own: left.own, edge: left.edge, used: new Set(left.used) }, at, side, budget, false, { idx, d });
         continue outer;
       }
       // dried ink it doesn't bounce off or stop at: it drags
@@ -245,15 +246,12 @@ export function trace(s: GameState, who: Player, from: Pt, arc: Pt[], shot: bool
     groups: surfaces(s, who, shot),
     branches: [],
     events: [],
-    ownBounces: R.ink.ownBounces,
-    edgeBounces: R.ink.edgeBounces,
     enemyStops: R.ink.enemyStops,
     friction: R.ink.friction,
     spread: R.prismSpread,
     clear: Math.max(START_SKIP, R.ink.clear ?? 0),
-    used: new Set(),
   };
   // a copy: the line must never share a point with the soldier, who may move later
-  walk(ctx, { x: from.x, y: from.y }, arc.slice(1), pathLen(arc), true);
+  walk(ctx, { own: R.ink.ownBounces, edge: R.ink.edgeBounces, used: new Set() }, { x: from.x, y: from.y }, arc.slice(1), pathLen(arc), true);
   return { branches: ctx.branches, events: ctx.events };
 }

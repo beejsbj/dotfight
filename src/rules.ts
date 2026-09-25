@@ -77,6 +77,8 @@ export interface RuleSet {
     max: number;
     /** An enemy line crossing the road while they're on it kills: nobody, one per crossing, or the whole convoy. */
     ambush: "none" | "one" | "all";
+    /** Sending doesn't use up your flick: send down one road, then flick as usual (one send a turn). */
+    free?: boolean;
   };
 
   // --- bases ---------------------------------------------------------------
