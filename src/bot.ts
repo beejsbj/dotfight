@@ -1,4 +1,4 @@
-// Daud-bot: plans by previewing candidate flicks, then flicks with a human-ish hand.
+// Dawood-bot: plans by previewing candidate flicks, then flicks with a human-ish hand.
 
 import { alive, preview, type Flick, type GameState, rng } from "./game";
 import { reach, sigma } from "./flick";

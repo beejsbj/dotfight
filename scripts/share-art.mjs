@@ -80,7 +80,7 @@ const out = await p.evaluate(async () => {
   g.globalCompositeOperation = "multiply";
   ink.handText(g, "Pen Flick", -190, -30, 108, INK.pens[0], { rot: -0.04 });
   ink.handText(g, "Tactics", -60, 70, 108, INK.pens[1], { rot: -0.04 });
-  ink.handText(g, "a notebook war, after Daud", -190, 128, 38, "#4a4744", { weight: 400, rot: -0.02 });
+  ink.handText(g, "a notebook war, after Dawood", -190, 128, 38, "#4a4744", { weight: 400, rot: -0.02 });
   g.restore();
 
   // --- icon: a base, its dots, and a red flick crossing one out

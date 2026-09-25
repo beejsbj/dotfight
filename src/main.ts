@@ -48,7 +48,7 @@ const cam = new Camera();
 let W = 0, H = 0, dpr = 1, dirty = true;
 
 const isBot = (p: Player) => mode.kind === "bot" && p === 1;
-const name = (p: Player) => (isBot(p) ? "Daud-bot" : INK.names[p]);
+const name = (p: Player) => (isBot(p) ? "Dawood-bot" : INK.names[p]);
 
 function save() {
   localStorage.setItem("pft:save", JSON.stringify({ s, mode } satisfies Save));
@@ -336,10 +336,10 @@ function showTitle() {
   const canResume = saved && (saved.s.phase !== "over");
   const card = sheet(`
     <h1>Pen Flick <em>Tactics</em></h1>
-    <p class="sub">a notebook war, after Daud</p>
+    <p class="sub">a notebook war, after Dawood</p>
     ${canResume ? `<button class="act" data-a="resume">↳ carry on the page</button>` : ""}
     <button class="act" data-a="pnp">↳ pass &amp; play</button>
-    <button class="act red" data-a="bot">↳ vs Daud-bot</button>
+    <button class="act red" data-a="bot">↳ vs Dawood-bot</button>
     <div class="row">${LEVELS.map((l, i) => `<button class="act small ${i === botLevel ? "on" : ""}" data-lvl="${i}">${l}</button>`).join(" · ")}</div>
     <button class="act small" data-a="how">how to play</button>
     <p class="fine">
@@ -347,7 +347,7 @@ function showTitle() {
       <button class="act small ${settings.handoff ? "on" : ""}" data-set="handoff">hand-off screen</button> ·
       <button class="act small ${!sfx.muted ? "on" : ""}" data-set="sound">sound</button>
     </p>
-    <p class="fine">rules from memory — waiting on Daud</p>`);
+    <p class="fine">rules from memory — waiting on Dawood</p>`);
   card.onclick = (e) => {
     const b = (e.target as HTMLElement).closest("button");
     if (!b) return;
