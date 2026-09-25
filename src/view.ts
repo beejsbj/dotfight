@@ -1,9 +1,10 @@
 // Camera and page rendering. The page is redrawn from state every frame it
 // changes; marks are seeded so it looks the same every time.
 
-import { type GameState, type Player, type Pt } from "./game";
-import { INK, drawPen, inkCircle, inkCross, inkDot, inkFlick, handText, paperGrain, pencilArrow, pencilLine, pencilLoop } from "./ink";
-import { RULES } from "./rules";
+import { baseEdges, baseVerts } from "./bases";
+import { inLastStand, type Base, type GameState, type Player, type Pt } from "./game";
+import { INK, drawPen, inkCircle, inkCross, inkDot, inkFlick, inkNotch, inkPolygon, inkRoad, inkStrike, handText, paperGrain, pencilArrow, pencilLine, pencilLoop } from "./ink";
+import { RULES, type Shape } from "./rules";
 
 const ease = (t: number) => 1 - Math.pow(1 - t, 3);
 
@@ -77,7 +78,8 @@ export interface Pen { x: number; y: number; angle: number; pull: number; lift: 
 export interface Overlay {
   selected?: number;
   aim?: { soldierId: number; angle: number; power: number; spread: number; reach: number };
-  ghost?: { x: number; y: number; ok: boolean }; // base placement preview
+  ghost?: { x: number; y: number; ok: boolean; shape: Shape; r: number }; // base placement preview
+  pick?: { from?: number; to?: number }; // a transfer being set up: pencil rings round the bases
   ink?: Ink;
   mover?: { id: number; at: Pt }; // a moving soldier rides the head of its own ink
   pen?: Pen; // the pen after release: riding the ink, then lifting away
@@ -154,11 +156,25 @@ export function drawLive(ctx: CanvasRenderingContext2D, cam: Camera, s: GameStat
   }
   if (o.selected !== undefined && !o.aim && !o.pen) {
     const x = s.soldiers[o.selected];
-    pencilRing(ctx, x.x, x.y, RULES.soldierRadius + 9, 1.6);
+    pencilRing(ctx, x.x, x.y, s.rules.soldierRadius + 9, 1.6);
+  }
+  if (o.pick) {
+    for (const id of [o.pick.from, o.pick.to]) {
+      if (id === undefined) continue;
+      const b = s.bases[id];
+      pencilLoop(ctx, b.x, b.y, b.r + 14, 700 + id, Math.max(1.6, px * 1.2), 1, id === o.pick.from ? 0.95 : 0.7);
+    }
+    if (o.pick.from !== undefined && o.pick.to !== undefined) {
+      const a = s.bases[o.pick.from], b = s.bases[o.pick.to];
+      pencilArrow(ctx, a, b, 0.08, 31, 2.2, 1, 0.8);
+    }
   }
   if (o.ghost) {
     ctx.globalAlpha = o.ghost.ok ? 0.8 : 0.45;
-    pencilRing(ctx, o.ghost.x, o.ghost.y, RULES.baseRadius, o.ghost.ok ? 2 : 1.4, !o.ghost.ok);
+    const g = o.ghost;
+    const v = baseVerts({ shape: g.shape, x: g.x, y: g.y, r: g.r, rot: -Math.PI / 2 });
+    if (v) v.forEach((p, i) => pencilLine(ctx, p, v[(i + 1) % v.length], g.ok ? 2 : 1.4, i, !g.ok));
+    else pencilRing(ctx, g.x, g.y, g.r, g.ok ? 2 : 1.4, !g.ok);
     ctx.globalAlpha = 1;
   }
   if (o.teach) drawTeach(ctx, o.teach);
@@ -211,12 +227,20 @@ function drawPaper(ctx: CanvasRenderingContext2D, s: GameState) {
   }
 }
 
+/** A base's outline in its founder's pen: a circle, or a hand-drawn polygon. */
+export function drawBase(ctx: CanvasRenderingContext2D, b: Base, upTo = 1, owner: Player = b.founder ?? b.owner, seed = b.seed) {
+  const v = baseVerts(b);
+  if (v) inkPolygon(ctx, v, INK.pens[owner], seed, 2.6, 2, upTo);
+  else inkCircle(ctx, b.x, b.y, b.r, INK.pens[owner], seed, 2.6, 2, upTo);
+}
+
 // live=false draws the settled marks, live=true only the ones being drawn.
 function drawMarks(ctx: CanvasRenderingContext2D, s: GameState, ink: Ink, live: boolean) {
+  const dot = s.rules.soldierRadius;
   for (const b of s.bases) {
     const k = `b${b.id}`;
     if (ink.live.has(k) !== live) continue;
-    inkCircle(ctx, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.6, 2, live ? ink.p(k) : 1);
+    drawBase(ctx, b, live ? ink.p(k) : 1);
   }
   s.marks.forEach((m, i) => {
     const k = `m${i}`;
@@ -224,16 +248,42 @@ function drawMarks(ctx: CanvasRenderingContext2D, s: GameState, ink: Ink, live: 
     const p = live ? ink.p(k) : 1;
     const pen = INK.pens[m.owner];
     if (m.t === "stroke") inkFlick(ctx, m.pts, pen, m.seed, RULES.inkWidth, p);
-    else if (m.kind === "moved") {
+    else if (m.t === "road") {
+      inkRoad(ctx, m.a, m.b, pen, m.seed, 2, p);
+      if (p > 0.5) {
+        const mx = (m.a.x + m.b.x) / 2, my = (m.a.y + m.b.y) / 2;
+        const ang = Math.atan2(m.b.y - m.a.y, m.b.x - m.a.x);
+        const up = Math.abs(ang) > Math.PI / 2 ? ang + Math.PI : ang;
+        handText(ctx, `${m.n}`, mx - Math.sin(up) * 16, my + Math.cos(up) * 16 + 10, 34, pen, { rot: up, align: "center", alpha: 0.9, upTo: (p - 0.5) * 2 });
+      }
+    } else if (m.t === "notch") {
+      const [a, e] = baseEdges(s.bases[m.base])[m.edge] ?? [m, m];
+      inkNotch(ctx, m.x, m.y, Math.atan2(e.y - a.y, e.x - a.x), pen, m.seed, 11, p);
+    } else if (m.t === "raze") {
+      const b = s.bases[m.base];
+      inkStrike(ctx, b.x, b.y, b.r, pen, m.seed, p);
+    } else if (m.t === "found") {
+      // taken: circled again, in the taker's pen
+      const b = s.bases[m.base];
+      drawBase(ctx, { ...b, r: b.r + 7 }, p, m.owner, m.seed);
+    } else if (m.t === "stand") {
+      // written in the margin of the page, in that side's pen
+      const y = m.owner === 0 ? RULES.pageH - 60 : 150;
+      handText(ctx, "last stand!", RULES.margin - 8, y, 30, pen, { rot: -Math.PI / 2, align: "center", upTo: p, alpha: 0.9 });
+      // each survivor circled where he dug in
+      (m.at ?? []).forEach((q, j) => inkCircle(ctx, q.x, q.y, dot * 2.3, pen, m.seed + j * 13, 1.6, 1, Math.min(1, p * 1.6 - j * 0.1)));
+    } else if (m.kind === "moved") {
       // the old dot stays; the little cross comes after the move
-      inkDot(ctx, m.x, m.y, RULES.soldierRadius, pen, m.seed);
-      inkCross(ctx, m.x, m.y, RULES.soldierRadius * 1.2, pen, m.seed, 1.6, 0.7, p);
-    } else if (m.kind === "kill") inkCross(ctx, m.x, m.y, RULES.soldierRadius * 2, pen, m.seed, 2.6, 1, p);
-    else inkCross(ctx, m.x, m.y, RULES.soldierRadius * 1.6, pen, m.seed, 2, 1, p);
+      inkDot(ctx, m.x, m.y, dot, pen, m.seed);
+      inkCross(ctx, m.x, m.y, dot * 1.2, pen, m.seed, 1.6, 0.7, p);
+    } else if (m.kind === "kill") inkCross(ctx, m.x, m.y, dot * 2, pen, m.seed, 2.6, 1, p);
+    else if (m.kind === "wound") inkCross(ctx, m.x, m.y, dot * 2, pen, m.seed, 2.6, 1, p * 0.5); // one stroke of a cross
+    else inkCross(ctx, m.x, m.y, dot * 1.6, pen, m.seed, 2, 1, p);
   });
 }
 
 function drawSoldiers(ctx: CanvasRenderingContext2D, s: GameState, o: Overlay, ink: Ink, live: boolean) {
+  const dot = s.rules.soldierRadius;
   // the fallen whose cross is still coming keep their full dot until it lands
   const crossing = new Map<string, string>();
   if (ink.live.size) s.marks.forEach((m, i) => {
@@ -245,9 +295,10 @@ function drawSoldiers(ctx: CanvasRenderingContext2D, s: GameState, o: Overlay, i
     const moving = o.mover?.id === x.id;
     if ((ink.live.has(jot) || !!cross || moving) !== live) continue;
     const p = moving ? o.mover!.at : x;
+    if (x.transit !== undefined && !moving) continue; // on the road: off the page until they arrive
     const fallen = !x.alive && !(cross && ink.p(cross) <= 0);
     // the dead keep their dot; the cross is in the marks
-    inkDot(ctx, p.x, p.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, fallen ? 0.8 : 1, live ? ink.p(jot) : 1);
+    inkDot(ctx, p.x, p.y, dot * (inLastStand(s, x.owner) ? s.rules.lastStand!.grow : 1), INK.pens[x.owner], x.id * 131 + 7, fallen ? 0.8 : 1, live ? ink.p(jot) : 1);
   }
 }
 

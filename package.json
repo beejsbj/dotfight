@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "share-art": "node scripts/share-art.mjs"
+    "share-art": "node scripts/share-art.mjs",
+    "lab": "node --import ./scripts/ts-resolve.mjs scripts/rules-lab.ts",
+    "playtest": "node scripts/playtest.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.63.0",

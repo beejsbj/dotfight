@@ -63,6 +63,135 @@ export function inkCircle(ctx: Ctx, cx: number, cy: number, r: number, color: st
   ctx.globalAlpha = 1;
 }
 
+// A hand-drawn polygon: each side one quick ruler-less stroke that overshoots
+// its corners a little, the way you draw a triangle without lifting much.
+// `upTo` draws the sides in order, then a lighter second pass.
+export function inkPolygon(ctx: Ctx, v: Pt[], color: string, seed: number, width = 2.6, passes = 2, upTo = 1) {
+  if (upTo <= 0) return;
+  const rand = rng(seed);
+  const n = v.length;
+  ctx.strokeStyle = color;
+  ctx.lineCap = "round";
+  for (let p = 0; p < passes; p++) {
+    const w = wave(seed + p * 17);
+    const sides = Array.from({ length: n }, () => ({ o0: 3 + rand() * 7, o1: 2 + rand() * 9, j: (rand() - 0.5) * 3, bow: (rand() - 0.5) * 0.04 }));
+    const span = p === 0 ? [0, 0.75] : [0.6, 1];
+    const done = upTo >= 1 ? 1 : clamp01((upTo - span[0]) / (span[1] - span[0]));
+    if (done <= 0) continue;
+    ctx.globalAlpha = p === 0 ? 0.92 : 0.5;
+    ctx.lineWidth = width * (p === 0 ? 1 : 0.7);
+    const upto = done * n;
+    for (let i = 0; i < Math.ceil(upto); i++) {
+      const a = v[i], b = v[(i + 1) % n], sd = sides[i];
+      const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1;
+      const ux = dx / l, uy = dy / l;
+      const from = { x: a.x - ux * sd.o0 + -uy * sd.j, y: a.y - uy * sd.o0 + ux * sd.j };
+      const to = { x: b.x + ux * sd.o1 - -uy * sd.j * 0.5, y: b.y + uy * sd.o1 - ux * sd.j * 0.5 };
+      const part = Math.min(1, upto - i);
+      const steps = 14;
+      ctx.beginPath();
+      for (let k = 0; k <= steps * part; k++) {
+        const t = k / steps;
+        const off = w(i + t) * 1.4 + Math.sin(t * Math.PI) * sd.bow * l;
+        const x = from.x + (to.x - from.x) * t - uy * off, y = from.y + (to.y - from.y) * t + ux * off;
+        if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// A transfer's road: a dashed ballpoint line between two bases, with an
+// arrowhead at the far end. Soldiers on it are "on the road".
+export function inkRoad(ctx: Ctx, a: Pt, b: Pt, color: string, seed: number, width = 2, upTo = 1, alpha = 0.8) {
+  if (upTo <= 0) return;
+  const rand = rng(seed);
+  const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1;
+  const ux = dx / l, uy = dy / l;
+  const dash = 14, gap = 10;
+  const w = wave(seed + 5);
+  ctx.strokeStyle = color;
+  ctx.lineCap = "round";
+  ctx.lineWidth = width;
+  const end = l * clamp01(upTo / 0.85);
+  for (let d = 0; d < end; d += dash + gap) {
+    const d1 = Math.min(end, d + dash * (0.75 + rand() * 0.5));
+    const o0 = w(d / 90) * 2.2, o1 = w(d1 / 90) * 2.2;
+    ctx.globalAlpha = alpha * (0.75 + rand() * 0.25);
+    ctx.beginPath();
+    ctx.moveTo(a.x + ux * d - uy * o0, a.y + uy * d + ux * o0);
+    ctx.lineTo(a.x + ux * d1 - uy * o1, a.y + uy * d1 + ux * o1);
+    ctx.stroke();
+  }
+  const head = clamp01((upTo - 0.85) / 0.15);
+  if (head > 0) {
+    const ang = Math.atan2(dy, dx), len = 16 * head;
+    ctx.globalAlpha = alpha;
+    for (const s of [1, -1]) {
+      const t = ang + Math.PI + s * (0.45 + rand() * 0.1);
+      ctx.beginPath();
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x + Math.cos(t) * len, b.y + Math.sin(t) * len);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// A wall taking a hit: a short jagged crack across it, in the attacker's ink.
+export function inkNotch(ctx: Ctx, x: number, y: number, along: number, color: string, seed: number, size = 10, upTo = 1) {
+  if (upTo <= 0) return;
+  const rand = rng(seed);
+  const nx = -Math.sin(along), ny = Math.cos(along), ux = Math.cos(along), uy = Math.sin(along);
+  const pts: Pt[] = [];
+  for (let i = 0; i <= 4; i++) {
+    const t = i / 4 - 0.5;
+    const z = (i % 2 ? 1 : -1) * size * (0.25 + rand() * 0.2);
+    pts.push({ x: x + nx * t * size * 2.2 + ux * z, y: y + ny * t * size * 2.2 + uy * z });
+  }
+  ctx.strokeStyle = color;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 2.2;
+  ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  const upto = upTo * 4;
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i <= Math.ceil(upto); i++) {
+    const f = Math.min(1, upto - (i - 1)), a = pts[i - 1], b = pts[i];
+    ctx.lineTo(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// A base struck out: two hard strokes right through it, like crossing out a word.
+export function inkStrike(ctx: Ctx, cx: number, cy: number, r: number, color: string, seed: number, upTo = 1) {
+  if (upTo <= 0) return;
+  const rand = rng(seed);
+  const rot = (rand() - 0.5) * 0.4;
+  ctx.strokeStyle = color;
+  ctx.lineCap = "round";
+  for (let k = 0; k < 2; k++) {
+    const part = upTo >= 1 ? 1 : clamp01((upTo - k * 0.5) / 0.5);
+    const a = rot + (k ? -Math.PI / 4 : Math.PI / 4) + (rand() - 0.5) * 0.15;
+    const l0 = r * (1.05 + rand() * 0.2), l1 = r * (1.05 + rand() * 0.2), bow = (rand() - 0.5) * r * 0.15;
+    if (part <= 0) continue;
+    const x1 = cx - Math.cos(a) * l0, y1 = cy - Math.sin(a) * l0;
+    const x2 = cx + Math.cos(a) * l1, y2 = cy + Math.sin(a) * l1;
+    const qx = cx - Math.sin(a) * bow, qy = cy + Math.cos(a) * bow;
+    ctx.globalAlpha = 0.62;
+    ctx.lineWidth = 3.4;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    const t = part, u = 1 - t;
+    ctx.quadraticCurveTo(x1 + (qx - x1) * t, y1 + (qy - y1) * t, u * u * x1 + 2 * u * t * qx + t * t * x2, u * u * y1 + 2 * u * t * qy + t * t * y2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
 // A soldier: a pressed ballpoint dot, slightly lumpy.
 // `grow` (0..1) jots it: the ball presses in and spreads.
 export function inkDot(ctx: Ctx, x: number, y: number, r: number, color: string, seed: number, alpha = 1, grow = 1) {

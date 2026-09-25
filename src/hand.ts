@@ -17,7 +17,7 @@ export interface PickTol {
  * full-page zoom you only need to hit the circle, not a 5px dot.
  */
 export function pickSoldier(s: GameState, w: Pt, tol: PickTol): number | undefined {
-  const mine = s.soldiers.filter((x) => x.alive && x.owner === s.current);
+  const mine = s.soldiers.filter((x) => x.alive && x.owner === s.current && x.transit === undefined);
   let best: number | undefined, bd = tol.soldier;
   for (const x of mine) {
     const d = Math.hypot(x.x - w.x, x.y - w.y);
@@ -27,7 +27,7 @@ export function pickSoldier(s: GameState, w: Pt, tol: PickTol): number | undefin
 
   let base: GameState["bases"][number] | undefined, bb = Infinity;
   for (const b of s.bases) {
-    if (b.owner !== s.current) continue;
+    if (b.owner !== s.current || b.fallen) continue;
     const d = Math.hypot(b.x - w.x, b.y - w.y);
     if (d <= b.r + tol.base && d < bb && inBase(mine, b).length) { bb = d; base = b; }
   }
