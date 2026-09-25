@@ -9,7 +9,7 @@ import { CARDS, SHAPE_NAMES } from "./cards";
 import { pull, release, reach, sigma, wobble, type Aim } from "./flick";
 import {
   act, alive, basesLeft, canAct, canPlaceBase, canTransfer, garrison, kitLeft, migrate, newGame, pass, pathLen,
-  placeBase, powerFor, standing, steadiness, stuck, transfer, transferMax, baseRadius,
+  placeBase, powerFor, standing, nextBaseRot, steadiness, stuck, transfer, transferMax, baseRadius,
   type ActionKind, type Flick, type GameState, type Outcome, type Player, type Pt,
 } from "./game";
 import * as inkLib from "./ink";
@@ -737,7 +737,7 @@ canvas.addEventListener("pointerdown", (e) => {
 function moveGhost(sx: number, sy: number) {
   const w = cam.toWorld(sx, sy);
   const why = canPlaceBase(s, w.x, w.y, shape);
-  ghost = { x: w.x, y: w.y, ok: !why, shape, r: baseRadius(s.rules, shape) };
+  ghost = { x: w.x, y: w.y, ok: !why, shape, r: baseRadius(s.rules, shape), rot: nextBaseRot(s, shape) };
   status(why ? `can't draw here: ${why}` : `lift to draw the ${s.rules.kit ? SHAPE_NAMES[shape] : "base"}`);
   dirty = true;
 }

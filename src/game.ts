@@ -194,6 +194,12 @@ export function canPlaceBase(s: GameState, x: number, y: number, shape: Shape = 
   return null;
 }
 
+/** How the next base drawn will be turned (seeded), so a preview can match it. */
+export function nextBaseRot(s: GameState, shape: Shape) {
+  const seed = (s.seed ^ (s.bases.length * 7919)) >>> 0;
+  return shape === "circle" ? 0 : rng(seed ^ 0x5bd1)() * Math.PI * 2;
+}
+
 export function placeBase(s: GameState, x: number, y: number, shape?: Shape): Base {
   const sh = shape ?? kitLeft(s, s.current)[0] ?? "circle";
   const why = canPlaceBase(s, x, y, sh);
@@ -201,10 +207,7 @@ export function placeBase(s: GameState, x: number, y: number, shape?: Shape): Ba
   const R = s.rules;
   const id = s.bases.length;
   const seed = (s.seed ^ (id * 7919)) >>> 0;
-  const base: Base = {
-    id, owner: s.current, founder: s.current, x, y, r: baseRadius(R, sh), seed, shape: sh,
-    rot: sh === "circle" ? 0 : rng(seed ^ 0x5bd1)() * Math.PI * 2,
-  };
+  const base: Base = { id, owner: s.current, founder: s.current, x, y, r: baseRadius(R, sh), seed, shape: sh, rot: nextBaseRot(s, sh) };
   s.bases.push(base);
   s.actions.push({ t: "base", x, y, ...(shape && { shape }) });
   const n = sh === "circle" ? R.soldiersPerBase : R.shapes[sh].soldiers;

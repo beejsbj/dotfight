@@ -78,7 +78,7 @@ export interface Pen { x: number; y: number; angle: number; pull: number; lift: 
 export interface Overlay {
   selected?: number;
   aim?: { soldierId: number; angle: number; power: number; spread: number; reach: number };
-  ghost?: { x: number; y: number; ok: boolean; shape: Shape; r: number }; // base placement preview
+  ghost?: { x: number; y: number; ok: boolean; shape: Shape; r: number; rot: number }; // base placement preview
   pick?: { from?: number; to?: number }; // a transfer being set up: pencil rings round the bases
   ink?: Ink;
   mover?: { id: number; at: Pt }; // a moving soldier rides the head of its own ink
@@ -173,7 +173,7 @@ export function drawLive(ctx: CanvasRenderingContext2D, cam: Camera, s: GameStat
   if (o.ghost) {
     ctx.globalAlpha = o.ghost.ok ? 0.8 : 0.45;
     const g = o.ghost;
-    const v = baseVerts({ shape: g.shape, x: g.x, y: g.y, r: g.r, rot: -Math.PI / 2 });
+    const v = baseVerts({ shape: g.shape, x: g.x, y: g.y, r: g.r, rot: g.rot });
     if (v) v.forEach((p, i) => pencilLine(ctx, p, v[(i + 1) % v.length], g.ok ? 2 : 1.4, i, !g.ok));
     else pencilRing(ctx, g.x, g.y, g.r, g.ok ? 2 : 1.4, !g.ok);
     ctx.globalAlpha = 1;

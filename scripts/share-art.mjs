@@ -10,7 +10,7 @@ const b = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bi
 const p = await (await b.newContext({ ...devices["Pixel 7"] })).newPage();
 await p.goto(url);
 await p.waitForTimeout(1200);
-await p.evaluate(() => { localStorage.clear(); localStorage.setItem("pft:taught:place", "1"); localStorage.setItem("pft:taught:aim", "1"); localStorage.setItem("pft:muted", "1"); });
+await p.evaluate(() => { localStorage.clear(); localStorage.setItem("pft:taught:place", "1"); localStorage.setItem("pft:taught:aim", "1"); localStorage.setItem("pft:muted", "1"); localStorage.setItem("pft:rules", "prototype"); });
 await p.reload();
 await p.waitForTimeout(600);
 await p.getByText("pass & play").click();

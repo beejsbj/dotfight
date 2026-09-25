@@ -1,0 +1,271 @@
+{
+ "games": 2000,
+ "maxTurns": 250,
+ "at": "2026-09-25T13:03:58.187Z",
+ "summaries": [
+  {
+   "rules": "prototype",
+   "games": 2000,
+   "turns": {
+    "mean": 62.6465,
+    "p10": 42,
+    "p50": 60,
+    "p90": 87
+   },
+   "flicksPerGame": 62.6465,
+   "firstWins": 0.5245,
+   "draws": 0,
+   "perFlick": {
+    "zero": 0.5052397181007718,
+    "one": 0.23753920809622245,
+    "two": 0.15304127126016617,
+    "three": 0.07518376924488998,
+    "fourPlus": 0.028996033297949607,
+    "mean": 0.8988929948201416,
+    "max": 10
+   },
+   "comeback": 0.2731253420908593,
+   "bigComeback": 0.14008941877794337,
+   "drag": {
+    "mean": 20.048,
+    "share": 0.3048925813882074,
+    "acts": 20.048,
+    "actShare": 0.3048925813882074
+   },
+   "moveShare": 0.005443241042995219,
+   "transferShare": 0,
+   "materialShare": 0.4947602818992282,
+   "lostOffPage": 0,
+   "bounces": 0,
+   "splits": 0,
+   "stops": 0,
+   "cuts": 0,
+   "wounds": 0,
+   "fell": 3.8555,
+   "founded": 0,
+   "lastStandRate": 0,
+   "chainShare": 0,
+   "longestChain": 1
+  },
+  {
+   "rules": "classic",
+   "games": 2000,
+   "turns": {
+    "mean": 9.4815,
+    "p10": 4,
+    "p50": 8,
+    "p90": 16
+   },
+   "flicksPerGame": 47.8335,
+   "firstWins": 0.5445,
+   "draws": 0,
+   "perFlick": {
+    "zero": 0.17741750028745545,
+    "one": 0.3171940167455862,
+    "two": 0.23229535785589597,
+    "three": 0.14707265828342062,
+    "fourPlus": 0.1260204668276417,
+    "mean": 1.804969320664388,
+    "max": 10
+   },
+   "comeback": 0.30423418714061684,
+   "bigComeback": 0.25392886683209265,
+   "drag": {
+    "mean": 3.5575,
+    "share": 0.36026762345799046,
+    "acts": 7.807,
+    "actShare": 0.1556063100052068
+   },
+   "moveShare": 0.38350737453876466,
+   "transferShare": 0.000041809952859278153,
+   "materialShare": 0.7733480989294943,
+   "lostOffPage": 0.863,
+   "bounces": 0,
+   "splits": 0,
+   "stops": 0,
+   "cuts": 0.001,
+   "wounds": 0,
+   "fell": 6.642,
+   "founded": 0,
+   "lastStandRate": 0,
+   "chainShare": 0.7358540315350947,
+   "longestChain": 14.743
+  },
+  {
+   "rules": "last-stand",
+   "games": 2000,
+   "turns": {
+    "mean": 21.2935,
+    "p10": 17,
+    "p50": 21,
+    "p90": 26
+   },
+   "flicksPerGame": 54.7555,
+   "firstWins": 0.462,
+   "draws": 0,
+   "perFlick": {
+    "zero": 0.17344376364018227,
+    "one": 0.34590132498105214,
+    "two": 0.23109094063610047,
+    "three": 0.13679904301850956,
+    "fourPlus": 0.11276492772415557,
+    "mean": 1.7387933632237857,
+    "max": 10
+   },
+   "comeback": 0.33088620870477187,
+   "bigComeback": 0.21011058451816747,
+   "drag": {
+    "mean": 3.301,
+    "share": 0.15470428111792592,
+    "acts": 8.719,
+    "actShare": 0.15817158544560278
+   },
+   "moveShare": 0.3945357087415876,
+   "transferShare": 0.0004563667728480025,
+   "materialShare": 0.8603329654589429,
+   "lostOffPage": 0.932,
+   "bounces": 0,
+   "splits": 0,
+   "stops": 0,
+   "cuts": 0.01,
+   "wounds": 0,
+   "fell": 8.5595,
+   "founded": 0,
+   "lastStandRate": 1,
+   "chainShare": 0.812243172799211,
+   "longestChain": 3.9675
+  },
+  {
+   "rules": "geometry",
+   "games": 2000,
+   "turns": {
+    "mean": 27.909,
+    "p10": 20,
+    "p50": 27,
+    "p90": 37
+   },
+   "flicksPerGame": 60.0655,
+   "firstWins": 0.475,
+   "draws": 0,
+   "perFlick": {
+    "zero": 0.27092091133845553,
+    "one": 0.39349543415105176,
+    "two": 0.20051443840474148,
+    "three": 0.09256561586934263,
+    "fourPlus": 0.04250360023640859,
+    "mean": 1.2632875777276473,
+    "max": 11
+   },
+   "comeback": 0.2756785524215008,
+   "bigComeback": 0.15760111576011157,
+   "drag": {
+    "mean": 5.6515,
+    "share": 0.192400572307024,
+    "acts": 8.8145,
+    "actShare": 0.14218219827737993
+   },
+   "moveShare": 0.3546045566922776,
+   "transferShare": 0.00043267350623632294,
+   "materialShare": 0.7275610018273675,
+   "lostOffPage": 0.9635,
+   "bounces": 8.9955,
+   "splits": 1.559,
+   "stops": 5.8675,
+   "cuts": 0.011,
+   "wounds": 0,
+   "fell": 7.74,
+   "founded": 0,
+   "lastStandRate": 0,
+   "chainShare": 0.6712709161919094,
+   "longestChain": 3
+  },
+  {
+   "rules": "wet-ink",
+   "games": 2000,
+   "turns": {
+    "mean": 26.4945,
+    "p10": 19,
+    "p50": 24,
+    "p90": 36
+   },
+   "flicksPerGame": 58.4385,
+   "firstWins": 0.4985,
+   "draws": 0,
+   "perFlick": {
+    "zero": 0.22712766412553367,
+    "one": 0.3329055331673469,
+    "two": 0.21698880019165448,
+    "three": 0.12927265415778982,
+    "fourPlus": 0.09370534835767516,
+    "mean": 1.5845547028072247,
+    "max": 11
+   },
+   "comeback": 0.2690463505594033,
+   "bigComeback": 0.0993485342019544,
+   "drag": {
+    "mean": 7.3565,
+    "share": 0.24322729084207098,
+    "acts": 10.7415,
+    "actShare": 0.17109403499594375
+   },
+   "moveShare": 0.3632707889490661,
+   "transferShare": 0.0004532626357649876,
+   "materialShare": 0.7355300156636283,
+   "lostOffPage": 0.965,
+   "bounces": 7.373,
+   "splits": 0,
+   "stops": 5.661,
+   "cuts": 0.0115,
+   "wounds": 0,
+   "fell": 7.4245,
+   "founded": 0,
+   "lastStandRate": 0,
+   "chainShare": 0.6749325331672611,
+   "longestChain": 3
+  },
+  {
+   "rules": "siege",
+   "games": 2000,
+   "turns": {
+    "mean": 22.253,
+    "p10": 17,
+    "p50": 22,
+    "p90": 28
+   },
+   "flicksPerGame": 52.598,
+   "firstWins": 0.458,
+   "draws": 0,
+   "perFlick": {
+    "zero": 0.18929426974409674,
+    "one": 0.33315905547739455,
+    "two": 0.2337446290733488,
+    "three": 0.1377523860222822,
+    "fourPlus": 0.10604965968287768,
+    "mean": 1.699503783413818,
+    "max": 10
+   },
+   "comeback": 0.32772225144660705,
+   "bigComeback": 0.18064516129032257,
+   "drag": {
+    "mean": 2.5715,
+    "share": 0.10541389628913392,
+    "acts": 3.6405,
+    "actShare": 0.06390433644415662
+   },
+   "moveShare": 0.4343986463363626,
+   "transferShare": 0.012411047898007848,
+   "materialShare": 0.8179346604952141,
+   "lostOffPage": 1.1275,
+   "bounces": 0,
+   "splits": 0,
+   "stops": 0,
+   "cuts": 0.129,
+   "wounds": 0,
+   "fell": 8.758,
+   "founded": 1.215,
+   "lastStandRate": 0,
+   "chainShare": 0.7573585583966207,
+   "longestChain": 3.391
+  }
+ ]
+}
