@@ -5,7 +5,8 @@
 export default async function (T) {
   const { page, cdp } = T;
   await page.waitForTimeout(1200);
-  const info = await page.evaluate(async () => {
+  const turns = +(process.env.TURNS ?? 56);
+  const info = await page.evaluate(async (turns) => {
     const game = await import("/src/game.ts");
     const bot = await import("/src/bot.ts");
     const s = window.pft.s;
@@ -13,11 +14,11 @@ export default async function (T) {
     Object.assign(s, game.newGame(11, { no: 1, date: "25 Sep 2026" }));
     let k = 11;
     while (s.phase === "setup") { const spot = bot.botBase(s, (x, y) => !game.canPlaceBase(s, x, y), k++); game.placeBase(s, spot.x, spot.y); }
-    while (s.phase === "play" && s.turn < 56) game.act(s, bot.botFlick(s, 1, k++));
+    while (s.phase === "play" && s.turn < turns) game.act(s, bot.botFlick(s, 0, k++));
     document.querySelector("#sheet").hidden = true;
     const cover = document.querySelector("#cover"); if (cover) cover.hidden = true;
     return { marks: s.marks.length, turn: s.turn };
-  });
+  }, turns);
   console.log("page:", JSON.stringify(info));
   const rate = +(process.env.THROTTLE ?? 1);
   if (rate > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate });

@@ -501,7 +501,7 @@ function showTitle() {
   const canResume = saved && saved.s.phase !== "over";
   const menu = $("#cover .menu");
   menu.innerHTML = `
-    ${canResume ? `<button data-a="resume" class="ink blue">carry on page ${saved!.s.page?.no ?? ""}<small>${saved!.s.phase === "setup" ? "still drawing camps" : `turn ${saved!.s.turn}, ${alive(saved!.s, 0).length} v ${alive(saved!.s, 1).length}`}</small></button>` : ""}
+    ${canResume ? `<button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${saved!.s.phase === "setup" ? "still drawing camps" : `turn ${saved!.s.turn}, ${alive(saved!.s, 0).length} v ${alive(saved!.s, 1).length}`}</small></button>` : ""}
     <button data-a="bot" class="ink red">play Dawood-bot</button>
     <p class="levels">${LEVELS.map((l, i) => `<button data-lvl="${i}" class="${i === botLevel ? "on" : ""}">${l}</button>`).join("")}</p>
     <button data-a="pnp" class="ink blue">pass &amp; play<small>two of you, one phone</small></button>
