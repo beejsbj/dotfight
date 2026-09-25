@@ -16,12 +16,12 @@ import { inkTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
-import { ageOf, drawAge, PageLayer, SETTLED, type Ink } from "./page";
+import { drawYellow, PageLayer, SETTLED, type Ink } from "./page";
 import { leaning, PEN, type PenPose } from "./pen";
-import { screenDirToWorld, stageCss } from "./projection";
+import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, type Filed, type Mode, type Save, type Step } from "./record";
 import { RULES } from "./rules";
-import { dbg, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Frame } from "./scene";
+import { page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { Timeline, reachFraction } from "./timeline";
 
@@ -75,15 +75,17 @@ interface Resolve {
   kills: { i: number; at: number; hit: boolean; last: boolean }[];
   first: number; mover?: number; end: number;
   pen: boolean; cam: boolean; startLean: number; startAngle: number;
-  stood: boolean; done: () => void;
+  done: () => void;
 }
 let res: Resolve | null = null;
 let penDrop = -1e9; // when the pen was set down on the selected soldier
 
 const $ = <T extends HTMLElement>(q: string) => document.querySelector(q) as T;
-const stage = $<HTMLCanvasElement>("#stage");
+const els: Els = {
+  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), live: $<HTMLCanvasElement>("#live"),
+  light: $<HTMLCanvasElement>("#light"), haze: $<HTMLCanvasElement>("#haze"),
+};
 const over = $<HTMLCanvasElement>("#over");
-const sg = stage.getContext("2d", { alpha: false })!;
 const og = over.getContext("2d")!;
 const cam = new Camera();
 let W = 0, H = 0, dpr = 1, sdpr = 1, dirty = true;
@@ -102,8 +104,9 @@ const drawer = () => readDrawer(localStorage.getItem("pft:drawer"));
 // --- layout -----------------------------------------------------------------
 
 function resize() {
-  dpr = Math.min(3, window.devicePixelRatio || 1);
-  sdpr = Math.min(2, dpr);
+  // past 2x the extra pixels cost more than a phone's eye can see
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  sdpr = dpr;
   W = window.innerWidth;
   H = window.innerHeight;
   // a hidden bar takes no room (a zero rect would otherwise read as full height)
@@ -112,16 +115,22 @@ function resize() {
   const bottom = br.height ? H - br.top : 0;
   cam.resize(W, H, top, bottom);
   const cw = W + cam.ox * 2, ch = H + cam.oy + cam.ob;
-  stage.style.left = `${-cam.ox}px`;
-  stage.style.top = `${-cam.oy}px`;
-  stage.style.width = `${cw}px`;
-  stage.style.height = `${ch}px`;
+  const live = els.live;
+  live.style.left = `${-cam.ox}px`;
+  live.style.top = `${-cam.oy}px`;
+  live.style.width = `${cw}px`;
+  live.style.height = `${ch}px`;
   const [pw, ph] = [Math.round(cw * sdpr), Math.round(ch * sdpr)];
-  if (stage.width !== pw || stage.height !== ph) { stage.width = pw; stage.height = ph; }
+  if (live.width !== pw || live.height !== ph) { live.width = pw; live.height = ph; }
   const [ow, oh] = [Math.round(W * dpr), Math.round(H * dpr)];
   if (over.width !== ow || over.height !== oh) { over.width = ow; over.height = oh; }
-  // page texture resolution: sharp at the closest the camera sits, capped for memory
-  pageState.S = Math.round(Math.min(2.4, Math.max(1.2, sdpr * cam.fitZ * 2.6)) * 10) / 10;
+  // light and fog are gradients: a quarter of a css pixel is plenty
+  for (const c of [els.light, els.haze]) {
+    const [aw, ah] = [Math.ceil(W / 4), Math.ceil(H / 4)];
+    if (c.width !== aw || c.height !== ah) { c.width = aw; c.height = ah; }
+  }
+  // page texture resolution: sharp where the camera leans in to aim, capped for memory
+  pageState.S = Math.round(Math.min(2, Math.max(1.1, sdpr * cam.fitZ * 2.1 * 1.1)) * 10) / 10;
   if (!res && !aim && cam.tgt.tilt === 0 && cam.tgt.m === 1) { cam.overview(); cam.snap(); }
   dirty = true;
 }
@@ -135,10 +144,15 @@ applyTilt();
 
 // --- hud --------------------------------------------------------------------
 
+// Ink each pen has spent, summed once per new mark rather than every frame.
+let inkMemo = { s: null as GameState | null, n: -1, used: [0, 0] };
 function inkLeft(p: Player) {
-  let used = 0;
-  for (const m of s.marks) if (m.t === "stroke" && m.owner === p) used += pathLen(m.pts);
-  return Math.max(0.05, 1 - used / 60000);
+  if (inkMemo.s !== s || inkMemo.n !== s.marks.length) {
+    const used = [0, 0];
+    for (const m of s.marks) if (m.t === "stroke") used[m.owner] += pathLen(m.pts);
+    inkMemo = { s, n: s.marks.length, used };
+  }
+  return Math.max(0.05, 1 - inkMemo.used[p] / 60000);
 }
 
 function hud() {
@@ -272,9 +286,8 @@ function next() {
     const me = s.soldiers[f.soldierId];
     selected = f.soldierId;
     kind = f.kind;
-    // sit where the ink will come toward you
-    const down = Math.sin(f.angle + cam.tgt.rot) > 0;
-    sitOn(me, down ? 0.36 : 0.64);
+    // you watch the bot from above, the way you'd lean over a friend's flick
+    void me;
     sfx.pick();
     penDrop = T;
     hud();
@@ -293,9 +306,10 @@ function next() {
   });
 }
 
-function sitOn(p: Pt, fy = 0.64) {
-  if (cam.tiltScale > 0) cam.sit(p, 2.3, 0.62, fy);
-  else cam.sit(p, 2.1, 0, 0.5);
+// Lean in low to the pen to aim. Everything else is watched from above.
+function sitOn(p: Pt, fy = 0.66) {
+  if (cam.tiltScale > 0) cam.sit(p, 2.1, 0.55, fy);
+  else cam.sit(p, 2, 0, 0.55);
 }
 
 // The circle goes round, then the soldiers are jotted in, one tap each.
@@ -326,6 +340,7 @@ function handOver() {
   if (turned) {
     cam.overview();
     cam.turnTo(rotFor(s.current));
+    if (slow) cam.snap(); // a struggling phone skips the spin
     sfx.turnPage();
     after(settings.handoff && s.phase === "play" ? 700 : 900, () => {
       if (settings.handoff && s.phase === "play") showHandoff();
@@ -381,7 +396,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     f, o, owner: who, power, t0: T, dur, snags, kills, first,
     mover: f.kind === "move" ? f.soldierId : undefined,
     end: Math.max(dur + penTail, dur + 330 * quick) + 60,
-    pen, cam: opts.cam ?? true, startLean: lean, startAngle: f.angle, stood: false,
+    pen, cam: opts.cam ?? true, startLean: lean, startAngle: f.angle,
     done: () => {
       const k = o.killed.length;
       const verb = f.kind === "shoot" ? "shot" : "run";
@@ -392,6 +407,8 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
       handOver();
     },
   };
+  // straight back up to a bird's-eye view to watch the ink land
+  if (opts.cam ?? true) cam.overview();
   sfx.slip(power);
   sfx.scratch(dur / 1000 / speed + 0.05, f.kind === "shoot" ? 0.6 : 0.45);
   sfx.buzz(12);
@@ -412,7 +429,7 @@ function headAt(pts: Pt[], p: number) {
   return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, angle: Math.atan2(b.y - a.y, b.x - a.x) };
 }
 
-// Per frame while a flick resolves: land the crosses, chase the ink, stand up after.
+// Per frame while a flick resolves: land the crosses on time.
 function stepResolve() {
   const r = res!;
   const e = T - r.t0;
@@ -426,10 +443,6 @@ function stepResolve() {
     sfx.buzz(k.last ? [30, 40, 60] : 16);
     if (r.cam) cam.shake(k.last ? 9 : 4);
   }
-  const p = Math.min(1, it / r.dur);
-  const head = headAt(r.o.path, 1 - Math.pow(1 - p, 2));
-  if (r.cam && it < r.dur) cam.chase(head, cam.tiltScale ? 1.55 : 1.4, 0.3, 0.52);
-  if (r.cam && !r.stood && it > r.dur + 380) { r.stood = true; cam.overview(); }
   if (it >= r.end) {
     const done = r.done;
     res = null;
@@ -757,8 +770,7 @@ function drawPageInto(g: CanvasRenderingContext2D, st: GameState, sc: number, r?
   g.drawImage(exportLayer.c!, 0, 0, g.canvas.width, g.canvas.height);
   g.setTransform(sc, 0, 0, sc, 0, 0);
   g.globalCompositeOperation = "multiply";
-  drawAge(g, st);
-  for (const x of st.soldiers) if (x.alive) inkLib.inkDot(g, x.x, x.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7);
+  drawYellow(g, st); // on screen the lamp tints it; the kept page carries it
   g.globalCompositeOperation = "source-over";
 }
 
@@ -1019,7 +1031,10 @@ let last = performance.now();
 const frameTimes: number[] = []; // raw ms between frames, for the dev perf probe
 const scriptTimes: number[] = []; // ms of main-thread script per rendered frame (drawing is recorded, not rastered)
 let wasLive = false;
-let lastCss = "";
+// Camera-move frames on this device: if they're struggling, stop spinning the page
+// and settle moves faster.
+const moveTimes: number[] = [];
+let slow = false;
 
 function frame(now: number) {
   requestAnimationFrame(frame);
@@ -1034,7 +1049,16 @@ function frame(now: number) {
     later = later.filter((l) => l.at > T);
     for (const l of due) if (l.g === gen) l.fn();
   }
-  let active = cam.tick(dt);
+  const moving = cam.tick(dt);
+  let active = moving;
+  if (moving && !slow) {
+    moveTimes.push(frameTimes[frameTimes.length - 1]);
+    if (moveTimes.length > 40) moveTimes.shift();
+    if (moveTimes.length >= 24) {
+      const med = [...moveTimes].sort((a, b) => a - b)[moveTimes.length >> 1];
+      if (med > 45) { slow = true; cam.quick = 1.8; }
+    }
+  }
   if (res) { stepResolve(); active = true; }
   const live = fx.end(T) > T || inkTL.end(0) > 0;
   if (live || wasLive || aim || botAim || lampOn.moving || dawn.moving || T - penDrop < 260) active = true;
@@ -1063,8 +1087,8 @@ function currentFrame(): Frame {
     ink = { p: (k) => (inkTL.pending(k, it) ? inkTL.p(k, it) : fx.p(k, T)), live: liveSet };
   }
   const f: Frame = {
-    s, view: v, lamp, ink, dpr: sdpr, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
-    selected, ghost, age: ageOf(s), sig: signatureFor(s, mode),
+    s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
+    selected, ghost, sig: signatureFor(s, mode), lean: leanOf(),
   };
   const human = screen === "game" && !isBot(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
@@ -1115,20 +1139,19 @@ function currentFrame(): Frame {
   return f;
 }
 
+// How far the camera has leaned in to aim (brings up the fog round the pen).
+function leanOf() {
+  const p = cam.cur;
+  return Math.max(0, Math.min(1, cam.tiltScale > 0 ? p.tilt / 0.55 : (p.m - 1) / 1.1));
+}
+
 function renderNow() {
   const f = currentFrame();
-  const css = stageCss(f.view);
-  const key = css.transform + css.origin;
-  if (key !== lastCss) {
-    stage.style.transform = css.transform;
-    stage.style.transformOrigin = css.origin;
-    lastCss = key;
-  }
   const bg = farColour(f.lamp);
   if (document.body.style.backgroundColor !== bg) document.body.style.backgroundColor = bg;
   document.body.style.setProperty("--lamp", f.lamp.on.toFixed(3));
   document.body.style.setProperty("--dawn", f.lamp.dawn.toFixed(3));
-  renderStage(sg, f, cam.settled && !lampOn.moving && !dawn.moving);
+  renderStage(els, f);
   renderOverlay(og, f, W, H, dpr);
 }
 
@@ -1159,7 +1182,8 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    dbg, stageStats, cam, fx, inkTL, pageCanvas, ink: inkLib, INK, stage, canvas: over, renderNow, worldTransform, page, pen: PEN,
+    stageStats, cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
+    get slow() { return slow; }, set slow(v: boolean) { slow = v; cam.quick = v ? 1.8 : 1; },
     start, showTitle, replay: () => replay(file(s, mode)), apply: (st: Step) => { apply(s, st); dirty = true; },
     unfile, file: () => file(s, mode), act: (f: Flick) => fire(f, 0.6, 0.3),
     /** A whole seeded bot-v-bot war, filed in the drawer. Returns the record. */

@@ -1,13 +1,20 @@
-// One frame of the desk. The stage canvas draws the desk plane flat (CSS tilts
-// it); the overlay canvas, untilted, carries the things that stand up off the
-// page: the pen.
+// One frame of the desk, built from layers the GPU carries.
+//
+// The desk and the page are canvases drawn in page space. They're never
+// redrawn when the camera moves: one CSS matrix3d per layer puts them on
+// screen at any zoom, turn or tilt, and the compositor does the rest. What
+// is still moving (ink being drawn, a soldier riding his line, pencil guides,
+// the pen's shadow) is drawn on a small live layer multiplied over the page.
+// Light and fog are two tiny canvases stretched over the screen. The standing
+// pen lives on the untilted overlay. A camera move therefore costs a few
+// style writes and a couple of hundred pixels of gradient, not a repaint.
 
 import type { GameState, Pt } from "./game";
-import { INK, handText, inkFlick, pencilArrow, pencilLine, pencilLoop } from "./ink";
-import { farColour, lightAt, lightGradient, type Lamp } from "./light";
-import { drawAge, drawBase, drawDot, drawMark, drawSignature, pendingKills, PageLayer, SETTLED, type Ink, type Signature } from "./page";
+import { INK, handText, pencilArrow, pencilLine, pencilLoop } from "./ink";
+import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
+import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
-import { project, type View } from "./projection";
+import { cssMatrix, layerMatrix, project, stageCss, toLocal, type View } from "./projection";
 import { RULES } from "./rules";
 import { DESK, deskTexture } from "./textures";
 
@@ -27,7 +34,10 @@ export interface Frame {
   view: View;
   lamp: Lamp;
   ink: Ink;
-  /** Stage canvas size in css px, and its pixel ratio. */
+  /** How far the camera has leaned in to aim, 0..1: brings up the fog. */
+  lean: number;
+  /** Screen width (css px); live canvas size in css px; the pixel ratio canvases use. */
+  sw: number;
   cw: number;
   ch: number;
   dpr: number;
@@ -41,168 +51,166 @@ export interface Frame {
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] };
   teach?: { kind: "aim" | "place"; at: Pt; p: number; rot: number };
   sig?: Signature;
-  /** Page yellowing, 0..1. */
-  age: number;
 }
-
-let desk: HTMLCanvasElement | null = null;
 
 export const page = new PageLayer();
-/** Dev switches for profiling layers. */
-export const dbg = { wood: true, light: true, page: true, shadow: true, live: true, sheen: true, fade: true, hq: true };
 export const pageState = { epoch: 0, S: 1.6 };
+export const stageStats = { live: 0, air: 0, frames: 0 };
 
-export function worldTransform(g: Ctx, v: View, dpr: number) {
+export interface Els {
+  desk: HTMLCanvasElement;
+  pageHost: HTMLElement;
+  live: HTMLCanvasElement;
+  light: HTMLCanvasElement;
+  haze: HTMLCanvasElement;
+}
+
+export function worldTransform(ctx: Ctx, v: View, dpr: number) {
   const c = Math.cos(v.rot) * v.z, s = Math.sin(v.rot) * v.z;
   const lx = v.px + v.ox, ly = v.py + v.oy;
-  g.setTransform(dpr * c, dpr * s, -dpr * s, dpr * c, dpr * (lx - (c * v.x - s * v.y)), dpr * (ly - (s * v.x + c * v.y)));
+  ctx.setTransform(dpr * c, dpr * s, -dpr * s, dpr * c, dpr * (lx - (c * v.x - s * v.y)), dpr * (ly - (s * v.x + c * v.y)));
 }
 
-// The lit desk (wood, sheet, dried ink, lamp) is composited once and reused
-// while the camera and lamp are still. Everything that changes (living
-// soldiers, ink being drawn on) is multiplied on top afterwards: paper, ink
-// and light are all multiplied, and multiplying is order-free, so the result
-// is the same as lighting it all together. Aiming, the bot's turn, and a
-// flick watched from a still camera then cost one image copy plus the ink.
-const lit = { c: null as HTMLCanvasElement | null, key: "" };
-export const stageStats = { full: 0, cached: 0 };
+// A world-space bounding box, grown as the live layer draws, so the next
+// frame clears only what was drawn instead of the whole canvas.
+class Box {
+  x0 = Infinity; y0 = Infinity; x1 = -Infinity; y1 = -Infinity;
+  add(x: number, y: number, r = 0) {
+    this.x0 = Math.min(this.x0, x - r); this.y0 = Math.min(this.y0, y - r);
+    this.x1 = Math.max(this.x1, x + r); this.y1 = Math.max(this.y1, y + r);
+  }
+  get empty() { return this.x0 > this.x1; }
+}
 
-export function renderStage(g: Ctx, f: Frame, still: boolean) {
-  const { view: v, lamp, dpr, s } = f;
+let lastCss = { desk: "", page: "", live: "" };
+let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
+let airKey = "";
+let deskInit = false;
+
+/** Put the page-space layers where the camera says. Style writes only. */
+function place(els: Els, f: Frame) {
+  const v = f.view;
+  if (!deskInit) {
+    const d = deskTexture(RULES.pageW, RULES.pageH);
+    els.desk.width = d.width; els.desk.height = d.height;
+    els.desk.getContext("2d")!.drawImage(d, 0, 0);
+    els.desk.style.width = `${d.width}px`; els.desk.style.height = `${d.height}px`;
+    deskInit = true;
+  }
+  const dm = cssMatrix(layerMatrix(v, DESK.S, -DESK.pad, -DESK.pad));
+  if (dm !== lastCss.desk) { els.desk.style.transform = dm; lastCss.desk = dm; }
+  const c = page.c!;
+  if (c.parentElement !== els.pageHost) { els.pageHost.replaceChildren(c); lastCss.page = ""; }
+  const w = `${c.width}px`, h = `${c.height}px`;
+  if (c.style.width !== w) { c.style.width = w; c.style.height = h; }
+  const pm = cssMatrix(layerMatrix(v, page.S));
+  if (pm !== lastCss.page) { c.style.transform = pm; lastCss.page = pm; }
+  const lc = stageCss(v);
+  const lk = lc.transform + lc.origin;
+  if (lk !== lastCss.live) { els.live.style.transform = lc.transform; els.live.style.transformOrigin = lc.origin; lastCss.live = lk; }
+}
+
+export function renderStage(els: Els, f: Frame) {
+  const { s, dpr } = f;
   const ink = f.ink ?? SETTLED;
-  const synced = page.sync(s, ink, pageState.S, pageState.epoch, f.sig);
-  const W = g.canvas.width, H = g.canvas.height;
-  if (still) {
-    const key = [v.x, v.y, v.z, v.rot, v.tilt, v.px, v.py, lamp.x, lamp.y, lamp.h, lamp.on, lamp.dawn, f.age, pageState.epoch, W, H].join("|");
-    if (!lit.c) lit.c = document.createElement("canvas");
-    if (lit.c.width !== W || lit.c.height !== H) { lit.c.width = W; lit.c.height = H; lit.key = ""; }
-    const lg = lit.c.getContext("2d")!;
-    if (lit.key !== key || synced.fresh) {
-      drawLitDesk(lg, f, true);
-      lit.key = key;
-      stageStats.full++;
-    } else {
-      if (synced.added.length) {
-        // freshly dried marks: multiply them onto the lit copy too
-        worldTransform(lg, v, dpr);
-        lg.globalCompositeOperation = "multiply";
-        for (const draw of synced.added) draw(lg);
-        lg.globalCompositeOperation = "source-over";
-      }
-      stageStats.cached++;
-    }
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.globalCompositeOperation = "source-over";
-    g.globalAlpha = 1;
-    g.drawImage(lit.c, 0, 0);
-  } else {
-    lit.key = "";
-    drawLitDesk(g, f, false);
-    stageStats.full++;
-  }
+  page.sync(s, ink, pageState.S, pageState.epoch, f.sig, f.mover?.id);
+  place(els, f);
+  renderLive(els.live.getContext("2d")!, els.live, f, ink, dpr);
+  renderAir(els, f);
+  stageStats.frames++;
+}
+
+// --- the live layer: only what is still being drawn ---------------------------
+
+function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: number) {
+  const { s, view: v } = f;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  if (liveDirty) g.clearRect(liveDirty.x, liveDirty.y, liveDirty.w, liveDirty.h);
+  const box = new Box();
   worldTransform(g, v, dpr);
-  // living soldiers, and anything still being drawn on
-  g.globalCompositeOperation = "multiply";
-  if (dbg.live) drawLive(g, f, ink);
-  if (f.pen) drawPenShadow(g, f.pen, lamp);
   g.globalCompositeOperation = "source-over";
-  drawGuides(g, f);
-  // fresh ink still wet: it catches the lamp
-  if (dbg.sheen) drawSheen(g, f);
-}
-
-function drawLitDesk(g: Ctx, f: Frame, hq: boolean) {
-  const { view: v, lamp, dpr } = f;
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.globalCompositeOperation = "source-over";
-  g.globalAlpha = 1;
-  worldTransform(g, v, dpr);
-  const { pageW: pw, pageH: ph } = RULES;
-  const BIG = 4000;
-
-  // the desk (with the sheet's shadow on it); past its edge the room is dark
-  desk ??= deskTexture(pw, ph);
-  g.fillStyle = "#1a120c";
-  g.fillRect(-BIG, -BIG, pw + BIG * 2, ph + BIG * 2);
-  if (dbg.wood) g.drawImage(desk, -DESK.pad, -DESK.pad, pw + DESK.pad * 2, ph + DESK.pad * 2);
-
-  // the page, and everything dry on it. Moving frames can resample cheaply:
-  // motion hides it, and still frames are cached at full quality.
-  g.imageSmoothingQuality = dbg.hq && hq ? "high" : "low";
-  if (dbg.page) g.drawImage(page.c!, 0, 0, pw, ph);
-
-  // the paper yellows (and gets a mug set on it) as the war goes on
-  g.globalCompositeOperation = "multiply";
-  drawAge(g, f.s);
-
-  // the lamp
-  g.fillStyle = lightGradient(g, lamp);
-  if (dbg.light) g.fillRect(-BIG, -BIG, pw + BIG * 2, ph + BIG * 2);
-  g.globalCompositeOperation = "source-over";
-
-  // morning comes in through the window: four panes of pale light
-  if (lamp.dawn > 0.01) drawWindow(g, lamp.dawn);
-
-  // when the desk tilts away its far edges must melt into the dark
-  if (v.tilt > 1e-3 && dbg.fade) edgeFade(g, f);
-}
-
-// A window's light laid across the desk, skewed, soft-edged, split by its bars.
-function drawWindow(g: Ctx, dawn: number) {
-  const O = { x: 180, y: 120 }, u = { x: 820, y: 170 }, v = { x: -300, y: 1180 };
-  const gap = 0.035;
-  g.globalCompositeOperation = "screen";
-  for (const [i, j] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
-    const a0 = i * 0.5 + gap, a1 = i * 0.5 + 0.5 - gap, b0 = j * 0.5 + gap, b1 = j * 0.5 + 0.5 - gap;
-    const P = (a: number, b: number) => ({ x: O.x + u.x * a + v.x * b, y: O.y + u.y * a + v.y * b });
-    // three passes, each a little larger and fainter: a soft edge without a blur filter
-    for (const [grow, al] of [[0, 0.2], [0.012, 0.1], [0.026, 0.06]] as const) {
-      const c = [P(a0 - grow, b0 - grow), P(a1 + grow, b0 - grow), P(a1 + grow, b1 + grow), P(a0 - grow, b1 + grow)];
-      g.fillStyle = `rgba(255, 238, 205, ${al * dawn})`;
-      g.beginPath();
-      c.forEach((q, k) => (k ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)));
-      g.closePath();
-      g.fill();
-    }
-  }
-  g.globalCompositeOperation = "source-over";
-}
-
-function drawLive(g: Ctx, f: Frame, ink: Ink) {
-  const { s } = f;
+  // ink still going on: camps being circled, dots being jotted, the flick, its crosses
   for (const b of s.bases) {
     const k = `b${b.id}`;
-    if (!page.has(k) && ink.live.has(k)) drawBase(g, b, ink.p(k));
+    if (!page.has(k) && ink.live.has(k)) { drawBase(g, b, ink.p(k)); box.add(b.x, b.y, b.r + 8); }
   }
   s.marks.forEach((m, i) => {
     const k = `m${i}`;
-    if (!page.has(k) && ink.live.has(k)) drawMark(g, m, ink.p(k));
+    if (page.has(k) || !ink.live.has(k)) return;
+    drawMark(g, m, ink.p(k));
+    if (m.t === "stroke") for (const p of m.pts) box.add(p.x, p.y, 8);
+    else box.add(m.x, m.y, 20);
   });
-  const pending = pendingKills(s, ink);
   for (const x of s.soldiers) {
-    if (!x.alive && page.hasDead(x.id)) continue;
     const jot = `d${x.id}`;
-    const moving = f.mover?.id === x.id;
-    const cross = x.alive ? undefined : pending.get(`${x.x},${x.y}`);
-    const fallen = !x.alive && !(cross && ink.p(cross) <= 0);
-    drawDot(g, x, fallen ? 0.8 : 1, ink.live.has(jot) ? ink.p(jot) : 1, moving ? f.mover!.at : x);
+    if (ink.live.has(jot)) { drawDot(g, x, 1, ink.p(jot)); box.add(x.x, x.y, 12); }
   }
-  if (f.sig && !page.isSigned && ink.live.has("sign")) drawSignature(g, f.sig, ink.p("sign"));
+  if (f.mover) { drawDot(g, s.soldiers[f.mover.id], 1, 1, f.mover.at); box.add(f.mover.at.x, f.mover.at.y, 12); }
+  if (f.sig && !page.isSigned && ink.live.has("sign")) {
+    drawSignature(g, f.sig, ink.p("sign"));
+    box.add(0, RULES.pageH - 110); box.add(RULES.pageW, RULES.pageH);
+  }
+  drawGuides(g, f, box);
+  if (f.pen) {
+    drawPenShadow(g, f.pen, f.lamp);
+    const c = shadowEnds(f.pen, f.lamp);
+    box.add(c[0].x, c[0].y, PEN.R * 4); box.add(c[1].x, c[1].y, PEN.R * 6);
+  }
+  if (box.empty) {
+    liveDirty = null;
+    if (el.style.visibility !== "hidden") el.style.visibility = "hidden";
+    return;
+  }
+  if (el.style.visibility === "hidden") el.style.visibility = "";
+  stageStats.live++;
+  // the drawn box, in canvas pixels, for next frame's clear
+  const pts = [[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]].map(([x, y]) => toLocal(v, x, y));
+  const x0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.x)) * dpr) - 4), y0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.y)) * dpr) - 4);
+  const x1 = Math.min(el.width, Math.ceil(Math.max(...pts.map((p) => p.x)) * dpr) + 4), y1 = Math.min(el.height, Math.ceil(Math.max(...pts.map((p) => p.y)) * dpr) + 4);
+  liveDirty = x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+}
+
+function shadowEnds(p: PenPose, lamp: Lamp) {
+  const cast = (q: { x: number; y: number; h: number }) => {
+    const k = lamp.h / Math.max(lamp.h * 0.08, lamp.h - q.h);
+    return { x: lamp.x + (q.x - lamp.x) * k, y: lamp.y + (q.y - lamp.y) * k };
+  };
+  return [cast({ x: p.x, y: p.y, h: p.h }), cast({ x: p.x + p.ax * PEN.L, y: p.y + p.ay * PEN.L, h: p.h + p.az * PEN.L })];
+}
+
+// --- light and fog: tiny canvases, stretched ------------------------------------
+
+function renderAir(els: Els, f: Frame) {
+  const { view: v, lamp, lean } = f;
+  const age = ageOf(f.s);
+  const tip = f.pen ?? (f.selected !== undefined ? f.s.soldiers[f.selected] : undefined);
+  const key = [v.x, v.y, v.z, v.rot, v.tilt, v.px, v.py, lamp.on, lamp.dawn, age, lean, tip?.x, tip?.y].map((n) => (typeof n === "number" ? n.toFixed(3) : n)).join("|");
+  if (key === airKey) return;
+  airKey = key;
+  stageStats.air++;
+  const k = els.light.width / f.sw;
+  paintLight(els.light.getContext("2d")!, els.light.width, els.light.height, k, lamp, v, yellowing(age));
+  const hz = els.haze.getContext("2d")!;
+  const visible = paintHaze(hz, els.haze.width, els.haze.height, k, v, lean, lamp.dawn, tip && lean > 0.02 ? project(v, tip.x, tip.y) : undefined);
+  const vis = visible ? "" : "hidden";
+  if (els.haze.style.visibility !== vis) els.haze.style.visibility = vis;
 }
 
 // Pencil: selection, aim, placement. Not ink yet, so it sits on top of the paper.
-function drawGuides(g: Ctx, f: Frame) {
+function drawGuides(g: Ctx, f: Frame, box: Box) {
   const { s, view: v } = f;
   const px = 1 / v.z;
   if (f.keepOut) {
-    for (const k of f.keepOut) pencilHatchRing(g, k.x, k.y, k.r, px);
+    for (const k of f.keepOut) { pencilHatchRing(g, k.x, k.y, k.r, px); box.add(k.x, k.y, k.r + 6); }
   }
-  if (f.hint) for (const b of f.hint.bases) pencilLoop(g, b.x, b.y, b.r + 12, 900 + b.id * 17, Math.max(1.6, px * 1.1), f.hint.p, 0.75);
+  if (f.hint) for (const b of f.hint.bases) { pencilLoop(g, b.x, b.y, b.r + 12, 900 + b.id * 17, Math.max(1.6, px * 1.1), f.hint.p, 0.75); box.add(b.x, b.y, b.r + 24); }
   if (f.selected !== undefined && !f.aim && !f.mover) {
     const x = s.soldiers[f.selected];
     pencilLoop(g, x.x, x.y, RULES.soldierRadius + 10, 77 + x.id, Math.max(1.6, px), 1, 0.9);
+    box.add(x.x, x.y, 30);
   }
   if (f.ghost) {
+    box.add(f.ghost.x, f.ghost.y, RULES.baseRadius + 10);
     g.globalAlpha = f.ghost.ok ? 1 : 0.5;
     const r = RULES.baseRadius;
     for (let i = 0; i < 28; i++) {
@@ -212,8 +220,8 @@ function drawGuides(g: Ctx, f: Frame) {
     }
     g.globalAlpha = 1;
   }
-  if (f.teach) drawTeach(g, f.teach);
-  if (f.aim) drawAim(g, s, f.aim, px);
+  if (f.teach) { drawTeach(g, f.teach); box.add(f.teach.at.x, f.teach.at.y, 420); }
+  if (f.aim) { drawAim(g, s, f.aim, px); box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + 24); }
 }
 
 function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
@@ -276,110 +284,105 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   g.restore();
 }
 
-// Wet ballpoint is glossy for a while: a thin bright line on the lamp side.
-function drawSheen(g: Ctx, f: Frame) {
-  const { s, lamp } = f;
-  if (lamp.on <= 0) return;
-  g.globalCompositeOperation = "screen";
+
+// --- the overlay: things standing up off the page, and wet ink catching light ---
+
+// Only the pen's (and the sheen's) own box is cleared and redrawn.
+let inked: { x: number; y: number; w: number; h: number } | null = { x: 0, y: 0, w: 1e5, h: 1e5 };
+export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: number) {
+  const sheen = sheenStrokes(f);
+  if (!f.pen && !sheen.length && !inked) return;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (inked) g.clearRect(inked.x, inked.y, inked.w, inked.h);
+  inked = null;
+  const box = new Box();
+  if (sheen.length) drawSheen(g, f, sheen, box);
+  if (f.pen) {
+    const pb = penBox(f.pen, f.view);
+    box.add(pb.x0, pb.y0); box.add(pb.x1, pb.y1);
+    drawPen(g, f.pen, f.view);
+    if (f.aim && f.aim.power > 0) guideThroughBarrel(g, f);
+    // the pen stands in the same light as everything else
+    const lit = lightAt(f.lamp, f.pen.x, f.pen.y);
+    g.save();
+    g.beginPath();
+    g.rect(pb.x0, pb.y0, pb.x1 - pb.x0, pb.y1 - pb.y0);
+    g.clip();
+    g.globalCompositeOperation = "source-atop";
+    g.fillStyle = `rgba(22, 15, 10, ${Math.min(0.85, (1 - lit) * 0.9)})`;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = `rgba(255, 196, 120, ${0.1 * f.lamp.on * (1 - f.lamp.dawn)})`;
+    g.fillRect(0, 0, W, H);
+    g.restore();
+  }
+  if (!box.empty) {
+    const x0 = Math.max(0, Math.floor(box.x0) - 4), y0 = Math.max(0, Math.floor(box.y0) - 4);
+    const x1 = Math.min(W, Math.ceil(box.x1) + 4), y1 = Math.min(H, Math.ceil(box.y1) + 4);
+    if (x1 > x0 && y1 > y0) inked = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+}
+
+function penBox(p: PenPose, v: View) {
+  const pts = [0, 0.5, 1].map((t) => project(v, p.x + p.ax * PEN.L * t, p.y + p.ay * PEN.L * t, p.h + p.az * PEN.L * t));
+  const pad = Math.max(...pts.map((q) => q.k)) * PEN.R * 2.5 + 6;
+  return {
+    x0: Math.min(...pts.map((q) => q.x)) - pad, y0: Math.min(...pts.map((q) => q.y)) - pad,
+    x1: Math.max(...pts.map((q) => q.x)) + pad, y1: Math.max(...pts.map((q) => q.y)) + pad,
+  };
+}
+
+function guideThroughBarrel(g: Ctx, f: Frame) {
+  const a = f.aim!;
+  const me = f.s.soldiers[a.soldierId];
+  const show = aimShow(a);
+  const dx = Math.cos(a.angle), dy = Math.sin(a.angle);
+  g.strokeStyle = "rgba(58, 56, 54, 0.5)";
   g.lineCap = "round";
+  const step = 14;
+  for (let d = 8; d < show; d += step * 1.8) {
+    const p = project(f.view, me.x + dx * d, me.y + dy * d), q = project(f.view, me.x + dx * Math.min(show, d + step), me.y + dy * Math.min(show, d + step));
+    g.lineWidth = Math.max(1.2, 2.2 * p.k);
+    g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); g.stroke();
+  }
+}
+
+// Wet ballpoint is glossy for a while: a thin bright line on the lamp side,
+// for the last turn or two. Projected point by point, so it sits on the page
+// whatever the camera does.
+function sheenStrokes(f: Frame) {
+  const { s, lamp } = f;
+  const out: { i: number; wet: number }[] = [];
+  if (lamp.on <= 0 || f.lean > 0.3) return out;
   const last = s.phase === "over" ? s.turn : s.turn - 1;
   for (let i = s.marks.length - 1; i >= 0; i--) {
     const m = s.marks[i];
     const age = last - m.turn;
     if (age > 1) break;
-    const wet = (age <= 0 ? 1 : 0.4) * (1 - lamp.dawn * 0.7);
+    if (m.t === "stroke") out.push({ i, wet: (age <= 0 ? 1 : 0.4) * (1 - lamp.dawn * 0.7) * (1 - f.lean) });
+  }
+  return out;
+}
+
+function drawSheen(g: Ctx, f: Frame, list: { i: number; wet: number }[], box: Box) {
+  const { s, lamp, view: v } = f;
+  g.lineCap = "round";
+  for (const { i, wet } of list) {
+    const m = s.marks[i];
+    if (m.t !== "stroke") continue;
     const k = `m${i}`;
     const p = f.ink.live.has(k) ? f.ink.p(k) : 1;
     if (p <= 0) continue;
-    if (m.t === "stroke") {
-      const pts = m.pts;
-      const mid = pts[pts.length >> 1];
-      const lit = lightAt(lamp, mid.x, mid.y);
-      const ox = lamp.x - mid.x, oy = lamp.y - mid.y, ol = Math.hypot(ox, oy) || 1;
-      const off = 0.9;
-      const shifted = pts.map((q) => ({ x: q.x + (ox / ol) * off, y: q.y + (oy / ol) * off }));
-      inkFlick(g, shifted, `rgb(255, 246, 225)`, m.seed, RULES.inkWidth * 0.32, p, 0.5 * wet * lit);
-    } else if (m.kind === "kill") {
-      const lit = lightAt(lamp, m.x, m.y);
-      g.globalAlpha = 0.35 * wet * lit * Math.min(1, p * 2);
-      g.fillStyle = "rgb(255, 246, 225)";
-      g.beginPath();
-      g.arc(m.x - 2, m.y - 2, 2.2, 0, Math.PI * 2);
-      g.fill();
+    const mid = m.pts[m.pts.length >> 1];
+    const ox = lamp.x - mid.x, oy = lamp.y - mid.y, ol = Math.hypot(ox, oy) || 1;
+    const n = Math.max(1, Math.floor((m.pts.length - 1) * p));
+    g.beginPath();
+    for (let j = 0; j <= n; j++) {
+      const q = project(v, m.pts[j].x + (ox / ol) * 0.9, m.pts[j].y + (oy / ol) * 0.9);
+      if (j) g.lineTo(q.x, q.y); else g.moveTo(q.x, q.y);
+      box.add(q.x, q.y, 3);
     }
+    g.strokeStyle = `rgba(255, 246, 225, ${0.45 * wet * lightAt(lamp, mid.x, mid.y)})`;
+    g.lineWidth = Math.max(0.6, RULES.inkWidth * 0.3 * v.z);
+    g.stroke();
   }
-  g.globalAlpha = 1;
-  g.globalCompositeOperation = "source-over";
-}
-
-function edgeFade(g: Ctx, f: Frame) {
-  const { cw, ch, dpr } = f;
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const col = farColour(f.lamp);
-  const clear = col.replace(/,[^,]*\)$/, ",0)");
-  const fade = (x0: number, y0: number, x1: number, y1: number, rx: number, ry: number, rw: number, rh: number) => {
-    const gr = g.createLinearGradient(x0, y0, x1, y1);
-    gr.addColorStop(0, col);
-    gr.addColorStop(1, clear);
-    g.fillStyle = gr;
-    g.fillRect(rx, ry, rw, rh);
-  };
-  const ex = cw * 0.1, ey = ch * 0.16;
-  fade(0, 0, 0, ey, 0, 0, cw, ey);
-  fade(0, ch, 0, ch - ey * 0.4, 0, ch - ey * 0.4, cw, ey * 0.4);
-  fade(0, 0, ex, 0, 0, 0, ex, ch);
-  fade(cw, 0, cw - ex, 0, cw - ex, 0, ex, ch);
-}
-
-// --- overlay: the standing pen -------------------------------------------------
-
-// Only the pen's own box is cleared and redrawn, not the whole screen.
-let inked: { x: number; y: number; w: number; h: number } | null = { x: 0, y: 0, w: 1e5, h: 1e5 };
-export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: number) {
-  if (!f.pen && !inked) return; // nothing standing, nothing to clear
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  if (inked) g.clearRect(inked.x, inked.y, inked.w, inked.h);
-  inked = null;
-  if (!f.pen) return;
-  const box = penBox(f.pen, f.view, W, H);
-  if (!box) return;
-  inked = box;
-  g.save();
-  g.beginPath();
-  g.rect(box.x, box.y, box.w, box.h);
-  g.clip();
-  drawPen(g, f.pen, f.view);
-  // the pencil guide, seen through the clear barrel
-  if (f.aim && f.aim.power > 0) {
-    const me = f.s.soldiers[f.aim.soldierId];
-    const show = aimShow(f.aim);
-    const dx = Math.cos(f.aim.angle), dy = Math.sin(f.aim.angle);
-    g.strokeStyle = "rgba(58, 56, 54, 0.5)";
-    g.lineCap = "round";
-    const step = 14;
-    for (let d = 8; d < show; d += step * 1.8) {
-      const a = project(f.view, me.x + dx * d, me.y + dy * d), b = project(f.view, me.x + dx * Math.min(show, d + step), me.y + dy * Math.min(show, d + step));
-      g.lineWidth = Math.max(1.2, 2.2 * a.k);
-      g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
-    }
-  }
-  // the pen stands in the same light as everything else
-  const lit = lightAt(f.lamp, f.pen.x, f.pen.y);
-  g.globalCompositeOperation = "source-atop";
-  g.fillStyle = `rgba(22, 15, 10, ${Math.min(0.85, (1 - lit) * 0.9)})`;
-  g.fillRect(0, 0, W, H);
-  g.fillStyle = `rgba(255, 196, 120, ${0.1 * f.lamp.on * (1 - f.lamp.dawn)})`;
-  g.fillRect(0, 0, W, H);
-  g.globalCompositeOperation = "source-over";
-  g.restore();
-}
-
-// The pen's bounding box on screen, padded, clamped to the screen.
-function penBox(p: PenPose, v: View, W: number, H: number) {
-  const pts = [0, 0.5, 1].map((t) => project(v, p.x + p.ax * PEN.L * t, p.y + p.ay * PEN.L * t, p.h + p.az * PEN.L * t));
-  const pad = Math.max(...pts.map((q) => q.k)) * PEN.R * 2.5 + 6;
-  const x0 = Math.max(0, Math.min(...pts.map((q) => q.x)) - pad), x1 = Math.min(W, Math.max(...pts.map((q) => q.x)) + pad);
-  const y0 = Math.max(0, Math.min(...pts.map((q) => q.y)) - pad), y1 = Math.min(H, Math.max(...pts.map((q) => q.y)) + pad);
-  if (x1 <= x0 || y1 <= y0) return null;
-  return { x: Math.floor(x0), y: Math.floor(y0), w: Math.ceil(x1 - x0) + 1, h: Math.ceil(y1 - y0) + 1 };
 }

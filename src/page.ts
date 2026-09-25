@@ -100,19 +100,27 @@ export function drawSignature(g: Ctx, sig: Signature, p = 1) {
 
 /** How yellowed the paper is: a long war ages the sheet. */
 export const ageOf = (s: GameState) => Math.min(1, s.turn / 70);
+/** The yellowing as a multiply colour (per channel, 0..1), for layers that tint instead of paint. */
+export function yellowing(age: number): [number, number, number] {
+  const a = 0.55 * age;
+  return [1 - a + a * (236 / 255), 1 - a + a * (214 / 255), 1 - a + a * (170 / 255)];
+}
+export const RING_TURN = 24;
 
-/**
- * What a long night does to a page: it yellows, and somewhere past the
- * twenty-fourth turn a mug gets set down on it. Seeded, so the same page
- * always has the same ring. Multiplied, so it sits under and over the ink
- * alike, the way a real stain does.
- */
-export function drawAge(g: Ctx, s: GameState) {
+/** Yellowed paper (for the kept image; on screen the lamp layer does it). */
+export function drawYellow(g: Ctx, s: GameState) {
   const age = ageOf(s);
   if (age <= 0) return;
   g.fillStyle = `rgba(236, 214, 170, ${0.55 * age})`;
   g.fillRect(0, 0, RULES.pageW, RULES.pageH);
-  if (s.turn < 24) return;
+}
+
+/**
+ * Somewhere past the twenty-fourth turn a mug gets set down on the page.
+ * Seeded, so the same page always has the same ring; multiplied, so it sits
+ * under and over the ink alike, the way a real stain does.
+ */
+export function drawRing(g: Ctx, s: GameState) {
   const r = rng((s.seed ^ 0xc0ffee) >>> 0);
   const x = 150 + r() * 700, y = r() < 0.5 ? 200 + r() * 260 : 1260 + r() * 330, R = 74 + r() * 16;
   const wash = g.createRadialGradient(x, y, R * 0.2, x, y, R);
@@ -138,16 +146,40 @@ export function drawAge(g: Ctx, s: GameState) {
   }
 }
 
-/** Kill crosses still being drawn, by the position of the soldier they cross out. */
-export function pendingKills(s: GameState, ink: Ink) {
-  const out = new Map<string, string>();
-  if (!ink.live.size) return out;
-  s.marks.forEach((m, i) => {
-    if (m.t === "cross" && m.kind === "kill" && ink.live.has(`m${i}`)) out.set(`${m.x},${m.y}`, `m${i}`);
-  });
-  return out;
+/** Yellowing and the ring together, for the kept image. */
+export function drawAge(g: Ctx, s: GameState) {
+  drawYellow(g, s);
+  if (s.turn >= RING_TURN) drawRing(g, s);
 }
 
+export interface Spot { id: number; x: number; y: number; key: string }
+
+/**
+ * Every dot a soldier's ink has left on the page: where he stands now, and
+ * every place he moved away from (a moved soldier's old dot is still ink).
+ * Pure: the page is append-only because of this, living soldiers included.
+ */
+export function dotSpots(s: GameState): Spot[] {
+  const out = new Map<string, Spot>();
+  const add = (id: number, x: number, y: number) => {
+    const key = `${id}@${x},${y}`;
+    if (!out.has(key)) out.set(key, { id, x, y, key });
+  };
+  for (const m of s.marks) {
+    if (m.t !== "cross" || m.kind !== "moved") continue;
+    const f = s.flicks[m.turn - 1];
+    if (f) add(f.soldierId, m.x, m.y);
+  }
+  for (const x of s.soldiers) add(x.id, x.x, x.y);
+  return [...out.values()];
+}
+
+/**
+ * The page as an append-only canvas in page space. Marks, camps, soldiers'
+ * dots, the ring and the signature are multiplied on once, when they finish
+ * drawing, and never redrawn. The camera never touches it: the compositor
+ * carries it wherever the camera looks.
+ */
 export class PageLayer {
   c: HTMLCanvasElement | null = null;
   S = 1;
@@ -156,26 +188,28 @@ export class PageLayer {
   private epoch = -1;
   private marks: boolean[] = [];
   private bases = new Set<number>();
-  private dead = new Set<number>();
+  private dots = new Set<string>();
+  private ring = false;
   private signed = false;
+  /** Bumped whenever the canvas changes, so layers derived from it know to refresh. */
+  version = 0;
+  private stamp = "";
 
-  /** Anything in this set is on the cached page; everything else must be drawn live. */
   has(key: string) {
     if (key.startsWith("m")) return !!this.marks[+key.slice(1)];
     if (key.startsWith("b")) return this.bases.has(+key.slice(1));
     return false;
   }
-  hasDead(id: number) { return this.dead.has(id); }
+  hasDot(key: string) { return this.dots.has(key); }
   get isSigned() { return this.signed; }
 
-  /**
-   * Bring the cached page up to date. `S` is page-canvas px per world unit.
-   * Returns whether the page was redrawn from scratch, and the marks that
-   * were added (as draw calls in page units), so a caller holding its own
-   * copy of the page can multiply the same marks onto it.
-   */
-  sync(s: GameState, ink: Ink, S: number, epoch: number, sig?: Signature) {
+  /** Bring the page up to date. `moving` is a soldier riding his ink (not settled yet). */
+  sync(s: GameState, ink: Ink, S: number, epoch: number, sig?: Signature, moving?: number) {
     const fresh = !this.c || this.src !== s || this.S !== S || this.epoch !== epoch || s.marks.length < this.marks.filter(Boolean).length;
+    // nothing new since last time: most frames stop here
+    const stamp = `${s.marks.length}|${s.bases.length}|${s.turn}|${[...ink.live].join()}|${moving}|${!!sig}`;
+    if (!fresh && stamp === this.stamp) return { fresh, added: 0 };
+    this.stamp = stamp;
     if (fresh) this.rebuild(s, S, epoch);
     const added: ((g: Ctx) => void)[] = [];
     for (const b of s.bases) {
@@ -184,12 +218,13 @@ export class PageLayer {
     s.marks.forEach((m, i) => {
       if (!this.marks[i] && !ink.live.has(`m${i}`)) { added.push((g) => drawMark(g, m)); this.marks[i] = true; }
     });
-    const pending = pendingKills(s, ink);
-    for (const x of s.soldiers) {
-      if (x.alive || this.dead.has(x.id) || ink.live.has(`d${x.id}`) || pending.has(`${x.x},${x.y}`)) continue;
-      added.push((g) => drawDot(g, x, 0.8));
-      this.dead.add(x.id);
+    for (const d of dotSpots(s)) {
+      if (this.dots.has(d.key) || ink.live.has(`d${d.id}`) || d.id === moving) continue;
+      const x = s.soldiers[d.id];
+      added.push((g) => drawDot(g, x, 1, 1, d));
+      this.dots.add(d.key);
     }
+    if (!this.ring && s.turn >= RING_TURN) { added.push((g) => drawRing(g, s)); this.ring = true; }
     if (sig && !this.signed && !ink.live.has("sign")) { added.push((g) => drawSignature(g, sig)); this.signed = true; }
     if (added.length) {
       const g = this.g!;
@@ -197,8 +232,9 @@ export class PageLayer {
       g.globalCompositeOperation = "multiply";
       for (const draw of added) draw(g);
       g.globalCompositeOperation = "source-over";
+      this.version++;
     }
-    return { fresh, added };
+    return { fresh, added: added.length };
   }
 
   private rebuild(s: GameState, S: number, epoch: number) {
@@ -213,7 +249,9 @@ export class PageLayer {
     drawPaper(this.g, s);
     this.marks = [];
     this.bases.clear();
-    this.dead.clear();
+    this.dots.clear();
+    this.ring = false;
     this.signed = false;
+    this.version++;
   }
 }

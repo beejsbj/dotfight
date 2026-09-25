@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fromLocal, project, screenDirToWorld, toLocal, unproject, type View } from "./projection";
+import { applyMatrix, fromLocal, layerMatrix, project, screenDirToWorld, toLocal, unproject, type View } from "./projection";
 
 const base: View = { ox: 100, oy: 300, x: 500, y: 850, px: 195, py: 520, z: 0.8, rot: 0.3, tilt: 0.5, d: 900 };
 
@@ -59,6 +59,19 @@ describe("projection", () => {
     expect(far.k).toBeLessThan(near.k);
     const flat = { ...tilted, tilt: 0 };
     expect(project(flat, base.x, base.y + 300).k).toBeCloseTo(flat.z, 9);
+  });
+
+  it("a page-space layer lands where project() says, tilted or flat, turned or not", () => {
+    for (const v of [base, { ...base, tilt: 0 }, { ...base, rot: Math.PI, tilt: 0.2 }]) {
+      const S = 1.7, off = -120;
+      const m = layerMatrix(v, S, off, off);
+      for (const [x, y] of [[0, 0], [1000, 1700], [321, 987], [-100, 1800]]) {
+        const got = applyMatrix(m, (x - off) * S, (y - off) * S);
+        const want = project(v, x, y);
+        expect(got.x).toBeCloseTo(want.x, 5);
+        expect(got.y).toBeCloseTo(want.y, 5);
+      }
+    }
   });
 
   it("a thumb drag maps to the page direction that looks the same on screen", () => {

@@ -21,7 +21,12 @@ html, body {
 }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; touch-action: manipulation; }
 
-#stage { position: fixed; pointer-events: none; display: block; will-change: transform; }
+/* the desk: page-space layers the compositor moves (never repainted for the camera) */
+#world, #world > * { pointer-events: none; }
+#desk, #page-host > canvas { position: fixed; left: 0; top: 0; transform-origin: 0 0; display: block; will-change: transform; }
+#live { position: fixed; display: block; mix-blend-mode: multiply; will-change: transform; }
+#light, #haze { position: fixed; inset: 0; width: 100vw; height: 100dvh; display: block; }
+#light { mix-blend-mode: multiply; }
 #over { position: fixed; inset: 0; width: 100vw; height: 100dvh; touch-action: none; display: block; }
 
 /* --- the HUD: things lying on the desk at its near edge ------------------------ */

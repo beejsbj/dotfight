@@ -75,6 +75,48 @@ export function stageCss(v: View) {
   };
 }
 
+// --- layers the GPU moves ----------------------------------------------------
+// A canvas drawn in page space (the sheet, the desk) is never redrawn when the
+// camera moves: the compositor carries it there with one CSS matrix3d.
+
+type M4 = number[]; // column-major, CSS matrix3d order
+
+function mul(a: M4, b: M4): M4 {
+  const o = new Array(16).fill(0);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    let s = 0;
+    for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+    o[c * 4 + r] = s;
+  }
+  return o;
+}
+
+/**
+ * The matrix that places a page-space canvas on screen: canvas pixel (u, w)
+ * is page point (u / s + offX, w / s + offY). Use with transform-origin 0 0
+ * on an element at the screen's top-left, CSS size = canvas pixel size.
+ */
+export function layerMatrix(v: View, s: number, offX = 0, offY = 0): M4 {
+  const c = Math.cos(v.rot) * v.z / s, sn = Math.sin(v.rot) * v.z / s;
+  const dx = offX - v.x, dy = offY - v.y;
+  const A: M4 = [c, sn, 0, 0, -sn, c, 0, 0, 0, 0, 1, 0,
+    v.px + v.z * (Math.cos(v.rot) * dx - Math.sin(v.rot) * dy), v.py + v.z * (Math.sin(v.rot) * dx + Math.cos(v.rot) * dy), 0, 1];
+  if (Math.abs(v.tilt) < 1e-5) return A;
+  const ct = Math.cos(v.tilt), st = Math.sin(v.tilt);
+  const T = (x: number, y: number): M4 => [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, 0, 1];
+  const R: M4 = [1, 0, 0, 0, 0, ct, st, 0, 0, -st, ct, 0, 0, 0, 0, 1];
+  const P: M4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -1 / v.d, 0, 0, 0, 1];
+  return mul(T(v.px, v.py), mul(P, mul(R, mul(T(-v.px, -v.py), A))));
+}
+
+export const cssMatrix = (m: M4) => `matrix3d(${m.map((x) => +x.toFixed(9)).join(",")})`;
+
+/** Apply a layer matrix to a canvas pixel (for tests and hit-checks). */
+export function applyMatrix(m: M4, u: number, w: number) {
+  const x = m[0] * u + m[4] * w + m[12], y = m[1] * u + m[5] * w + m[13], q = m[3] * u + m[7] * w + m[15];
+  return { x: x / q, y: y / q };
+}
+
 /**
  * Which way a drag on screen points on the page, measured at `at`: the world
  * direction whose on-screen image, starting at `at`, runs along (dx, dy).

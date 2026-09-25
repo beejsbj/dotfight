@@ -18,7 +18,7 @@ export interface Pose {
 }
 
 // how quickly each part of the pose catches up (per second)
-const RATE = { pos: 6.5, m: 5.5, rot: 4.2, tilt: 4.5, fy: 5 };
+const RATE = { pos: 8, m: 7, rot: 5.5, tilt: 7, fy: 7 };
 
 export class Camera {
   W = 1;
@@ -32,6 +32,8 @@ export class Camera {
   ob = 0;
   /** Motion scale: 0 turns the tilt off entirely ("sit up straight"). */
   tiltScale = 1;
+  /** Slow devices: every move settles in fewer frames. */
+  quick = 1;
   cur: Pose = { x: RULES.pageW / 2, y: RULES.pageH / 2, m: 1, rot: 0, tilt: 0, fy: 0.5 };
   tgt: Pose = { ...this.cur };
   private shakeAmp = 0;
@@ -120,7 +122,7 @@ export class Camera {
       return false;
     }
     const s = dt / 1000;
-    const k = (r: number) => 1 - Math.exp(-r * s);
+    const k = (r: number) => 1 - Math.exp(-r * this.quick * s);
     const a = this.cur, b = this.tgt;
     a.x += (b.x - a.x) * k(RATE.pos);
     a.y += (b.y - a.y) * k(RATE.pos);

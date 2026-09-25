@@ -24,7 +24,13 @@
     <meta name="twitter:image" content="https://pen-flick-tactics.vercel.app/og.jpg" />
   </head>
   <body>
-    <canvas id="stage" aria-hidden="true"></canvas>
+    <div id="world" aria-hidden="true">
+      <canvas id="desk"></canvas>
+      <div id="page-host"></div>
+      <canvas id="live"></canvas>
+      <canvas id="light"></canvas>
+      <canvas id="haze"></canvas>
+    </div>
     <canvas id="over" aria-label="The page. Touch one of your soldiers, pull back, let go."></canvas>
 
     <header id="top">
