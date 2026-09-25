@@ -12,9 +12,10 @@ const out = process.argv[3] ?? ".tmp/playtest";
 mkdirSync(out, { recursive: true });
 const b = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
 const PHONES = [
+  { name: "iphone-14", viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 },
   { name: "iphone-se", viewport: { width: 375, height: 667 }, deviceScaleFactor: 2 },
   { name: "pixel-7", viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.6 },
-];
+].filter((ph) => !process.env.PHONES || process.env.PHONES.split(",").includes(ph.name));
 const only = process.env.SETS?.split(",");
 const failures = [];
 const check = (ok, what) => { if (!ok) { failures.push(what); console.log(`  ✗ ${what}`); } else console.log(`  ✓ ${what}`); };
@@ -83,7 +84,26 @@ for (const phone of PHONES) {
       await settle();
       s = await S();
     }
-    check(s.phase === "play", `all bases drawn by touch (${s.bases.length})`);
+    check(s.phase === "play" || s.phase === "position", `all bases drawn by touch (${s.bases.length})`);
+    // positioning (round 2): drag one soldier a little, by touch, then done; both sides
+    for (let side = 0; side < 2 && s.phase === "position"; side++) {
+      const n0 = s.actions.length;
+      const me = s.soldiers.find((x) => x.alive && x.owner === s.current);
+      const home = s.bases[me.home];
+      const a = await toScreen(me.x, me.y), to = await toScreen(home.x + (home.x > 500 ? -1 : 1) * (home.r + 20), home.y);
+      await touch("touchStart", a.x, a.y);
+      await p.waitForTimeout(80);
+      for (let i = 1; i <= 8; i++) { await touch("touchMove", a.x + ((to.x - a.x) * i) / 8, a.y + ((to.y + 40 - a.y) * i) / 8); await p.waitForTimeout(16); }
+      await touch("touchEnd");
+      await p.waitForTimeout(150);
+      if (side === 0) await p.screenshot({ path: `${out}/${phone.name}-${id}-position.png` });
+      s = await S();
+      check(s.actions.length === n0 + 1 && s.actions.at(-1).t === "arrange", "positioning: a soldier dragged into place by touch");
+      await p.locator('#kind button[data-key="done"]').tap();
+      await settle();
+      s = await S();
+    }
+    check(s.phase === "play", "play begins");
     if (k === 2) await p.screenshot({ path: `${out}/${phone.name}-${id}-setup.png` });
     await p.screenshot({ path: `${out}/${phone.name}-${id}-bases.png` });
 
@@ -92,6 +112,15 @@ for (const phone of PHONES) {
       await settle();
       s = await S();
       const marks = s.marks.length;
+      if (s.must) {
+        // an earned lunge: turn it down
+        const who = s.current;
+        await p.locator('#kind button[data-key="stop"]').tap();
+        await settle();
+        s = await S();
+        check(s.current !== who && !s.must, "an earned lunge can be turned down (stop)");
+        continue;
+      }
       const kind = t === 1 ? "move" : t === 2 && s.rules.transfer ? "send" : "shoot";
       await p.locator(`#kind button[data-key="${kind}"]`).tap();
       await p.waitForTimeout(150);
@@ -108,6 +137,7 @@ for (const phone of PHONES) {
         await settle();
         const s2 = await S();
         check(s2.transits.length === 1 && s2.actions.at(-1).t === "transfer", "send: two soldiers on the road");
+        if (s2.rules.transfer.pace) check(s2.soldiers.filter((x) => x.transit === 0).every((x) => x.x > 0 && x.y > 0), "send: walkers stand on the page");
         s = s2;
         continue;
       }

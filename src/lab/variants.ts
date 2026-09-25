@@ -105,8 +105,9 @@ export const R2 = v(CLASSIC, "r2", {
 });
 const PEN = { wobble: 0.06, groove: 0.3, grooveReach: 24, groovePull: 0.03, grooveOwn: 0.6, grooveEnemy: 1.6, scribble: 3, scribbleSpan: 40, taperHit: 0.25, taperWall: 0.15 };
 const KIT2 = ["circle", "circle", "tri", "hex", "hex"] as RuleSet["kit"];
+// (a circle's soldiers come from soldiersPerBase)
 const SHAPES2 = {
-  circle: { soldiers: 12, wobble: 0 },
+  circle: { wobble: 0 },
   tri: { soldiers: 6, prism: true, wobble: 0.04 },
   hex: { soldiers: 8, wall: "bank" as const, prism: false, wobble: 0.04 },
 };
@@ -142,6 +143,7 @@ export const LAB2: RuleSet[] = [
   v(R2, "r2-shapes", { kit: KIT2, shapes: SHAPES2 }),
   v(R2, "r2-shapes-glance30", { kit: KIT2, shapes: SHAPES2, bankGlance: 0.52 }),
   v(R2, "r2-shapes-glance50", { kit: KIT2, shapes: SHAPES2, bankGlance: 0.87 }),
+  v(R2, "r2-shapes12", { kit: KIT2, shapes: SHAPES2, soldiersPerBase: 12 }),
 ];
 
 export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2, ...ROUND3, ...ROUND4, ...LAB2.filter((r) => r !== LAST_STAND)];

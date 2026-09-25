@@ -500,3 +500,72 @@ export function paperGrain(w: number, h: number, seed: number): HTMLCanvasElemen
   }
   return c;
 }
+
+// --- round 2: small marks for what the page did to a line ---------------------
+// Deliberately plain (a few strokes each) so another look can redraw them.
+
+/** The hand jolted crossing ink or a wall: a little zigzag across the line. */
+export function inkJolt(ctx: Ctx, x: number, y: number, dir: number, color: string, seed: number, size = 9, upTo = 1) {
+  if (upTo <= 0) return;
+  const rand = rng(seed);
+  const nx = -Math.sin(dir), ny = Math.cos(dir), ux = Math.cos(dir), uy = Math.sin(dir);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  const n = Math.max(1, Math.ceil(4 * upTo));
+  for (let i = 0; i <= n; i++) {
+    const t = i / 4 - 0.5, side = (i % 2 ? 1 : -1) * size * (0.7 + rand() * 0.3);
+    const px = x + ux * t * size * 1.6 + nx * side, py = y + uy * t * size * 1.6 + ny * side;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+/** A groove caught the pen: two short strokes along the line, like "=". */
+export function inkGroove(ctx: Ctx, x: number, y: number, dir: number, color: string, size = 12, upTo = 1) {
+  if (upTo <= 0) return;
+  const nx = -Math.sin(dir), ny = Math.cos(dir), ux = Math.cos(dir), uy = Math.sin(dir);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = "round";
+  ctx.globalAlpha = 0.8;
+  for (const k of [-1, 1]) {
+    const ox = nx * k * 6, oy = ny * k * 6;
+    ctx.beginPath();
+    ctx.moveTo(x + ox, y + oy);
+    ctx.lineTo(x + ox + ux * size * upTo, y + oy + uy * size * upTo);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** A bounce, a split or a crash: a small star of strokes where it happened. */
+export function inkStar(ctx: Ctx, x: number, y: number, color: string, seed: number, size = 9, points = 4, upTo = 1) {
+  if (upTo <= 0) return;
+  const rand = rng(seed);
+  const rot = rand() * Math.PI;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = "round";
+  ctx.globalAlpha = 0.85;
+  const n = Math.max(1, Math.ceil(points * upTo));
+  for (let i = 0; i < n; i++) {
+    const a = rot + (i / points) * Math.PI;
+    const l = size * (0.8 + rand() * 0.4);
+    ctx.beginPath();
+    ctx.moveTo(x - Math.cos(a) * l, y - Math.sin(a) * l);
+    ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** A line soaked up by a scribble: a blot where it died. */
+export function inkBlot(ctx: Ctx, x: number, y: number, color: string, seed: number, r = 6, upTo = 1) {
+  if (upTo <= 0) return;
+  inkDot(ctx, x, y, r, color, seed, 0.8, upTo);
+}

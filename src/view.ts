@@ -2,8 +2,8 @@
 // changes; marks are seeded so it looks the same every time.
 
 import { baseEdges, baseVerts } from "./bases";
-import { inLastStand, type Base, type GameState, type Player, type Pt } from "./game";
-import { INK, drawPen, inkCircle, inkCross, inkDot, inkFlick, inkNotch, inkPolygon, inkRoad, inkStrike, handText, paperGrain, pencilArrow, pencilLine, pencilLoop } from "./ink";
+import { inLastStand, walking, type Base, type GameState, type Player, type Pt } from "./game";
+import { INK, drawPen, inkBlot, inkCircle, inkCross, inkDot, inkFlick, inkGroove, inkJolt, inkNotch, inkPolygon, inkRoad, inkStar, inkStrike, handText, paperGrain, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { RULES, type Shape } from "./rules";
 
 const ease = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -85,6 +85,8 @@ export interface Overlay {
   pen?: Pen; // the pen after release: riding the ink, then lifting away
   teach?: { kind: "aim" | "place"; at: Pt; p: number }; // first-time pencil notes, once ever
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] }; // whose turn: pencil loops
+  walk?: { p: number; from: Map<number, Pt> }; // walkers stepping along their road
+  arrange?: { zones: { x: number; y: number; r: number }[]; drag?: { id: number; at: Pt; ok: boolean } }; // positioning
 }
 
 const SETTLED: Ink = { p: () => 1, live: new Set() };
@@ -110,7 +112,8 @@ export function render(ctx: CanvasRenderingContext2D, cam: Camera, s: GameState,
     drawSettled(ctx, cam, s, o, ink, W, H, dpr);
   } else {
     const key = [epoch, cam.x, cam.y, cam.z, cam.vx, cam.vy, cam.vw, cam.vh, W, H, dpr, target.width, target.height,
-      s.bases.length, s.marks.length, s.turn, s.phase, s.page?.no, o.mover?.id ?? "", [...ink.live].sort().join()].join("|");
+      s.bases.length, s.marks.length, s.turn, s.phase, s.page?.no, o.mover?.id ?? "", [...ink.live].sort().join(),
+      o.walk ? "walk" : "", o.arrange?.drag?.id ?? "", s.phase === "position" ? s.actions.length : ""].join("|");
     let hit = pageCache.get(target);
     if (!hit) { hit = { c: document.createElement("canvas"), key: "" }; pageCache.set(target, hit); }
     if (hit.key !== key) {
@@ -144,7 +147,8 @@ export function drawSettled(ctx: CanvasRenderingContext2D, cam: Camera, s: GameS
 // Everything still moving: marks being drawn, pencil guides, the pen.
 // Marks use multiply, so drawing them after the settled ones gives the same page.
 export function drawLive(ctx: CanvasRenderingContext2D, cam: Camera, s: GameState, o: Overlay, ink: Ink) {
-  if (ink.live.size || o.mover) {
+  if (o.arrange) for (const z of o.arrange.zones) pencilLoop(ctx, z.x, z.y, z.r, 51 + Math.round(z.x), 1.4, 1, 0.55);
+  if (ink.live.size || o.mover || o.walk || o.arrange?.drag) {
     ctx.globalCompositeOperation = "multiply";
     drawMarks(ctx, s, ink, true);
     drawSoldiers(ctx, s, o, ink, true);
@@ -178,6 +182,7 @@ export function drawLive(ctx: CanvasRenderingContext2D, cam: Camera, s: GameStat
     else pencilRing(ctx, g.x, g.y, g.r, g.ok ? 2 : 1.4, !g.ok);
     ctx.globalAlpha = 1;
   }
+  if (o.arrange?.drag && !o.arrange.drag.ok) pencilRing(ctx, o.arrange.drag.at.x, o.arrange.drag.at.y, s.rules.soldierRadius + 8, 1.6);
   if (o.teach) drawTeach(ctx, o.teach);
   if (o.aim) drawAim(ctx, s, o.aim, px);
   if (o.pen) drawPen(ctx, o.pen.x, o.pen.y, o.pen.angle, o.pen.pull, INK.pens[o.pen.owner], 1, o.pen.lift);
@@ -300,8 +305,19 @@ function drawMarks(ctx: CanvasRenderingContext2D, s: GameState, ink: Ink, live: 
       handText(ctx, "last stand!", RULES.margin - 8, y, 30, pen, { rot: -Math.PI / 2, align: "center", upTo: p, alpha: 0.9 });
       // each survivor circled where he dug in
       (m.at ?? []).forEach((q, j) => inkCircle(ctx, q.x, q.y, dot * 2.3, pen, m.seed + j * 13, 1.6, 1, Math.min(1, p * 1.6 - j * 0.1)));
-    } else if (m.t === "empty" || m.t === "kink") {
-      // drawn below (round 2)
+    } else if (m.t === "kink") {
+      if (m.kind === "wobble") inkJolt(ctx, m.x, m.y, m.dir, pen, m.seed, 9, p);
+      else if (m.kind === "groove") inkGroove(ctx, m.x, m.y, m.dir, pen, 14, p);
+      else if (m.kind === "absorb") inkBlot(ctx, m.x, m.y, pen, m.seed, 7, p);
+      else inkStar(ctx, m.x, m.y, pen, m.seed, m.kind === "crash" ? 13 : 9, m.kind === "crash" ? 4 : 3, p);
+    } else if (m.t === "empty") {
+      // an empty ring stays on the page; crumbled, its wall is cracked in a few places
+      const b = s.bases[m.base];
+      if (m.crumble) for (let k = 0; k < 4; k++) {
+        const a = (m.seed % 628) / 100 + (k / 4) * Math.PI * 2;
+        inkNotch(ctx, b.x + Math.cos(a) * b.r, b.y + Math.sin(a) * b.r, a + Math.PI / 2, pen, m.seed + k, 10, p);
+      }
+      else handText(ctx, "empty", b.x, b.y + 8, 26, INK.pencil, { align: "center", upTo: p, alpha: 0.9, weight: 400, rot: -0.08 });
     } else if (m.kind === "moved") {
       // the old dot stays; the little cross comes after the move
       inkDot(ctx, m.x, m.y, dot, pen, m.seed);
@@ -322,10 +338,14 @@ function drawSoldiers(ctx: CanvasRenderingContext2D, s: GameState, o: Overlay, i
   for (const x of s.soldiers) {
     const jot = `d${x.id}`;
     const cross = x.alive ? undefined : crossing.get(`${x.x},${x.y}`);
-    const moving = o.mover?.id === x.id;
+    const dragged = o.arrange?.drag?.id === x.id;
+    const stepping = !!o.walk && o.walk.p < 1 && o.walk.from.has(x.id) && x.alive;
+    const moving = o.mover?.id === x.id || stepping || dragged;
     if ((ink.live.has(jot) || !!cross || moving) !== live) continue;
-    const p = moving ? o.mover!.at : x;
-    if (x.transit !== undefined && !moving) continue; // on the road: off the page until they arrive
+    let p: Pt = o.mover?.id === x.id ? o.mover.at : x;
+    if (stepping) { const f = o.walk!.from.get(x.id)!; p = { x: f.x + (x.x - f.x) * o.walk!.p, y: f.y + (x.y - f.y) * o.walk!.p }; }
+    if (dragged) p = o.arrange!.drag!.at;
+    if (x.transit !== undefined && !moving && !walking(s, x)) continue; // on the road: off the page until they arrive (round 1)
     const fallen = !x.alive && !(cross && ink.p(cross) <= 0);
     // the dead keep their dot; the cross is in the marks
     inkDot(ctx, p.x, p.y, dot * (inLastStand(s, x.owner) ? s.rules.lastStand!.grow : 1), INK.pens[x.owner], x.id * 131 + 7, fallen ? 0.8 : 1, live ? ink.p(jot) : 1);

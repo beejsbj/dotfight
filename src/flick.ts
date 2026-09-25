@@ -46,7 +46,8 @@ export function reach(R: RuleSet, kind: ActionKind, power: number) {
 }
 
 // Let go of the pen. `steady` < 1 narrows the hidden error (a last stand's
-// focus); the engine never lets it reach zero, so a flick is never a click.
+// focus), > 1 widens it (a lunge chain's shaking hand); the engine never lets
+// it reach zero, so a flick is never a click.
 export function release(a: Aim, now: number, R: RuleSet, rand: () => number = Math.random, steady = 1): Flick | null {
   const p = pull(a);
   if (!p.live) return null;
@@ -56,5 +57,7 @@ export function release(a: Aim, now: number, R: RuleSet, rand: () => number = Ma
     angle: p.angle + wobble(a, now) * steady + gauss(rand) * sigma(p.power) * steady,
     length: reach(R, a.kind, p.power) * (1 + gauss(rand) * FEEL.lengthJitter * steady),
     bend: (rand() * 2 - 1) * FEEL.bendMax * (0.3 + 0.7 * p.power),
+    // how the hand wobbles if the line crosses ink or a wall (round 2): drawn now, like the rest
+    wob: (rand() * 2 ** 32) >>> 0,
   };
 }
