@@ -20,10 +20,17 @@ export interface ShapeRule {
   soldiers: number;
   /** Circumradius as a multiple of `baseRadius` (a triangle needs more room). */
   size: number;
-  /** What its walls do to an enemy line: nothing, stop it, or bounce it. Each wall edge works once, then it's breached. */
-  wall: "none" | "stop" | "mirror";
-  /** Your own shot leaving this base splits in two. */
+  /**
+   * What its walls do to a line. Round 1: nothing, stop an enemy line, or
+   * bounce an enemy line (each edge once, then it's breached). Round 2:
+   * "bank" is billiards: everyone's lines, yours included, glance off it by
+   * the angle they come in at, and nothing breaks.
+   */
+  wall: "none" | "stop" | "mirror" | "bank";
+  /** Your own shot passing out through this base splits in two (round 1: only from inside; any of your shots through it). */
   prism: boolean;
+  /** Radians (1 sd) of wobble a line picks up passing through this base's wall. 0 = soft walls. */
+  wobble?: number;
 }
 
 export interface RuleSet {
@@ -81,6 +88,15 @@ export interface RuleSet {
     ambush: "none" | "one" | "all";
     /** Sending doesn't use up your flick: send down one road, then flick as usual (one send a turn). */
     free?: boolean;
+    /**
+     * Round 2: the convoy walks the road on the page, this many world units
+     * each time the pen changes hands, and any line that touches a walker
+     * crosses him out (`ambush` is then unused). 0 = round 1: off the page,
+     * arriving after the opponent's next action.
+     */
+    pace?: number;
+    /** Where a send may go besides your standing bases: nowhere else, your own empty rings, or any empty ring (taking it). */
+    refill?: "none" | "own" | "any";
   };
 
   // --- bases ---------------------------------------------------------------
@@ -103,6 +119,39 @@ export interface RuleSet {
     grow: number;
   };
 
+  // --- round 2: lunge and snipe --------------------------------------------
+  /**
+   * The move becomes a lunge: it goes as far as a shot and crosses out
+   * enemies along its path, and the soldier ends where the ink stops.
+   * null = round 1's move.
+   */
+  lunge: null | {
+    /** Lunging into a standing enemy base (one with defenders) kills the lunger at its wall. */
+    baseDeath: boolean;
+  };
+  /**
+   * What earns another flick, by kind. When set it replaces `extraTurn`
+   * (`chainCap` and `openingExtra` still apply). null = round 1's rule.
+   */
+  earn: null | {
+    /** A shot must cross out at least this many to earn another flick (0 = never). */
+    shoot: number;
+    /** A lunge that crosses out at least this many earns another lunge (0 = never). */
+    move: number;
+    /** The earned lunge must be the same soldier lunging on (false: any of yours). */
+    sameMover: boolean;
+    /** Each link of a lunge chain shakes the hand more: error × (1 + shake·link). */
+    shake: number;
+  };
+  /** An empty base: struck out and gone (round 1), left as an empty ring, or a crumbled ring whose walls no longer work. */
+  empty: "gone" | "ring" | "crumble";
+  /**
+   * Before the first flick, each side may rearrange its soldiers, one side
+   * after the other. `reach` is how far outside its own base's wall a
+   * soldier may stand (0 = inside only). null = no positioning.
+   */
+  position: null | { reach: number };
+
   // --- ink as terrain ------------------------------------------------------
   ink: {
     /** Range a line loses each time it crosses dried ink it doesn't bounce off or stop at. */
@@ -117,11 +166,41 @@ export interface RuleSet {
     clear: number;
     /** Wet ink: only each player's newest this-many lines act as terrain (0 = every line on the page). */
     fresh: number;
+    // round 2: friction and grooves, not bounces
+    /** Radians (1 sd) of extra aim error a line picks up each time it crosses another line, from that point on. */
+    wobble?: number;
+    /** Range gained crossing one of your own lines (Dawood: friendly ink boosts you). */
+    boost?: number;
+    /** Range lost crossing an enemy line (Dawood: enemy ink slows you). */
+    drag?: number;
+    /**
+     * Grooves pull like gravity. A pen running near a line and within this
+     * angle (radians) of parallel to it is drawn toward it and turned along
+     * it; steeper than this it just crosses (and wobbles). 0 = off.
+     */
+    groove?: number;
+    /** How far (world units) a line's pull reaches. */
+    grooveReach?: number;
+    /** Strongest pull, radians of turn per unit travelled (right on a line, parallel, and slow). */
+    groovePull?: number;
+    /** Range a groove costs per unit ridden: your own (below 1 carries you further) and the enemy's (above 1 is shorter). */
+    grooveOwn?: number;
+    grooveEnemy?: number;
+    /** Scribbles are cover: crossing this many lines within `scribbleSpan` of travel stops the line. 0 = off. */
+    scribble?: number;
+    scribbleSpan?: number;
+    /** Taper: the share of what's left of a line lost at each soldier it crosses out, and at each base wall it hits. */
+    taperHit?: number;
+    taperWall?: number;
   };
   /** Who flicks first once the bases are drawn: whoever drew first (0) or whoever drew last (1). */
   firstFlick: 0 | 1;
   /** Angle between the two halves of a split line (radians). */
   prismSpread: number;
+  /** Billiards: a line coming in at a bank wall reflects only if it glances, more than this many radians off square; straighter lines go through. */
+  bankGlance: number;
+  /** Most bank-wall bounces one line makes. */
+  bankMax: number;
 }
 
 export const SHAPES_DEFAULT: Record<Shape, ShapeRule> = {
@@ -159,9 +238,18 @@ export const PROTOTYPE: RuleSet = {
   win: "soldiers",
   capture: false,
   lastStand: null,
-  ink: { friction: 0, ownBounces: 0, enemyStops: false, edgeBounces: 0, clear: 14, fresh: 0 },
+  lunge: null,
+  earn: null,
+  empty: "gone",
+  position: null,
+  ink: {
+    friction: 0, ownBounces: 0, enemyStops: false, edgeBounces: 0, clear: 14, fresh: 0,
+    wobble: 0, boost: 0, drag: 0, groove: 0, grooveReach: 24, groovePull: 0.02, grooveOwn: 1, grooveEnemy: 1, scribble: 0, scribbleSpan: 40, taperHit: 0, taperWall: 0,
+  },
   firstFlick: 0,
   prismSpread: 0.2,
+  bankGlance: 0.6,
+  bankMax: 3,
 };
 
 /** Fill any missing fields with the prototype's, so older saves and partial sets still play. */
@@ -179,13 +267,18 @@ export function resolveRules(r?: Partial<RuleSet> | null): RuleSet {
     shapes,
     transfer: r.transfer === undefined ? p.transfer : r.transfer && { ...r.transfer },
     lastStand: r.lastStand === undefined ? p.lastStand : r.lastStand && { ...r.lastStand },
+    lunge: r.lunge === undefined ? p.lunge : r.lunge && { ...r.lunge },
+    earn: r.earn === undefined ? p.earn : r.earn && { ...r.earn },
+    position: r.position === undefined ? p.position : r.position && { ...r.position },
   });
 }
 
 /** A new rule set from a parent plus changes. */
-export type Change = Omit<Partial<RuleSet>, "ink"> & { ink?: Partial<RuleSet["ink"]> };
+export type Change = Omit<Partial<RuleSet>, "ink" | "shapes"> & { ink?: Partial<RuleSet["ink"]>; shapes?: Partial<Record<Shape, Partial<ShapeRule>>> };
 export function variant(parent: RuleSet, change: Change & { id: string; name: string; motto: string }): RuleSet {
-  return resolveRules({ ...parent, ...change, ink: { ...parent.ink, ...(change.ink ?? {}) } });
+  const shapes = { ...parent.shapes };
+  for (const k of Object.keys(change.shapes ?? {}) as Shape[]) shapes[k] = { ...parent.shapes[k], ...change.shapes![k] };
+  return resolveRules({ ...parent, ...change, ink: { ...parent.ink, ...(change.ink ?? {}) }, shapes });
 }
 
 // Flick feel. Not game rules — how the pen behaves in the hand.

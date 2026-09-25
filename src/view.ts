@@ -300,6 +300,8 @@ function drawMarks(ctx: CanvasRenderingContext2D, s: GameState, ink: Ink, live: 
       handText(ctx, "last stand!", RULES.margin - 8, y, 30, pen, { rot: -Math.PI / 2, align: "center", upTo: p, alpha: 0.9 });
       // each survivor circled where he dug in
       (m.at ?? []).forEach((q, j) => inkCircle(ctx, q.x, q.y, dot * 2.3, pen, m.seed + j * 13, 1.6, 1, Math.min(1, p * 1.6 - j * 0.1)));
+    } else if (m.t === "empty" || m.t === "kink") {
+      // drawn below (round 2)
     } else if (m.kind === "moved") {
       // the old dot stays; the little cross comes after the move
       inkDot(ctx, m.x, m.y, dot, pen, m.seed);
