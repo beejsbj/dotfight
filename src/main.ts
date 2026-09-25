@@ -148,9 +148,20 @@ function status(msg?: string) {
 
 // --- flow -------------------------------------------------------------------
 
+function pageStamp() {
+  const no = +(localStorage.getItem("pft:pageNo") ?? 0) + 1;
+  localStorage.setItem("pft:pageNo", String(no));
+  const d = new Date();
+  return { no, date: `${d.getDate()} ${d.toLocaleString("en-GB", { month: "short" })} ${d.getFullYear()}` };
+}
+
+// first-time pencil notes, shown once ever per device
+const taught = (k: string) => localStorage.getItem(`pft:taught:${k}`) === "1";
+const learn = (k: string) => localStorage.setItem(`pft:taught:${k}`, "1");
+
 function start(m: Mode) {
   gen++;
-  s = newGame();
+  s = newGame(undefined, pageStamp());
   mode = m;
   kind = "shoot";
   selected = undefined;
@@ -162,6 +173,7 @@ function start(m: Mode) {
   save();
   closeSheet();
   cam.fit(true);
+  if (!taught("place")) fx.add("teach", performance.now(), 500, 900, "linear");
   hud();
   next();
 }
@@ -438,6 +450,7 @@ function nearestOwn(w: Pt): number | undefined {
 
 function select(id: number) {
   if (selected !== id) sfx.tap();
+  if (!taught("aim") && selected === undefined) fx.add("teach", performance.now(), 350, 900, "linear");
   selected = id;
   const me = s.soldiers[id];
   if (settings.closeUp && cam.z < cam.fitZ * 2.1) cam.to(me.x, me.y, cam.fitZ * 2.2, 380);
@@ -542,7 +555,7 @@ function up(e: PointerEvent) {
   ptrs.delete(e.pointerId);
   if (g.t === "pinch") { if (ptrs.size === 0) g = { t: "none" }; return; }
   if (g.t === "place" && g.id === e.pointerId) {
-    if (e.type === "pointerup" && ghost?.ok) { drawBase(ghost.x, ghost.y); ghost = undefined; next(); }
+    if (e.type === "pointerup" && ghost?.ok) { learn("place"); drawBase(ghost.x, ghost.y); ghost = undefined; next(); }
     ghost = undefined;
     g = { t: "none" };
     status();
@@ -555,7 +568,7 @@ function up(e: PointerEvent) {
       const f = release(aim, performance.now());
       const pw = pull(aim).power;
       aim = null;
-      if (f && canAct(s, f.soldierId)) fire(f, pw);
+      if (f && canAct(s, f.soldierId)) { learn("aim"); fire(f, pw); }
     } else if (tapped && g.tapOn === undefined) {
       selected = undefined; // tap on empty paper puts the pen down
     }
@@ -630,6 +643,13 @@ function headAt(pts: Pt[], p: number) {
 
 function overlay(now: number): Overlay {
   const o: Overlay = { selected, ghost, ink: { p: (k) => fx.p(k, now), live: fx.live(now) } };
+  const human = !isBot(s.current) && $("#sheet").hidden;
+  if (human && s.phase === "setup" && !ghost && !taught("place")) {
+    o.teach = { kind: "place", at: { x: RULES.pageW / 2 + 20, y: RULES.pageH * (s.current === 0 ? 0.72 : 0.28) }, p: fx.p("teach", now) };
+  }
+  if (human && s.phase === "play" && selected !== undefined && !aim && !anim && !taught("aim")) {
+    o.teach = { kind: "aim", at: s.soldiers[selected], p: fx.p("teach", now) };
+  }
   if (s.phase === "play" && !isBot(s.current) && selected === undefined && !aim && !anim && $("#sheet").hidden) {
     const mine = alive(s, s.current);
     o.hint = {

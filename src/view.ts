@@ -2,7 +2,7 @@
 // changes; marks are seeded so it looks the same every time.
 
 import { type GameState, type Player, type Pt } from "./game";
-import { INK, drawPen, inkCircle, inkCross, inkDot, inkFlick, paperGrain, pencilLine, pencilLoop } from "./ink";
+import { INK, drawPen, inkCircle, inkCross, inkDot, inkFlick, handText, paperGrain, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { RULES } from "./rules";
 
 const ease = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -81,6 +81,7 @@ export interface Overlay {
   ink?: Ink;
   mover?: { id: number; at: Pt }; // a moving soldier rides the head of its own ink
   pen?: Pen; // the pen after release: riding the ink, then lifting away
+  teach?: { kind: "aim" | "place"; at: Pt; p: number }; // first-time pencil notes, once ever
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] }; // whose turn: pencil loops
 }
 
@@ -105,7 +106,7 @@ export function drawSettled(ctx: CanvasRenderingContext2D, cam: Camera, s: GameS
   ctx.fillStyle = "#2b2825"; // desk
   ctx.fillRect(0, 0, W, H);
   worldTransform(ctx, cam, dpr);
-  drawPaper(ctx);
+  drawPaper(ctx, s);
   ctx.globalCompositeOperation = "multiply";
   drawMarks(ctx, s, ink, false);
   drawSoldiers(ctx, s, o, ink, false);
@@ -134,6 +135,7 @@ export function drawLive(ctx: CanvasRenderingContext2D, cam: Camera, s: GameStat
     pencilRing(ctx, o.ghost.x, o.ghost.y, RULES.baseRadius, o.ghost.ok ? 2 : 1.4, !o.ghost.ok);
     ctx.globalAlpha = 1;
   }
+  if (o.teach) drawTeach(ctx, o.teach);
   if (o.aim) drawAim(ctx, s, o.aim, px);
   if (o.pen) drawPen(ctx, o.pen.x, o.pen.y, o.pen.angle, o.pen.pull, INK.pens[o.pen.owner], 1, o.pen.lift);
 }
@@ -147,7 +149,7 @@ function pencilRing(ctx: CanvasRenderingContext2D, x: number, y: number, r: numb
   }
 }
 
-function drawPaper(ctx: CanvasRenderingContext2D) {
+function drawPaper(ctx: CanvasRenderingContext2D, s: GameState) {
   const { pageW: w, pageH: h, margin } = RULES;
   // shadow
   ctx.fillStyle = "rgba(0,0,0,0.35)";
@@ -174,6 +176,13 @@ function drawPaper(ctx: CanvasRenderingContext2D) {
   ctx.font = "22px 'Patrick Hand', sans-serif";
   ctx.fillText("Date ____________", w - 250, 70);
   ctx.fillText("No. ______", margin + 30, 70);
+  // filled in by whoever started the page, in their pen
+  if (s.page) {
+    ctx.globalCompositeOperation = "multiply";
+    handText(ctx, String(s.page.no), margin + 78, 64, 34, INK.pens[0], { rot: -0.04, alpha: 0.9 });
+    handText(ctx, s.page.date, w - 190, 64, 32, INK.pens[0], { rot: -0.025, alpha: 0.9 });
+    ctx.globalCompositeOperation = "source-over";
+  }
 }
 
 // live=false draws the settled marks, live=true only the ones being drawn.
@@ -233,4 +242,20 @@ function drawAim(ctx: CanvasRenderingContext2D, s: GameState, a: NonNullable<Ove
     pencilLine(ctx, me, tip, 2.2 * Math.max(0.7, px), 3);
   }
   drawPen(ctx, me.x, me.y, a.angle, a.power, INK.pens[me.owner], 1);
+}
+
+// A note in pencil, the way a friend would scribble how-to on your page.
+function drawTeach(ctx: CanvasRenderingContext2D, t: NonNullable<Overlay["teach"]>) {
+  const { at, p } = t;
+  if (t.kind === "place") {
+    handText(ctx, "tap anywhere to draw a base", at.x, at.y, 44, INK.pencil, { upTo: p * 1.4, alpha: 0.9, weight: 400, rot: -0.03, align: "center" });
+    return;
+  }
+  // the arrow shows the gesture: drag back from the soldier...
+  const side = at.x > RULES.pageW * 0.62 ? -1 : 1;
+  const from = { x: at.x + side * 14, y: at.y + 22 }, to = { x: at.x + side * 34, y: at.y + 118 };
+  pencilArrow(ctx, from, to, 0.18 * side, 77, 2.2, Math.min(1, p * 1.6), 0.9);
+  const tx = at.x + side * 52;
+  handText(ctx, "pull back,", tx, at.y + 108, 34, INK.pencil, { upTo: p * 2 - 0.5, alpha: 0.9, weight: 400, rot: -0.05, align: side > 0 ? "left" : "right" });
+  handText(ctx, "then let go", tx + side * 10, at.y + 142, 34, INK.pencil, { upTo: p * 2 - 1, alpha: 0.9, weight: 400, rot: -0.05, align: side > 0 ? "left" : "right" });
 }
