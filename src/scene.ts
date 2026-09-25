@@ -5,7 +5,7 @@
 import type { GameState, Pt } from "./game";
 import { INK, handText, inkFlick, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { farColour, lightAt, lightGradient, type Lamp } from "./light";
-import { drawBase, drawDot, drawMark, drawSignature, pendingKills, PageLayer, SETTLED, type Ink, type Signature } from "./page";
+import { drawAge, drawBase, drawDot, drawMark, drawSignature, pendingKills, PageLayer, SETTLED, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
 import { project, type View } from "./projection";
 import { RULES } from "./rules";
@@ -131,20 +131,41 @@ function drawLitDesk(g: Ctx, f: Frame, hq: boolean) {
   g.imageSmoothingQuality = dbg.hq && hq ? "high" : "low";
   if (dbg.page) g.drawImage(page.c!, 0, 0, pw, ph);
 
-  // the paper yellows as the war goes on
+  // the paper yellows (and gets a mug set on it) as the war goes on
   g.globalCompositeOperation = "multiply";
-  if (f.age > 0) {
-    g.fillStyle = `rgba(236, 214, 170, ${0.55 * f.age})`;
-    g.fillRect(0, 0, pw, ph);
-  }
+  drawAge(g, f.s);
 
   // the lamp
   g.fillStyle = lightGradient(g, lamp);
   if (dbg.light) g.fillRect(-BIG, -BIG, pw + BIG * 2, ph + BIG * 2);
   g.globalCompositeOperation = "source-over";
 
+  // morning comes in through the window: four panes of pale light
+  if (lamp.dawn > 0.01) drawWindow(g, lamp.dawn);
+
   // when the desk tilts away its far edges must melt into the dark
   if (v.tilt > 1e-3 && dbg.fade) edgeFade(g, f);
+}
+
+// A window's light laid across the desk, skewed, soft-edged, split by its bars.
+function drawWindow(g: Ctx, dawn: number) {
+  const O = { x: 180, y: 120 }, u = { x: 820, y: 170 }, v = { x: -300, y: 1180 };
+  const gap = 0.035;
+  g.globalCompositeOperation = "screen";
+  for (const [i, j] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+    const a0 = i * 0.5 + gap, a1 = i * 0.5 + 0.5 - gap, b0 = j * 0.5 + gap, b1 = j * 0.5 + 0.5 - gap;
+    const P = (a: number, b: number) => ({ x: O.x + u.x * a + v.x * b, y: O.y + u.y * a + v.y * b });
+    // three passes, each a little larger and fainter: a soft edge without a blur filter
+    for (const [grow, al] of [[0, 0.2], [0.012, 0.1], [0.026, 0.06]] as const) {
+      const c = [P(a0 - grow, b0 - grow), P(a1 + grow, b0 - grow), P(a1 + grow, b1 + grow), P(a0 - grow, b1 + grow)];
+      g.fillStyle = `rgba(255, 238, 205, ${al * dawn})`;
+      g.beginPath();
+      c.forEach((q, k) => (k ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)));
+      g.closePath();
+      g.fill();
+    }
+  }
+  g.globalCompositeOperation = "source-over";
 }
 
 function drawLive(g: Ctx, f: Frame, ink: Ink) {

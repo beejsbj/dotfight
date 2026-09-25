@@ -6,7 +6,7 @@
 // they settle gives the same pixels as drawing the page from scratch. The
 // camera can then swoop and chase the ink for the cost of one image draw.
 
-import type { GameState, Mark, Soldier } from "./game";
+import { rng, type GameState, type Mark, type Soldier } from "./game";
 import { INK, handText, inkCircle, inkCross, inkDot, inkFlick, paperGrain } from "./ink";
 import { RULES } from "./rules";
 
@@ -95,6 +95,46 @@ export function drawSignature(g: Ctx, sig: Signature, p = 1) {
   if (p >= 1) {
     // an underline flourish, flicked off at the end
     inkFlick(g, [{ x: RULES.pageW - 420, y: y + 14 }, { x: RULES.pageW - 230, y: y + 10 }, { x: RULES.pageW - 60, y: y + 2 }], INK.pens[sig.owner], 991, 2.4);
+  }
+}
+
+/** How yellowed the paper is: a long war ages the sheet. */
+export const ageOf = (s: GameState) => Math.min(1, s.turn / 70);
+
+/**
+ * What a long night does to a page: it yellows, and somewhere past the
+ * twenty-fourth turn a mug gets set down on it. Seeded, so the same page
+ * always has the same ring. Multiplied, so it sits under and over the ink
+ * alike, the way a real stain does.
+ */
+export function drawAge(g: Ctx, s: GameState) {
+  const age = ageOf(s);
+  if (age <= 0) return;
+  g.fillStyle = `rgba(236, 214, 170, ${0.55 * age})`;
+  g.fillRect(0, 0, RULES.pageW, RULES.pageH);
+  if (s.turn < 24) return;
+  const r = rng((s.seed ^ 0xc0ffee) >>> 0);
+  const x = 150 + r() * 700, y = r() < 0.5 ? 200 + r() * 260 : 1260 + r() * 330, R = 74 + r() * 16;
+  const wash = g.createRadialGradient(x, y, R * 0.2, x, y, R);
+  wash.addColorStop(0, "rgba(176, 128, 70, 0.05)");
+  wash.addColorStop(0.85, "rgba(176, 128, 70, 0.1)");
+  wash.addColorStop(1, "rgba(176, 128, 70, 0)");
+  g.fillStyle = wash;
+  g.beginPath(); g.arc(x, y, R, 0, Math.PI * 2); g.fill();
+  // the rim: darker where the coffee pooled, broken where it didn't
+  g.lineCap = "round";
+  for (const [dx, dy, rr, from, to] of [[0, 0, R, 0, 1], [9 + r() * 6, -6 - r() * 6, R * 0.97, 0.1 + r() * 0.2, 0.62]] as const) {
+    const n = 56;
+    for (let i = Math.floor(from * n); i < Math.floor(to * n); i++) {
+      const k = r();
+      if (k < 0.08) continue;
+      const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1.1) / n) * Math.PI * 2;
+      g.strokeStyle = `rgba(150, 100, 50, ${0.12 + k * 0.2})`;
+      g.lineWidth = 2 + k * 4;
+      g.beginPath();
+      g.arc(x + dx, y + dy, rr * (1 + (k - 0.5) * 0.02), a0, a1);
+      g.stroke();
+    }
   }
 }
 

@@ -16,7 +16,7 @@ import { inkTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
-import { PageLayer, SETTLED, type Ink } from "./page";
+import { ageOf, drawAge, PageLayer, SETTLED, type Ink } from "./page";
 import { leaning, PEN, type PenPose } from "./pen";
 import { screenDirToWorld, stageCss } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, type Filed, type Mode, type Save, type Step } from "./record";
@@ -207,6 +207,8 @@ function reset() {
   fx.clear();
   inkTL.clear();
   sfx.creak(0);
+  // a different page is about to be on the desk: draw it even if nothing moves
+  dirty = true;
 }
 
 function start(m: Mode) {
@@ -755,8 +757,7 @@ function drawPageInto(g: CanvasRenderingContext2D, st: GameState, sc: number, r?
   g.drawImage(exportLayer.c!, 0, 0, g.canvas.width, g.canvas.height);
   g.setTransform(sc, 0, 0, sc, 0, 0);
   g.globalCompositeOperation = "multiply";
-  const age = Math.min(1, st.turn / 70);
-  if (age > 0) { g.fillStyle = `rgba(236, 214, 170, ${0.55 * age})`; g.fillRect(0, 0, RULES.pageW, RULES.pageH); }
+  drawAge(g, st);
   for (const x of st.soldiers) if (x.alive) inkLib.inkDot(g, x.x, x.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7);
   g.globalCompositeOperation = "source-over";
 }
@@ -1063,7 +1064,7 @@ function currentFrame(): Frame {
   }
   const f: Frame = {
     s, view: v, lamp, ink, dpr: sdpr, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
-    selected, ghost, age: Math.min(1, s.turn / 70), sig: signatureFor(s, mode),
+    selected, ghost, age: ageOf(s), sig: signatureFor(s, mode),
   };
   const human = screen === "game" && !isBot(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
