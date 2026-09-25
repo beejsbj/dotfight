@@ -64,7 +64,49 @@ export const SIEGE: RuleSet = variant(EVOLVED, {
   transfer: { max: 5, ambush: "all", free: true },
 });
 
-export const RULESETS: RuleSet[] = [CLASSIC, LAST_STAND, GEOMETRY, WET_INK, SIEGE];
+// --- round 2 (Burooj's new direction; docs/rules-lab/round-2.md) ----------------
+// The round-2 foundation: the canon's five circles of ten, plus lunge and
+// snipe (a lunge kill earns another lunge by the same soldier, shakier each
+// link; a shot earns another flick only by taking two), free sends that walk
+// the page, and empty bases left as rings you can refill. No streak cap.
+export const ROUND2_BASE: RuleSet = variant(CLASSIC, {
+  id: "r2", name: "r2", motto: "",
+  lunge: { baseDeath: true },
+  earn: { shoot: 2, move: 1, sameMover: true, shake: 0.35 },
+  extraTurn: "chain",
+  chainCap: 0,
+  transfer: { max: 5, ambush: "all", free: true, pace: 150, refill: "own" },
+  empty: "ring",
+});
+
+/** Lunge and snipe on the classic page. */
+export const LUNGE_SNIPE: RuleSet = variant(ROUND2_BASE, {
+  id: "lunge-snipe",
+  name: "Lunge & snipe",
+  motto: "Lunge through them and go again, shakier. Snipe two with one line and go again.",
+});
+
+/** Ink as a real pen on paper: jolts, grooves, scribbles, tapering lines. */
+export const PEN_PHYSICS: RuleSet = variant(LUNGE_SNIPE, {
+  id: "pen-physics",
+  name: "Pen physics",
+  motto: "Crossing ink jolts your hand; running along it pulls you into its groove.",
+  ink: { wobble: 0.06, groove: 0.3, grooveReach: 24, groovePull: 0.03, grooveOwn: 0.6, grooveEnemy: 1.6, scribble: 3, scribbleSpan: 40, taperHit: 0.25, taperWall: 0.15 },
+  shapes: { circle: { wobble: 0.05 } },
+});
+
+/** Camps, a prism and cushions: bank shots and split lines. */
+export const BILLIARDS: RuleSet = variant(LUNGE_SNIPE, {
+  id: "billiards",
+  name: "Billiards",
+  motto: "Bank shots off hexagons (yours too), split lines through your triangle.",
+  kit: ["circle", "circle", "tri", "hex", "hex"],
+  soldiersPerBase: 12,
+  shapes: { circle: { wobble: 0 }, tri: { soldiers: 6, prism: true, wobble: 0.04 }, hex: { soldiers: 8, wall: "bank", prism: false, wobble: 0.04 } },
+});
+
+export const ROUND2_SETS: RuleSet[] = [LUNGE_SNIPE, PEN_PHYSICS, BILLIARDS];
+export const RULESETS: RuleSet[] = [...ROUND2_SETS, CLASSIC, LAST_STAND, GEOMETRY, WET_INK, SIEGE];
 
 export function ruleSet(id: string | undefined): RuleSet {
   return RULESETS.find((r) => r.id === id) ?? (id === PROTOTYPE.id ? PROTOTYPE : CLASSIC);

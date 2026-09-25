@@ -450,7 +450,7 @@ function note(who: Player, o: Outcome, verb: string) {
   const n = o.killed.length, w = o.wounded.length, c = o.cut.reduce((a, x) => a + x.ids.length, 0);
   if (o.crashed !== undefined) parts.push(`${name(who)} lunged into their base and died at the wall${n ? `, crossing out ${n} on the way` : ""}.`);
   else if (o.lost) parts.push(`${name(who)} flicked a soldier off the page.`);
-  else if (n || w) parts.push(`${name(who)}'s ${verb} crossed out ${n}${w ? `, wounded ${w}` : ""}.`);
+  else if (n || w) parts.push(`${name(who)}'s ${verb === "shot" && s.rules.earn ? "snipe" : verb === "run" && s.rules.lunge ? "lunge" : verb} crossed out ${n}${w ? `, wounded ${w}` : ""}.`);
   else if (verb === "sent") parts.push(`${name(who)} sent soldiers down the road.`);
   else parts.push(verb === "run" ? `${name(who)} ${s.rules.lunge ? "lunged" : "moved"}.` : `${name(who)} missed.`);
   if (c) parts.push(`Cut the road: ${c} lost.`);
@@ -582,7 +582,7 @@ function showRules() {
   sheet(`
     <h2>Which rules?</h2>
     <p class="sub">pick one for the next page</p>
-    ${RULESETS.map((r) => `
+    ${RULESETS.map((r) => `${r.id === "classic" ? `<p class="fine">round 1, for comparison</p>` : ""}
       <button class="act ${r.id === rulesId ? "chosen" : ""}" data-id="${r.id}">↳ ${r.name}</button>
       <p class="motto">${r.motto}</p>`).join("")}
     <button class="act small" data-a="back">back</button>`, "rules").onclick = (e) => {
@@ -619,9 +619,9 @@ function showHow() {
     <ol>
       <li>Take turns drawing bases${s.rules.kit ? " (pick the shape at the bottom)" : ""}. Each fills with soldiers.</li>
       <li>On your turn, touch one soldier. Pull back from anywhere and let go, like flicking a pen.</li>
-      <li><b>Shoot</b>: every enemy the ink touches is crossed out. Your soldier stays put.</li>
-      <li><b>Move</b>: the same flick, but your soldier ends where the ink stops. Flick him off the page and he's gone.</li>
-      <li><b>Send</b> (if the rules have it): tap a base, tap another, pick how many. They walk the road and arrive after your opponent's next go.</li>
+      <li><b>${s.rules.earn ? "Snipe" : "Shoot"}</b>: every enemy the ink touches is crossed out. Your soldier stays put.</li>
+      <li><b>${s.rules.lunge ? "Lunge" : "Move"}</b>: the same flick, but your soldier ends where the ink stops. Flick him off the page and he's gone.</li>
+      <li><b>Send</b> (if the rules have it): tap a base, tap another, pick how many. They walk the road to get there.</li>
       <li>Hold a hard flick too long and your hand starts to shake.</li>
       <li>Pinch to zoom. The rules card says how to win.</li>
     </ol>

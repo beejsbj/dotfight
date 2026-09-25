@@ -2,7 +2,7 @@
 // The playable ones live in src/rulesets.ts; these are experiments.
 // Run any of them: npm run lab -- --sets <id,id> --games 400
 
-import { CLASSIC, LAST_STAND } from "../rulesets";
+import { CLASSIC, LAST_STAND, ROUND2_BASE } from "../rulesets";
 import { PROTOTYPE, variant, type Change, type RuleSet } from "../rules";
 
 const v = (parent: RuleSet, id: string, change: Change) => variant(parent, { id, name: id, motto: id, ...change });
@@ -95,14 +95,7 @@ export const ROUND4: RuleSet[] = [
 // (a lunge kill earns another lunge by the same soldier, shakier each link;
 // a shot earns another flick only by taking two), free sends that walk the
 // page, and empty bases left as rings you can refill. No streak cap.
-export const R2 = v(CLASSIC, "r2", {
-  lunge: { baseDeath: true },
-  earn: { shoot: 2, move: 1, sameMover: true, shake: 0.35 },
-  extraTurn: "chain",
-  chainCap: 0,
-  transfer: { max: 5, ambush: "all", free: true, pace: 150, refill: "own" },
-  empty: "ring",
-});
+export const R2 = ROUND2_BASE;
 const PEN = { wobble: 0.06, groove: 0.3, grooveReach: 24, groovePull: 0.03, grooveOwn: 0.6, grooveEnemy: 1.6, scribble: 3, scribbleSpan: 40, taperHit: 0.25, taperWall: 0.15 };
 const KIT2 = ["circle", "circle", "tri", "hex", "hex"] as RuleSet["kit"];
 // (a circle's soldiers come from soldiersPerBase)
