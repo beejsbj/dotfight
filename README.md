@@ -1,6 +1,6 @@
 # Pen Flick Tactics
 
-A digital version of Dawood's pen-and-paper flick tactics game. The feel of imprecise pen flicks and the hand-drawn notebook aesthetic are core constraints. The canonical rules still need Dawood's review; see [RULES.md](RULES.md) for what the prototype assumes and what to ask him.
+A digital version of Dawood's pen-and-paper flick tactics game, fought on the back page of a maths copy under a desk lamp. The imprecise pen flick and the page as a permanent record are the core constraints. The canonical rules still need Dawood's review; see [RULES.md](RULES.md) for what the prototype assumes and what to ask him. The redesign's concept and rejected directions are in [docs/redesign/concept.md](docs/redesign/concept.md); rules ideas for Dawood are in [docs/redesign/ideas.md](docs/redesign/ideas.md).
 
 The Linear board is canonical for status, decisions, and work history.
 
@@ -10,27 +10,39 @@ The Linear board is canonical for status, decisions, and work history.
 npm install
 npm run dev      # http://localhost:5173
 npm run phone    # serves on bjslab's Tailscale address, for testing on a phone over the tailnet
-npm test         # game-logic tests
+npm test         # engine, projection, replay and timeline tests
 npm run build    # static bundle in dist/
-npm run share-art -- http://localhost:5173/   # regenerate og.jpg + icons from a scripted game (needs the dev server and Chrome)
+npm run share-art -- http://localhost:5173/   # regenerate og.jpg + icons (needs the dev server and Chrome)
+node scripts/playtest.mjs <scenario> http://localhost:5173/ /tmp/out   # scripted phone playtests
 ```
 
-On your turn, touch one of your soldiers or anywhere in one of your bases (the camera closes in), pull back from anywhere, and let go. Pick **move** or **shoot** at the bottom. Pinch to zoom; tap **page** to see the whole sheet. Pass & play shows a hand-off sheet between turns; Dawood-bot plays red. A finished page can be saved as a PNG.
+Open the exercise book and pick an opponent. Take turns drawing camps. On your turn, touch one of your soldiers (or anywhere in one of your camps): the camera sits down behind him and the pen stands on his dot. Pull back from anywhere on the screen and let go. **Move** or **shoot** is chosen on the two cards at the bottom. Tap empty paper or **page** to stand up and see everything; pinch to zoom. In pass and play the sheet turns round on the desk to face whoever's go it is. A finished page is signed, filed in the drawer, and can be replayed or saved as an image.
 
 ## Shape
 
 - `src/rules.ts`: every tunable rule and the flick feel, in one place
 - `src/game.ts`: pure, seeded game state (setup, flick resolution, hits, win). No DOM.
 - `src/flick.ts`: turns a pull-back gesture into a flick, with wobble and release error
-- `src/ink.ts`: ballpoint and pencil drawing primitives (seeded, so the page redraws identically)
-- `src/view.ts`: camera and page rendering
 - `src/bot.ts`: Dawood-bot
-- `src/main.ts`: input, turn flow, HUD and sheets
-- `src/sound.ts`: synthesised pen scratches and haptics
-- `src/timeline.ts`: when each mark is being drawn on (pure, tested)
-- `src/hand.ts`: which soldier a tap means, and the order dots get jotted (pure, tested)
+- `src/record.ts`: a page as seed + camps + flicks; replay, the drawer, reading old saves (pure, tested)
+- `src/projection.ts`: world ↔ screen through the tilted-desk camera; the CSS perspective and touch input share it (pure, tested)
+- `src/inkclock.ts`: ink time, which snags for a beat on every soldier it crosses (pure, tested)
+- `src/camera.ts`: the eye at the desk: standing, sitting, chasing the ink, turning the page
+- `src/light.ts`: the lamp and the dawn
+- `src/page.ts`: the sheet and an append-only page-space cache of everything dry on it
+- `src/scene.ts`: one frame: the lit desk (cached while the camera is still), live ink multiplied on top, pencil, the standing pen
+- `src/pen.ts`: the clear hexagonal ballpoint, in 3D projection, and its lamp shadow
+- `src/ink.ts`: ballpoint and pencil drawing primitives (seeded, so the page redraws identically)
+- `src/textures.ts`: walnut, the desk around the sheet, the sheet's shadow
+- `src/timeline.ts`, `src/hand.ts`: draw-on timing, which soldier a tap means (pure, tested)
+- `src/sound.ts`: synthesised pen, paper, lamp switch, clatter, dawn birds; haptics
+- `src/main.ts`: turn flow, input, HUD, the cover, cards, drawer and replay
 
-In dev builds, `window.pft` exposes the game state, camera, timeline and renderer for scripted playtests.
+In dev builds, `window.pft` exposes the game state, camera, timelines, a speed knob (`pft.speed`), a frame-time probe (`pft.frames()`), `renderNow`, `pageCanvas`, and helpers that file, resume and replay seeded bot-v-bot wars. `scripts/scenarios/` has the playtests used to build this: `first`, `pnp` (a whole war to the drawer), `tour` (first-time notes, bot turn; run with `TAUGHT=0`), `sizes` (set `W`, `H`, `DPR`), `perf` and `compare` (frame costs; `THROTTLE=6`).
+
+## Saves
+
+`localStorage` keeps the game in progress under `pft:save` (the same `{ s, mode }` shape as before, `GameState.v === 1`, so older saves load unchanged) and finished pages under `pft:drawer`, each stored as its seed, camps and flicks and redrawn by replaying them.
 
 ## Source prototype
 
