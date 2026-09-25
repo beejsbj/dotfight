@@ -1035,6 +1035,7 @@ let wasLive = false;
 // and settle moves faster.
 const moveTimes: number[] = [];
 let slow = false;
+let probeSlow = true; // dev: headless Chrome has no GPU and would always look slow
 
 function frame(now: number) {
   requestAnimationFrame(frame);
@@ -1051,7 +1052,7 @@ function frame(now: number) {
   }
   const moving = cam.tick(dt);
   let active = moving;
-  if (moving && !slow) {
+  if (moving && !slow && probeSlow) {
     moveTimes.push(frameTimes[frameTimes.length - 1]);
     if (moveTimes.length > 40) moveTimes.shift();
     if (moveTimes.length >= 24) {
@@ -1183,7 +1184,7 @@ if (import.meta.env.DEV) {
       return r;
     },
     stageStats, cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
-    get slow() { return slow; }, set slow(v: boolean) { slow = v; cam.quick = v ? 1.8 : 1; },
+    get slow() { return slow; }, set slow(v: boolean) { slow = v; cam.quick = v ? 1.8 : 1; probeSlow = v; },
     start, showTitle, replay: () => replay(file(s, mode)), apply: (st: Step) => { apply(s, st); dirty = true; },
     unfile, file: () => file(s, mode), act: (f: Flick) => fire(f, 0.6, 0.3),
     /** A whole seeded bot-v-bot war, filed in the drawer. Returns the record. */

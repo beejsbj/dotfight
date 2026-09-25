@@ -41,7 +41,7 @@ export default async function (T, out) {
     await T.tap(a.x, a.y, 40);
     await until(() => window.pft.cam.settled);
     await page.waitForTimeout(300);
-    await shot("04-sitting-down");
+    await shot("04-leaning-in");
     const b = await T.world(pair.me.x, pair.me.y), t = await T.world(pair.foe.x, pair.foe.y);
     const ang = Math.atan2(t.y - b.y, t.x - b.x);
     await T.touch("touchStart", [[195, 560]]);
@@ -51,7 +51,7 @@ export default async function (T, out) {
     await page.evaluate(() => { window.pft.speed = 0.12; });
     await T.touch("touchEnd", []);
     await page.waitForTimeout(700);
-    await shot("06-ink-in-flight");
+    await shot("06-release-pull-back");
     await page.evaluate(() => { window.pft.speed = 1; });
     await idle(T, 60000);
 
@@ -72,7 +72,8 @@ export default async function (T, out) {
     await shot("07-snag-cross-lands");
 
     // 8. pass and play: the sheet turning round to face the other side
-    await page.evaluate(() => { window.pft.speed = 1; });
+    // (headless Chrome has no GPU, so it trips slow-device mode; a phone that keeps up gets the spin)
+    await page.evaluate(() => { window.pft.speed = 1; window.pft.slow = false; });
     await until(() => !window.pft.res);
     await page.evaluate(() => { window.pft.speed = 0.3; });
     await page.waitForTimeout(260);

@@ -6,7 +6,7 @@ export default async function (T, out) {
   await page.waitForTimeout(1500);
   await T.shot(`${out}/w-play.png`);
   console.log(JSON.stringify(await page.evaluate(() => {
-    const st = window.pft.stage;
+    const st = window.pft.els.live;
     return { css: [st.style.left, st.style.top, st.style.width, st.style.height], px: [st.width, st.height], view: window.pft.frame().view, fitZ: window.pft.cam.fitZ };
   })));
   const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.find((x) => x.alive && x.owner === s.current); });

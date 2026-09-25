@@ -16,7 +16,7 @@ npm run share-art -- http://localhost:5173/   # regenerate og.jpg + icons (needs
 node scripts/playtest.mjs <scenario> http://localhost:5173/ /tmp/out   # scripted phone playtests
 ```
 
-Open the exercise book and pick an opponent. Take turns drawing camps. On your turn, touch one of your soldiers (or anywhere in one of your camps): the camera sits down behind him and the pen stands on his dot. Pull back from anywhere on the screen and let go. **Move** or **shoot** is chosen on the two cards at the bottom. Tap empty paper or **page** to stand up and see everything; pinch to zoom. In pass and play the sheet turns round on the desk to face whoever's go it is. A finished page is signed, filed in the drawer, and can be replayed or saved as an image.
+Open the exercise book and pick an opponent. Take turns drawing camps. On your turn, touch one of your soldiers (or anywhere in one of your camps): you lean in low over him and the pen stands on his dot; distant camps fade into haze. Pull back from anywhere on the screen and let go, and the view pulls straight back up to bird's-eye to watch the ink land. **Move** or **shoot** is chosen on the two cards at the bottom. Tap empty paper or **page** to stand back up; pinch to zoom. In pass and play the sheet turns round on the desk to face whoever's go it is. A finished page is signed, filed in the drawer, and can be replayed or saved as an image.
 
 ## Shape
 
@@ -27,10 +27,10 @@ Open the exercise book and pick an opponent. Take turns drawing camps. On your t
 - `src/record.ts`: a page as seed + camps + flicks; replay, the drawer, reading old saves (pure, tested)
 - `src/projection.ts`: world ↔ screen through the tilted-desk camera; the CSS perspective and touch input share it (pure, tested)
 - `src/inkclock.ts`: ink time, which snags for a beat on every soldier it crosses (pure, tested)
-- `src/camera.ts`: the eye at the desk: standing, sitting, chasing the ink, turning the page
-- `src/light.ts`: the lamp and the dawn
-- `src/page.ts`: the sheet and an append-only page-space cache of everything dry on it
-- `src/scene.ts`: one frame: the lit desk (cached while the camera is still), live ink multiplied on top, pencil, the standing pen
+- `src/camera.ts`: the eye at the desk: bird's-eye by default, leaning in to aim, turning the page
+- `src/light.ts`: the lamp, the fog while aiming, and the dawn (painted at quarter resolution and stretched)
+- `src/page.ts`: the sheet as an append-only page-space canvas: every mark and every dot a soldier ever stood on is ink, drawn once
+- `src/scene.ts`: one frame: the desk and page are placed by CSS `matrix3d` (never repainted for the camera); only ink still being drawn, pencil and the pen are drawn per frame
 - `src/pen.ts`: the clear hexagonal ballpoint, in 3D projection, and its lamp shadow
 - `src/ink.ts`: ballpoint and pencil drawing primitives (seeded, so the page redraws identically)
 - `src/textures.ts`: walnut, the desk around the sheet, the sheet's shadow
@@ -38,7 +38,7 @@ Open the exercise book and pick an opponent. Take turns drawing camps. On your t
 - `src/sound.ts`: synthesised pen, paper, lamp switch, clatter, dawn birds; haptics
 - `src/main.ts`: turn flow, input, HUD, the cover, cards, drawer and replay
 
-In dev builds, `window.pft` exposes the game state, camera, timelines, a speed knob (`pft.speed`), a frame-time probe (`pft.frames()`), `renderNow`, `pageCanvas`, and helpers that file, resume and replay seeded bot-v-bot wars. `scripts/scenarios/` has the playtests used to build this: `first`, `pnp` (a whole war to the drawer), `tour` (first-time notes, bot turn; run with `TAUGHT=0`), `sizes` (set `W`, `H`, `DPR`), `perf` and `compare` (frame costs; `THROTTLE=6`).
+In dev builds, `window.pft` exposes the game state, camera, timelines, a speed knob (`pft.speed`), a frame-time probe (`pft.frames()`), `renderNow`, `pageCanvas`, and helpers that file, resume and replay seeded bot-v-bot wars. `scripts/scenarios/` has the playtests used to build this: `first`, `pnp` (a whole war to the drawer), `tour` (first-time notes, bot turn; run with `TAUGHT=0`), `sizes` (set `W`, `H`, `DPR`), `fog` (the lean-in), `perf` (main-thread cost per frame on a late-war page; `THROTTLE=6`).
 
 ## Saves
 

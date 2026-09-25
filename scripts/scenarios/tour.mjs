@@ -42,7 +42,7 @@ export default async function (T, out) {
     await T.shot(`${out}/t4-aim-note.png`);
     await T.drag(195, 600, 200, 740, { hold: 60, ms: 250 });
     // the bot's turn: its pen, leaning at us
-    await page.waitForFunction(() => window.pft.botAim || (window.pft.s.current === 1 && window.pft.selected !== undefined && !window.pft.res), undefined, { timeout: 20000, polling: 30 });
+    await page.waitForFunction(() => window.pft.s.current === 1 && window.pft.selected !== undefined && !window.pft.res, undefined, { timeout: 20000, polling: 30 });
     await page.waitForTimeout(1300);
     await T.shot(`${out}/t5-bot-aim.png`);
     await page.evaluate(() => { window.pft.speed = 0.2; });
