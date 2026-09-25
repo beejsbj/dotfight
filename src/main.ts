@@ -9,6 +9,7 @@ import {
   act, alive, basesLeft, canAct, canPlaceBase, newGame, pathLen, placeBase,
   type ActionKind, type Flick, type GameState, type Player, type Pt,
 } from "./game";
+import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { RULES } from "./rules";
 import * as sfx from "./sound";
@@ -407,15 +408,19 @@ function showOver() {
 }
 
 // the battlefield as an image: the whole point of the game is this page
-function keepPage() {
+function pageCanvas(scale = 2) {
   const c = document.createElement("canvas");
-  c.width = RULES.pageW * 2;
-  c.height = RULES.pageH * 2;
+  c.width = RULES.pageW * scale;
+  c.height = RULES.pageH * scale;
   const k = new Camera();
   k.setViewport(0, 0, RULES.pageW, RULES.pageH);
   k.z = 1;
-  render(c.getContext("2d")!, k, s, {}, RULES.pageW, RULES.pageH, 2);
-  c.toBlob((b) => {
+  render(c.getContext("2d")!, k, s, {}, RULES.pageW, RULES.pageH, scale);
+  return c;
+}
+
+function keepPage() {
+  pageCanvas().toBlob((b) => {
     if (!b) return;
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b);
@@ -693,4 +698,4 @@ requestAnimationFrame(frame);
 showTitle();
 
 // dev-only handle for scripted playtests
-if (import.meta.env.DEV) (window as unknown as { pft: object }).pft = { get s() { return s; }, cam, fx };
+if (import.meta.env.DEV) (window as unknown as { pft: object }).pft = { get s() { return s; }, cam, fx, pageCanvas, ink: inkLib, INK };
