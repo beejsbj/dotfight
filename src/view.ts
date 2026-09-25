@@ -2,7 +2,7 @@
 // changes; marks are seeded so it looks the same every time.
 
 import { type GameState, type Player, type Pt } from "./game";
-import { INK, drawPen, inkCircle, inkCross, inkDot, inkFlick, paperGrain, pencilLine } from "./ink";
+import { INK, drawPen, inkCircle, inkCross, inkDot, inkFlick, paperGrain, pencilLine, pencilLoop } from "./ink";
 import { RULES } from "./rules";
 
 const ease = (t: number) => 1 - Math.pow(1 - t, 3);
@@ -81,6 +81,7 @@ export interface Overlay {
   ink?: Ink;
   mover?: { id: number; at: Pt }; // a moving soldier rides the head of its own ink
   pen?: Pen; // the pen after release: riding the ink, then lifting away
+  hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] }; // whose turn: pencil loops
 }
 
 const SETTLED: Ink = { p: () => 1, live: new Set() };
@@ -121,6 +122,9 @@ export function drawLive(ctx: CanvasRenderingContext2D, cam: Camera, s: GameStat
     ctx.globalCompositeOperation = "source-over";
   }
   const px = 1 / cam.z; // one css pixel in world units
+  if (o.hint) for (const b of o.hint.bases) {
+    pencilLoop(ctx, b.x, b.y, b.r + 12, 900 + b.id * 17, Math.max(1.4, px * 0.9), o.hint.p, 0.6);
+  }
   if (o.selected !== undefined && !o.aim && !o.pen) {
     const x = s.soldiers[o.selected];
     pencilRing(ctx, x.x, x.y, RULES.soldierRadius + 9, 1.6);

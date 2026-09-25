@@ -12,7 +12,7 @@ import {
 import { INK } from "./ink";
 import { RULES } from "./rules";
 import * as sfx from "./sound";
-import { jotOrder } from "./hand";
+import { inBase, jotOrder, pickSoldier } from "./hand";
 import { Timeline, reachFraction } from "./timeline";
 import { Camera, render, type Overlay } from "./view";
 
@@ -186,7 +186,11 @@ function next() {
   hud();
   dirty = true;
   if (s.phase === "over") return setTimeout(showOver, 500);
-  if (!isBot(s.current)) return;
+  if (!isBot(s.current)) {
+    // a light pencil loop round your bases: these are yours to move
+    if (s.phase === "play") fx.add("hint", performance.now(), 150, 520, "out");
+    return;
+  }
   busy = true;
   const g0 = gen;
   const live = (fn: () => void) => () => { if (gen === g0) fn(); };
@@ -422,14 +426,14 @@ const ptrs = new Map<number, Pt>();
 let g: Gesture = { t: "none" };
 const TAP = 10;
 
+// Which of your soldiers a touch means. With none selected, anywhere in or
+// near one of your bases will do; once one is picked, only a near-direct hit
+// on another soldier switches, so pressing inside the base to pull is safe.
 function nearestOwn(w: Pt): number | undefined {
-  const tol = Math.max(RULES.soldierRadius * 2.5, 26 / cam.z);
-  let best: number | undefined, bd = tol;
-  for (const x of alive(s, s.current)) {
-    const d = Math.hypot(x.x - w.x, x.y - w.y);
-    if (d < bd) { bd = d; best = x.id; }
-  }
-  return best;
+  return pickSoldier(s, w, {
+    soldier: Math.max(RULES.soldierRadius * 2.5, 22 / cam.z),
+    base: selected === undefined ? Math.max(18, 30 / cam.z) : 0,
+  });
 }
 
 function select(id: number) {
@@ -626,6 +630,13 @@ function headAt(pts: Pt[], p: number) {
 
 function overlay(now: number): Overlay {
   const o: Overlay = { selected, ghost, ink: { p: (k) => fx.p(k, now), live: fx.live(now) } };
+  if (s.phase === "play" && !isBot(s.current) && selected === undefined && !aim && !anim && $("#sheet").hidden) {
+    const mine = alive(s, s.current);
+    o.hint = {
+      p: fx.p("hint", now),
+      bases: s.bases.filter((b) => b.owner === s.current && inBase(mine, b).length),
+    };
+  }
   if (anim) {
     const sp = fx.p(anim.key, now);
     const h = headAt(anim.path, sp);
