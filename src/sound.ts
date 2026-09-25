@@ -45,6 +45,11 @@ export const circle = () => scratch(0.38, 0.3, 2200);
 // a dot jotted with the ballpoint: a short, bright tick
 export const dot = (delay = 0) => scratch(0.035, 0.22, 4000 + Math.random() * 700, delay);
 
+// a retractable ballpoint: two tight clicks
+export const click = () => { scratch(0.018, 0.5, 5200); scratch(0.02, 0.4, 4300, 0.055); };
+// the page being handed over: a soft, low rustle
+export const rustle = () => { scratch(0.32, 0.35, 900); scratch(0.22, 0.2, 1500, 0.12); };
+
 export function buzz(pattern: number | number[]) {
   navigator.vibrate?.(pattern);
 }

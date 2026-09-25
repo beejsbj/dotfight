@@ -391,6 +391,7 @@ function showHandoff() {
     <p class="sub">${lastNote}</p>
     <h2 style="color:${INK.pens[nextP]}">Pass the pen to ${name(nextP)}</h2>
     <p class="fine">tap when ready</p>`, "handoff");
+  sfx.rustle();
   card.parentElement!.onclick = () => {
     card.parentElement!.onclick = null;
     sfx.unlock();
@@ -405,6 +406,7 @@ function showOver() {
   sheet(`
     <h2 style="color:${INK.pens[w]}">${name(w)} wins.</h2>
     <p class="sub">${s.turn} turns, ${s.marks.filter((m) => m.t === "stroke").length} lines of ink.</p>
+    <p class="fine">${([0, 1] as Player[]).map((p) => `<span style="color:${INK.pens[p]}">${name(p)} crossed out ${s.marks.filter((m) => m.t === "cross" && m.kind === "kill" && m.owner === p).length}</span>`).join(" · ")}</p>
     <button class="act" data-a="keep">↳ keep this page</button>
     <button class="act" data-a="look">↳ look at the page</button>
     <button class="act red" data-a="new">↳ new page</button>`).onclick = (e) => {
@@ -462,7 +464,7 @@ function nearestOwn(w: Pt): number | undefined {
 }
 
 function select(id: number) {
-  if (selected !== id) sfx.tap();
+  if (selected !== id) sfx.click();
   if (!taught("aim") && selected === undefined) fx.add("teach", performance.now(), 350, 900, "linear");
   selected = id;
   const me = s.soldiers[id];
