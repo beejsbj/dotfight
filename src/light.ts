@@ -73,8 +73,8 @@ export function paintLight(g: CanvasRenderingContext2D, w: number, h: number, k:
 
 /**
  * Paint the fog (normal blend) for a camera leaning in to aim: clear round
- * the pen, thickening with distance and toward the far edge of the desk, so
- * distant camps are faint, warm, hazy shapes rather than gone. At dawn it
+ * the pen, thickening with distance and toward the far edges of the desk into
+ * the dark room, so distant camps are dim shapes in the gloom rather than gone. At dawn it
  * carries the window's light instead. Returns whether anything was painted.
  */
 export function paintHaze(g: CanvasRenderingContext2D, w: number, h: number, k: number, v: View, lean: number, dawn: number, tip?: { x: number; y: number }) {
@@ -84,20 +84,34 @@ export function paintHaze(g: CanvasRenderingContext2D, w: number, h: number, k: 
   if (lean > 0.02 && tip) {
     any = true;
     const R = Math.max(w, h);
-    // haze is the colour of dim paper: far ink fades into it rather than going black
-    const rad = g.createRadialGradient(tip.x * k, tip.y * k, R * 0.12, tip.x * k, tip.y * k, R * 0.8);
-    rad.addColorStop(0, "rgba(196, 170, 138, 0)");
-    rad.addColorStop(0.4, `rgba(196, 170, 138, ${0.22 * lean})`);
-    rad.addColorStop(1, `rgba(150, 128, 104, ${0.55 * lean})`);
+    // as thick as the old low camera had it: far camps sink into the dark room,
+    // still there as shapes, but only the pool round the pen is really lit
+    const f = lean * (1 - dawn * 0.6);
+    const rad = g.createRadialGradient(tip.x * k, tip.y * k, R * 0.14, tip.x * k, tip.y * k, R * 0.85);
+    rad.addColorStop(0, "rgba(40, 30, 22, 0)");
+    rad.addColorStop(0.3, `rgba(40, 30, 22, ${0.3 * f})`);
+    rad.addColorStop(0.6, `rgba(30, 23, 17, ${0.7 * f})`);
+    rad.addColorStop(1, `rgba(24, 18, 14, ${0.92 * f})`);
     g.fillStyle = rad;
     g.fillRect(0, 0, w, h);
     // depth: the far edge of the desk dissolves into the dark room
     const depth = g.createLinearGradient(0, 0, 0, tip.y * k);
-    depth.addColorStop(0, `rgba(44, 36, 30, ${0.5 * lean})`);
-    depth.addColorStop(0.45, `rgba(120, 100, 82, ${0.2 * lean})`);
-    depth.addColorStop(1, "rgba(120, 100, 82, 0)");
+    depth.addColorStop(0, `rgba(22, 17, 13, ${f})`);
+    depth.addColorStop(0.18, `rgba(22, 17, 13, ${0.92 * f})`);
+    depth.addColorStop(0.5, `rgba(30, 23, 17, ${0.45 * f})`);
+    depth.addColorStop(0.85, `rgba(40, 30, 22, ${0.08 * f})`);
+    depth.addColorStop(1, "rgba(40, 30, 22, 0)");
     g.fillStyle = depth;
     g.fillRect(0, 0, w, h);
+    // and the sides, as the old tilted desk had them
+    const ex = w * 0.12;
+    for (const [x0, x1] of [[0, ex], [w, w - ex]]) {
+      const side = g.createLinearGradient(x0, 0, x1, 0);
+      side.addColorStop(0, `rgba(22, 17, 13, ${0.75 * f})`);
+      side.addColorStop(1, "rgba(22, 17, 13, 0)");
+      g.fillStyle = side;
+      g.fillRect(Math.min(x0, x1), 0, ex, h);
+    }
   }
   if (dawn > 0.01) {
     any = true;
