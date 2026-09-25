@@ -12,9 +12,10 @@ npm run dev      # http://localhost:5173
 npm run phone    # serves on bjslab's Tailscale address, for testing on a phone over the tailnet
 npm test         # game-logic tests
 npm run build    # static bundle in dist/
+npm run share-art -- http://localhost:5173/   # regenerate og.jpg + icons from a scripted game (needs the dev server and Chrome)
 ```
 
-On your turn, touch one of your soldiers (the camera closes in), pull back from anywhere, and let go. Pick **move** or **shoot** at the bottom. Pinch to zoom; tap **page** to see the whole sheet. Pass & play shows a hand-off sheet between turns; Daud-bot plays red. A finished page can be saved as a PNG.
+On your turn, touch one of your soldiers or anywhere in one of your bases (the camera closes in), pull back from anywhere, and let go. Pick **move** or **shoot** at the bottom. Pinch to zoom; tap **page** to see the whole sheet. Pass & play shows a hand-off sheet between turns; Daud-bot plays red. A finished page can be saved as a PNG.
 
 ## Shape
 
@@ -26,6 +27,10 @@ On your turn, touch one of your soldiers (the camera closes in), pull back from 
 - `src/bot.ts`: Daud-bot
 - `src/main.ts`: input, turn flow, HUD and sheets
 - `src/sound.ts`: synthesised pen scratches and haptics
+- `src/timeline.ts`: when each mark is being drawn on (pure, tested)
+- `src/hand.ts`: which soldier a tap means, and the order dots get jotted (pure, tested)
+
+In dev builds, `window.pft` exposes the game state, camera, timeline and renderer for scripted playtests.
 
 ## Source prototype
 
