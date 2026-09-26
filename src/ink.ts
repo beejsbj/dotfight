@@ -64,6 +64,49 @@ export function inkCircle(ctx: Ctx, cx: number, cy: number, r: number, color: st
   ctx.globalAlpha = 1;
 }
 
+// A hand-drawn polygon (a prism, a cushion): each side a slightly bowed
+// stroke, corners a touch off, the last side overshooting the start the way a
+// hand closes a shape. `upTo` (0..1) draws it on, side by side.
+export function inkPolygon(ctx: Ctx, corners: Pt[], color: string, seed: number, width = 2.6, passes = 2, upTo = 1) {
+  if (upTo <= 0 || corners.length < 3) return;
+  const rand = rng(seed);
+  const n = corners.length;
+  let cx = 0, cy = 0;
+  for (const c of corners) { cx += c.x / n; cy += c.y / n; }
+  const size = Math.max(...corners.map((c) => Math.hypot(c.x - cx, c.y - cy)));
+  ctx.strokeStyle = color;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (let p = 0; p < passes; p++) {
+    const w = wave(seed + p * 31);
+    const off = corners.map(() => ({ x: (rand() - 0.5) * size * 0.05, y: (rand() - 0.5) * size * 0.05 }));
+    const pts = corners.map((c, i) => ({ x: c.x + off[i].x, y: c.y + off[i].y }));
+    const over = 0.12 + rand() * 0.1; // the closing overshoot, as a share of a side
+    const total = n + over;
+    const done = upTo >= 1 ? 1 : p === 0 ? clamp01(upTo / 0.75) : clamp01((upTo - 0.6) / 0.4);
+    if (done <= 0) continue;
+    const at = (u: number) => {
+      const i = Math.floor(u) % n, f = u - Math.floor(u);
+      const a = pts[i], b = pts[(i + 1) % n];
+      const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1;
+      const bow = Math.sin(f * Math.PI) * w(u * 1.7) * size * 0.035;
+      return { x: a.x + dx * f - (dy / l) * bow, y: a.y + dy * f + (dx / l) * bow };
+    };
+    ctx.globalAlpha = p === 0 ? 0.92 : 0.5;
+    ctx.lineWidth = width * (p === 0 ? 1 : 0.7);
+    ctx.beginPath();
+    const steps = Math.ceil(total * 16), last = total * done;
+    for (let k = 0; k <= steps; k++) {
+      const u = Math.min(last, (k / steps) * total);
+      const q = at(u);
+      if (k === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
+      if (u >= last) break;
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
 // A soldier: a pressed ballpoint dot, slightly lumpy.
 // `grow` (0..1) jots it: the ball presses in and spreads.
 export function inkDot(ctx: Ctx, x: number, y: number, r: number, color: string, seed: number, alpha = 1, grow = 1) {

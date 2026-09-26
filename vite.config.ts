@@ -1,5 +1,8 @@
+import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import { GAME, nameHtml } from "./src/name.ts";
+
+const root = import.meta.dirname;
 
 export default defineConfig({
   plugins: [
@@ -13,4 +16,9 @@ export default defineConfig({
       },
     },
   ],
+  build: {
+    rollupOptions: {
+      input: { main: resolve(root, "index.html"), rules: resolve(root, "rules.html") },
+    },
+  },
 });
