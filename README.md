@@ -38,11 +38,12 @@ Open the exercise book and pick an opponent. Take turns drawing camps. On your t
 - `src/ink.ts`: ballpoint and pencil drawing primitives (seeded, so the page redraws identically)
 - `src/textures.ts`: walnut, the desk around the sheet, the sheet's shadow
 - `src/timeline.ts`, `src/hand.ts`: draw-on timing, which soldier a tap means (pure, tested)
-- `src/sound.ts`: synthesised pen, paper, lamp switch, clatter, dawn birds; haptics
+- `src/sound.ts`: synthesised pen, paper, lamp switch, clatter, dawn birds
+- `src/haptics.ts`: the pen felt under the thumb: a small vocabulary (pick up, ratchet, flick, settle, cross-out, page turn, the end) on `navigator.vibrate` (Android) or the tick of a hidden checkbox switch (iPhone; from script up to iOS 26.4, only under real taps from 26.5). Pure parts tested
 - `src/main.ts`: turn flow, input, HUD, the cover, cards, drawer and replay
 - `rules.html`, `rules/advanced.html`, `src/rulebook/`: the two rulebooks; `figures.ts` draws each mechanic with the game's ink
 
-In dev builds, `window.pft` exposes the game state, camera, timelines, a speed knob (`pft.speed`), a frame-time probe (`pft.frames()`), `renderNow`, `pageCanvas`, and helpers that file, resume and replay seeded bot-v-bot wars. `scripts/scenarios/` has the playtests used to build this: `first`, `pnp` (a whole war to the drawer), `tour` (first-time notes, bot turn; run with `TAUGHT=0`), `sizes` (set `W`, `H`, `DPR`), `fog` (the lean-in), `perf` (main-thread cost per frame on a late-war page; `THROTTLE=6`).
+In dev builds, `window.pft` exposes the game state, camera, timelines, a speed knob (`pft.speed`), a frame-time probe (`pft.frames()`), the haptics fired so far (`pft.haptics.felt`), `renderNow`, `pageCanvas`, and helpers that file, resume and replay seeded bot-v-bot wars. `scripts/scenarios/` has the playtests used to build this: `first`, `pnp` (a whole war to the drawer), `tour` (first-time notes, bot turn; run with `TAUGHT=0`), `sizes` (set `W`, `H`, `DPR`), `haptics` (the sequence felt through a flick-and-kill; add `?haptics=tap` or `?haptics=script` to the URL to run the iPhone rigs), `fog` (the lean-in), `perf` (main-thread cost per frame on a late-war page; `THROTTLE=6`).
 
 ## Saves
 
