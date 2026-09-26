@@ -26,8 +26,8 @@ async function open(viewport, dpr, motion = "no-preference", hash = "", path = "
 }
 
 const books = [
-  ["core", "/rules", [["#snipe", 2600], ["#lunge", 4600], ["#send", 900], ["#quick-battle", 400]]],
-  ["advanced", "/rules/advanced", [["#cover", 2600], ["#circle", 3200], ["#cushion", 900], ["#soldiers", 3000], ["#open", 400]]],
+  ["core", "/rules", [["#snipe", 2600], ["#lunge", 4600], ["#send", 1900], ["#quick-battle", 400]]],
+  ["advanced", "/rules/advanced", [["#cover", 2600], ["#circle", 4300], ["#cushion", 900], ["#soldiers", 3000], ["#open", 400]]],
 ];
 for (const [book, path, stops] of books) {
   for (const [size, viewport, dpr] of [["phone", { width: 390, height: 844 }, 2], ["desktop", { width: 1440, height: 900 }, 1]]) {
