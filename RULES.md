@@ -1,6 +1,6 @@
 # Rules
 
-_Paper War (working title: other games already use the name, so it may change; the repo and site are still pen-flick-tactics). Consolidated 2026-09-26 from Burooj's decisions and two rounds of the rules lab. The same rules, with drawings, are in two books: [Core rules](https://pen-flick-tactics.vercel.app/rules) ([rules.html](rules.html)) and [Advanced rules](https://pen-flick-tactics.vercel.app/rules/advanced) ([rules/advanced.html](rules/advanced.html))._
+_Margin Front (working title, it may still change; the repo and site are still pen-flick-tactics). Consolidated 2026-09-26 from Burooj's decisions and two rounds of the rules lab. The same rules, with drawings, are in two books: [Core rules](https://pen-flick-tactics.vercel.app/rules) ([rules.html](rules.html)) and [Advanced rules](https://pen-flick-tactics.vercel.app/rules/advanced) ([rules/advanced.html](rules/advanced.html))._
 
 This is Dawood's game. He made it up at school, and he and Burooj played it in grades 5 and 6 with ballpoint pens on the back pages of their exercise books. Nobody wrote the rules down. What follows is the game remembered, argued over and rebuilt.
 
@@ -50,7 +50,7 @@ _Formerly "move"._
 ## Send
 
 - Free, once a turn, alongside your flick: **up to 5 soldiers** per send. (to test)
-- **On the road for one turn.** In a Quick battle the convoy walks out visibly between turns and arrives at the start of your next turn. That leaves exactly one enemy turn in which it's on the road, and any line that crosses it then crosses them out. (to test)
+- **On the road for one turn.** In a Quick battle the convoy walks out visibly between turns (seen as a quick time-lapse) and arrives at the start of your next turn. That leaves exactly one enemy turn in which it's on the road, and any line that crosses it then crosses them out. (to test)
 - Exposure is the cost, and the size limits itself: a big convoy on open paper is exactly what a "two with one bullet" snipe is looking for.
 - In the Long war, convoys walk for several turns instead (see [Sends in the long war](#sends-in-the-long-war)).
 
@@ -95,7 +95,7 @@ For players who like long games. Everything in the core rules still holds. The L
 
 ## Sends in the long war
 
-A convoy walks over several turns, a step each time the pen changes hands (lab: 150 units a turn, so a road takes two to four turns), exposed to any line the whole way. Still up to 5 at a time, once a turn. (to test)
+A convoy walks over several turns, in real time during each turn, (lab: 150 units a turn, so a road takes two to four turns), exposed to any line the whole way. Still up to 5 at a time, once a turn. (to test)
 
 ## Ink on the page
 
@@ -111,10 +111,11 @@ Every line runs at somebody's base, so ink piles up round bases over the game an
 
 | Shape | Name | What it does |
 |---|---|---|
-| Circle | camp | A **gravity well**: lines passing near it, anyone's, yours too, bend round it, so you can curve shots round a camp or through a gap. **Its pull is its garrison**: the more soldiers inside, the harder it bends. A full camp bends lines hard; as it's shot down the well weakens; an empty ring has no pull; a send arriving strengthens it again (to test). Soft walls. Still holds the most soldiers (lab: 12, against 8 and 6). |
+| Circle | camp | A **gravity well**: lines passing near it, anyone's, yours too, bend round it, so you can curve shots round a camp or through a gap. **Its pull is its garrison**: the more soldiers inside, the harder it bends. A full camp bends lines hard; as it's shot down the well weakens; an empty ring keeps a faint pull (the dent in the paper); a send arriving strengthens it again (to test). Soft walls. Still holds the most soldiers (lab: 12, against 8 and 6). |
 | Triangle | prism | Your lines passing out through it split in two, so place it in front of your other bases. (Lunges don't split: a lunger is one body.) |
 | Hexagon | cushion | Billiards: banks everyone's lines, yours too, by angle. Only a glancing line bounces (lab: more than 0.6 rad, about 34°, off square); a straight one goes in. |
-| Square, pentagon | | (being designed) |
+| Square | eraser | Idea: a loose block. Lines that hit its walls shove it along, and as it slides it erases the ink beneath it (grooves and cover included). |
+| Pentagon | | (being designed) |
 
 ## Shaped soldiers
 
@@ -150,7 +151,7 @@ Every value here is a lab guess or a direction nobody has played yet.
 | Camp, prism and cushion sizes (12, 6, 8), the glance angle (0.6 rad) | Lab guesses. |
 | Bigger armies | How big is undecided. |
 | Game length | The lab's pen-physics war ran about 81 turns. |
-| Square and pentagon | Being designed. |
+| Square and pentagon | Square: the eraser block is an idea (shoving erases). Pentagon: being designed. |
 | Shape powers waking in a last stand | Idea. |
 | Shared-link and real-time play | Planned. |
 
