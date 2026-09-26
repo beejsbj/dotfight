@@ -20,6 +20,7 @@ import { drawYellow, PageLayer, SETTLED, type Ink } from "./page";
 import { leaning, PEN, type PenPose } from "./pen";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, type Filed, type Mode, type Save, type Step } from "./record";
+import { GAME } from "./name";
 import { RULES } from "./rules";
 import { page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
@@ -787,7 +788,7 @@ function keepPage() {
     if (!b) return;
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b);
-    a.download = `pen-flick-page-${s.page?.no ?? ""}-${new Date().toISOString().slice(0, 10)}.png`;
+    a.download = `${GAME.short.toLowerCase().replace(/\W+/g, "-")}-page-${s.page?.no ?? ""}-${new Date().toISOString().slice(0, 10)}.png`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }, "image/png");
