@@ -145,7 +145,17 @@ export default async function (T, out) {
 
   // --- the last few ----------------------------------------------------------------
   if (want("last-stand")) {
-    await war(11, 70);
+    // the earliest turn of a seeded war with a side down to its last three: the cleanest page for it
+    const at = await page.evaluate(() => {
+      for (const seed of [11, 7, 3, 5]) for (let t = 20; t < 200; t += 2) {
+        const st = window.pft.unfile(window.pft.fileWar(seed, t));
+        if (st.phase !== "play") break;
+        if ([0, 1].some((p) => { const n = st.soldiers.filter((x) => x.alive && x.owner === p).length; return n > 1 && n <= 3; })) return { seed, t };
+      }
+      return { seed: 11, t: 70 };
+    });
+    console.log("last stand at", JSON.stringify(at));
+    await war(at.seed, at.t);
     const few = await page.evaluate(() => {
       const s = window.pft.s;
       for (const p of [0, 1]) { const a = s.soldiers.filter((x) => x.alive && x.owner === p); if (a.length <= 3) return a; }

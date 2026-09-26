@@ -1389,7 +1389,7 @@ showBoot();
 if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
-    get selected() { return selected; }, get res() { return res; }, haptics, get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; }, set hidePen(v: boolean) { hidePen = v; },
+    get selected() { return selected; }, get res() { return res; }, haptics, get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; }, set hidePen(v: boolean) { hidePen = v; dirty = true; },
     set speed(v: number) { speed = v; }, get speed() { return speed; },
     poke: () => { dirty = true; },
     /**

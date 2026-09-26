@@ -365,9 +365,10 @@ export class Life {
     // legibility: from bird's-eye a dot is a few pixels, so a hop is drawn taller there
     const tall = Math.max(1, Math.min(1.6, 1.8 / (sc.zoom ?? 1.8)));
     if (LIFE.idle) {
-      // breathing: a slow swell, each at his own pace
-      const T = 2300 + (h % 900);
-      a.k *= 1 + 0.045 * Math.sin((ms / T) * Math.PI * 2 + (h % 628) / 100);
+      // breathing: a slow swell, each at his own pace. Only close enough to see it:
+      // from bird's-eye it's a tenth of a pixel, and a man at rest is drawn cheaper
+      const T = 2300 + (h % 900), close = Math.max(0, Math.min(1, ((sc.zoom ?? 2.3) - 1.3) / 0.8));
+      if (close > 0) a.k *= 1 + 0.045 * close * Math.sin((ms / T) * Math.PI * 2 + (h % 628) / 100);
       // on his side's go, now and then a little hop: ready
       if (sc.eager === x.owner && sc.chosen?.id !== id) {
         const P = 5200 + ((h >>> 8) % 4200), w = Math.floor((ms + (h % P)) / P);
