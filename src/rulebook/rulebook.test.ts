@@ -92,13 +92,14 @@ describe("the rulebooks", () => {
     expect(m.short_name).toBe(GAME.short);
     expect(nameHtml("Pen Flick Tactics")).toBe("Pen Flick <em>Tactics</em>");
     expect(nameHtml("Inkwar")).toBe("<em>Inkwar</em>");
+    expect(nameHtml()).toBe("Dot<em>fight</em>");
   });
 
   it("gives each book its own share card", () => {
     const img = (html: string) => all(html, /property="og:image" content="([^"]+)"/g)[0];
     expect(img(core)).toMatch(/og-rules\.jpg$/);
     expect(img(advanced)).toMatch(/og-rules-advanced\.jpg$/);
-    expect(advanced).toContain('content="https://pen-flick-tactics.vercel.app/rules/advanced"');
+    expect(advanced).toContain('content="https://dotfight.vercel.app/rules/advanced"');
   });
 
   it("draws each figure from blank to finished without failing, adding ink as it goes", () => {
