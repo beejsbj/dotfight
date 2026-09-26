@@ -3,7 +3,7 @@
 // goes on the way a hand would put it there, and at t = 1 it's the finished
 // drawing. Everything is seeded, so a figure always looks the same.
 
-import { distToPath, type Pt } from "../game";
+import { distToPath, rng, type Pt } from "../game";
 import { INK, handText, inkCircle, inkCross, inkDot, inkPolygon, pencilArrow, pencilLine, pencilLoop } from "../ink";
 
 type Ctx = CanvasRenderingContext2D;
@@ -303,7 +303,7 @@ const lunge: Figure = {
     note(g, "a kill: lunge again", 96, 150, seg(t, 0.34, 0.44), { rot: -0.08 });
     // link two, shakier
     cone(g, l1, Math.atan2(wallPt.y - l1.y, wallPt.x - l1.x), 0.11, 120, 74, seg(t, 0.44, 0.52));
-    note(g, "shakier", 190, 216, seg(t, 0.46, 0.54));
+    note(g, "shakier", 146, 226, seg(t, 0.46, 0.54));
     const k2 = ease(seg(t, 0.54, 0.78));
     if (k2 > 0) inkCross(g, l1.x, l1.y, DOT * 1.2, BLUE, 75, 1.5, 0.7, seg(t, 0.78, 0.82));
     flick(g, leg2, BLUE, 76, k2);
@@ -311,7 +311,7 @@ const lunge: Figure = {
     const him = k1 < 1 ? at(leg1, k1) : k2 > 0 ? at(leg2, k2) : l1;
     if (k1 > 0) dot(g, him, BLUE, 77);
     if (t > 0.84) kill(g, land, RED, 78, seg(t, 0.84, 0.9));
-    note(g, "lands inside: dead", 240, 196, seg(t, 0.88, 1));
+    note(g, "lands among them: shot", 222, 196, seg(t, 0.88, 1));
     arrow(g, P(292, 178), P(land.x + 2, land.y + 12), 79, seg(t, 0.9, 1), 0.2);
   },
 };
@@ -500,6 +500,175 @@ const prism: Figure = {
   },
 };
 
+/**
+ * A turtle walk: a line that turns by `jolt(s)` radians once it has run s
+ * units, and is bent by `pull(p, v)` at every step. Returns the points and
+ * where each jolt happened.
+ */
+function walk(from: Pt, heading: number, len: number, o: { jolts?: [number, number][]; pull?: (p: Pt, v: Pt) => Pt; stop?: (p: Pt, s: number) => boolean } = {}) {
+  const step = 3;
+  let p = { ...from }, v = dirOf(heading);
+  const pts: Pt[] = [{ ...p }], at: { p: Pt; ang: number }[] = [];
+  const jolts = [...(o.jolts ?? [])].sort((a, b) => a[0] - b[0]);
+  for (let s = 0; s < len; s += step) {
+    while (jolts.length && jolts[0][0] <= s) {
+      const [, j] = jolts.shift()!;
+      at.push({ p: { ...p }, ang: Math.atan2(v.y, v.x) });
+      v = dirOf(Math.atan2(v.y, v.x) + j);
+    }
+    if (o.pull) { const a = o.pull(p, v); v = { x: v.x + a.x * step, y: v.y + a.y * step }; const l = Math.hypot(v.x, v.y); v = { x: v.x / l, y: v.y / l }; }
+    p = add(p, v, step);
+    pts.push({ ...p });
+    if (o.stop?.(p, s)) break;
+  }
+  return { pts, at };
+}
+/** How far along a straight line from a leaves and enters a circle: [in, out] distances, or null. */
+function chord(a: Pt, ang: number, c: Pt, r: number): [number, number] | null {
+  const d = dirOf(ang), fx = a.x - c.x, fy = a.y - c.y;
+  const b = fx * d.x + fy * d.y, q = fx * fx + fy * fy - r * r, disc = b * b - q;
+  if (disc < 0) return null;
+  const k = Math.sqrt(disc);
+  return [-b - k, -b + k];
+}
+
+/** A lunge may cut right through a base, paying shake at both walls and every man, if he lands outside. */
+const lungeThrough: Figure = {
+  w: 400, h: 240, dur: 4000,
+  draw(g, t) {
+    const base = P(196, 124), r = 60, s0 = P(26, 176), ang = -0.3;
+    const [w1, w2] = chord(s0, ang, base, r)!;
+    // shake at the wall going in, at each man, and at the wall going out
+    const k1 = w1 + 34, k2 = w1 + 78;
+    const { pts, at: jolt } = walk(s0, ang, 372, { jolts: [[w1, 0.07], [k1, -0.04], [k2, 0.05], [w2 + 4, -0.09]] });
+    const hits = [jolt[1].p, jolt[2].p];
+    const end = pts[pts.length - 1];
+    inkCircle(g, base.x, base.y, r, RED, 250);
+    jot(base, r, 7, 0.6).filter((p) => !onLine(pts, p) && hits.every((h) => Math.hypot(h.x - p.x, h.y - p.y) > 16)).forEach((p, i) => dot(g, p, RED, 251 + i));
+    hits.forEach((p, i) => dot(g, p, RED, 260 + i));
+    const k = ease(seg(t, 0.06, 0.66));
+    if (k > 0) inkCross(g, s0.x, s0.y, DOT * 1.2, BLUE, 262, 1.5, 0.7, seg(t, 0.66, 0.72));
+    else dot(g, s0, BLUE, 263);
+    flick(g, pts, BLUE, 264, k);
+    hits.forEach((p, i) => { if (k > along(pts, p)) kill(g, p, BLUE, 265 + i, seg(t, 0.1 + along(pts, p) * 0.56, 0.16 + along(pts, p) * 0.56)); });
+    [jolt[0], jolt[3]].forEach((j, i) => { if (k > along(pts, j.p)) zigzag(g, j.p, j.ang - Math.PI / 2 - 0.4, seg(t, 0.2 + i * 0.3, 0.26 + i * 0.3)); });
+    if (k > 0) dot(g, at(pts, k), BLUE, 267);
+    if (t > 0.72) pencilLoop(g, end.x, end.y, 14, 268, 1.4, seg(t, 0.72, 0.82));
+    note(g, "shaky at each wall and each man", 30, 226, seg(t, 0.76, 0.88));
+    note(g, "lands outside: lives", end.x + 12, end.y - 24, seg(t, 0.86, 1), { align: "right" });
+  },
+};
+
+/** Long war's camp is a gravity well: anyone's line bends round it, and can reach what's behind it. */
+const WELL = { c: P(205, 120), r: 40, G: 22 };
+const wellPath = walk(P(24, 215), -0.1, 380, {
+  pull: (p) => { const dx = WELL.c.x - p.x, dy = WELL.c.y - p.y, d = Math.hypot(dx, dy); return { x: (dx * WELL.G) / d ** 3, y: (dy * WELL.G) / d ** 3 }; },
+}).pts;
+const well: Figure = {
+  w: 400, h: 240, dur: 3600,
+  draw(g, t) {
+    const { c, r } = WELL, s0 = wellPath[0];
+    const target = at(wellPath, 0.9);
+    inkCircle(g, c.x, c.y, r, RED, 270);
+    jot(c, r, 8, 0.2).forEach((p, i) => dot(g, p, RED, 271 + i));
+    // the pull, pencilled round the camp
+    for (let i = 0; i < 3; i++) pencilLoop(g, c.x, c.y, r + 14 + i * 13, 280 + i, 1, seg(t, 0.02 + i * 0.05, 0.14 + i * 0.05), 0.5 - i * 0.12);
+    dot(g, target, RED, 284);
+    dot(g, s0, BLUE, 285);
+    // straight at him, the camp is in the way
+    const ghost = seg(t, 0.14, 0.26);
+    if (ghost > 0) pencilLine(g, add(s0, P(0, 0), 1), lerp(s0, add(c, P(-16, 26), 1), ghost), 1.1, 286, true);
+    const k = ease(seg(t, 0.3, 0.76));
+    flick(g, wellPath, BLUE, 287, k);
+    if (k > 0.9) kill(g, target, BLUE, 288, seg(t, 0.7, 0.76));
+    note(g, "straight: blocked", 40, 196, seg(t, 0.2, 0.3), { rot: -0.4 });
+    note(g, "bent round it", 250, 196, seg(t, 0.8, 0.9));
+    note(g, "anyone's lines, yours too", 222, 30, seg(t, 0.88, 1));
+  },
+};
+
+/** Ink piles up round a base over a war, and becomes cover: a line jolts at every old line and never gets there. */
+const COVER = (() => {
+  const base = P(292, 120), r = 46, rand = rng(4242);
+  const old: { pts: Pt[]; owner: 0 | 1 }[] = [];
+  // lines that ran at the base from above and below, a war's worth
+  [96, 132, 166, 198, 226].forEach((x, i) => {
+    const top = i % 2 === 0, a = (top ? 1 : -1) * (0.75 + rand() * 0.45);
+    const through = P(x, 132 + (rand() - 0.5) * 10), d = dirOf(a);
+    old.push({ pts: bowed(add(through, d, -(62 + rand() * 50)), add(through, d, 46 + rand() * 60), (rand() - 0.5) * 0.05), owner: rand() < 0.55 ? 1 : 0 });
+  });
+  for (let i = 0; i < 6; i++) {
+    const top = i % 2 === 0;
+    const from = P(150 + rand() * 90, top ? 10 + rand() * 26 : 200 + rand() * 20);
+    const aim = add(base, dirOf((top ? -1 : 1) * (1.6 + rand() * 1.2)), r * (0.6 + rand() * 0.6));
+    old.push({ pts: bowed(from, lerp(from, aim, 0.8 + rand() * 0.3), (rand() - 0.5) * 0.05), owner: rand() < 0.55 ? 1 : 0 });
+  }
+  const cross = (a: Pt, b: Pt, c: Pt, d: Pt) => {
+    const r1 = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x), r2 = (b.x - a.x) * (d.y - a.y) - (b.y - a.y) * (d.x - a.x);
+    const r3 = (d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x), r4 = (d.x - c.x) * (b.y - c.y) - (d.y - c.y) * (b.x - c.x);
+    return r1 * r2 < 0 && r3 * r4 < 0;
+  };
+  // the new line: every old line it crosses jolts it and costs it reach
+  const s0 = P(18, 132), step = 3;
+  let p = { ...s0 }, h = 0, budget = 300, flip = 1;
+  const pts: Pt[] = [{ ...p }], at: { p: Pt; ang: number }[] = [];
+  for (let s = 0; s < budget; s += step) {
+    const q = add(p, dirOf(h), step);
+    const hit = old.some((o) => o.pts.some((b, j) => j > 0 && cross(p, q, o.pts[j - 1], b)));
+    p = q;
+    pts.push({ ...p });
+    if (hit) { at.push({ p: { ...p }, ang: h }); h += flip * 0.13; flip = -flip; budget -= 30; }
+    if (Math.hypot(p.x - base.x, p.y - base.y) < r + 14) break;
+  }
+  return { base, r, old, pts, at };
+})();
+const cover: Figure = {
+  w: 400, h: 256, dur: 3400,
+  draw(g, t) {
+    const { base, r, old, pts, at: jolts } = COVER;
+    inkCircle(g, base.x, base.y, r, RED, 290);
+    jot(base, r, 6, 1.4).forEach((p, i) => dot(g, p, RED, 291 + i));
+    old.forEach((o, i) => taperLine(g, o.pts, (u) => 1.7 * (1 - u * 0.5), INK.pens[o.owner], 300 + i, ease(seg(t, i * 0.02, 0.2 + i * 0.02))));
+    dot(g, pts[0], BLUE, 320);
+    const k = ease(seg(t, 0.36, 0.8));
+    flick(g, pts, BLUE, 321, k);
+    jolts.forEach((j, i) => { if (k > along(pts, j.p)) zigzag(g, j.p, j.ang - Math.PI / 2 - 0.3, seg(t, 0.4 + i * 0.06, 0.46 + i * 0.06)); });
+    note(g, "old ink piles up round a base", 250, 24, seg(t, 0.24, 0.36), { align: "center" });
+    note(g, "a jolt at every line: it never gets there", 200, 246, seg(t, 0.84, 1), { align: "center" });
+  },
+};
+
+/** Shaped soldiers: each drawn in its base's shape. */
+function shapeDot(g: Ctx, p: Pt, n: number, color: string, seed: number, grow = 1) {
+  if (grow <= 0) return;
+  if (n === 0) return dot(g, p, color, seed, grow);
+  const r = 6.4 * (0.4 + 0.6 * ease(grow)), turn = n === 3 ? -Math.PI / 2 : 0;
+  const pts = Array.from({ length: n }, (_, k) => add(p, dirOf(turn + (k * Math.PI * 2) / n + ((seed % 7) - 3) * 0.04), r));
+  g.fillStyle = color;
+  g.globalAlpha = 0.8 * grow;
+  g.beginPath();
+  pts.forEach((q, k) => (k ? g.lineTo(q.x, q.y) : g.moveTo(q.x, q.y)));
+  g.closePath();
+  g.fill();
+  g.globalAlpha = 1;
+  inkPolygon(g, pts, color, seed, 1.3, 1);
+}
+const soldiers: Figure = {
+  w: 400, h: 180, dur: 3000,
+  draw(g, t) {
+    const bases: [Pt, number][] = [[P(70, 90), 0], [P(200, 92), 3], [P(330, 90), 6]];
+    bases.forEach(([c, n], b) => {
+      const t0 = b * 0.28;
+      const R = 50;
+      if (n === 0) inkCircle(g, c.x, c.y, R, BLUE, 330 + b, 2.6, 2, ease(seg(t, t0, t0 + 0.14)));
+      else inkPolygon(g, Array.from({ length: n }, (_, k) => add(P(c.x, c.y + (n === 3 ? 10 : 0)), dirOf((n === 3 ? -Math.PI / 2 : 0) + (k * Math.PI * 2) / n), n === 3 ? R * 1.18 : R)), BLUE, 330 + b, 2.6, 2, ease(seg(t, t0, t0 + 0.14)));
+      const men = jot(P(c.x, c.y + (n === 3 ? 16 : 0)), n === 3 ? 38 : R, n === 3 ? 4 : 6, 0.5 + b);
+      men.forEach((p, i) => shapeDot(g, p, n, BLUE, 340 + b * 10 + i, seg(t, t0 + 0.14 + i * 0.02, t0 + 0.22 + i * 0.02)));
+    });
+    note(g, "a look, for now", 146, 172, seg(t, 0.86, 1));
+  },
+};
+
 export const FIGURES: Record<string, Figure> = {
   setup,
   flick: flicking,
@@ -511,4 +680,8 @@ export const FIGURES: Record<string, Figure> = {
   "last-stand": lastStand,
   cushion,
   prism,
+  "lunge-through": lungeThrough,
+  well,
+  cover,
+  soldiers,
 };
