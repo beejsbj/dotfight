@@ -157,5 +157,23 @@ export const LAB2B: RuleSet[] = [
   v(R2, "r2-pen-soft", { ink: { ...PEN, wobble: 0.025 }, shapes: { circle: { wobble: 0.03 } } }),
 ];
 
-export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2, ...ROUND3, ...ROUND4, ...LAB2.filter((r) => r !== LAST_STAND), ...LAB2B];
+// Pass 3: a foundation from passes 1-2 (rising snipe bar, last stand,
+// positioning just outside the walls), then only gentle ink: every mechanic
+// that weakens a line as ink piles up turned bases into fortresses.
+const LS4 = { at: 4, hits: 1, steady: 0.6, shots: 2, grow: 1 };
+export const F = v(R2, "f", { earn: { ...EARN, rise: 1 }, lastStand: LS4, position: { reach: 40 } });
+const GROOVE = { groove: 0.15, grooveReach: 16, groovePull: 0.02, grooveOwn: 0.7, grooveEnemy: 1.4 };
+export const LAB2C: RuleSet[] = [
+  F,
+  v(F, "f-nopos", { position: null }),
+  v(F, "f-shake60", { earn: { ...EARN, rise: 1, shake: 0.6 } }),
+  v(F, "f-jolt2", { ink: { wobble: 0.04, joltMax: 2 } }),
+  v(F, "f-groove", { ink: GROOVE }),
+  v(F, "f-scribble5", { ink: { scribble: 5, scribbleSpan: 30 } }),
+  v(F, "f-taper10", { ink: { taperHit: 0.1, taperWall: 0.05 } }),
+  v(F, "f-pen", { ink: { wobble: 0.04, joltMax: 2, ...GROOVE, scribble: 5, scribbleSpan: 30 }, shapes: { circle: { wobble: 0.03 } } }),
+  v(F, "f-bil", { kit: KIT2, shapes: SHAPES2, soldiersPerBase: 12 }),
+];
+
+export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2, ...ROUND3, ...ROUND4, ...LAB2.filter((r) => r !== LAST_STAND), ...LAB2B, ...LAB2C];
 export const byId = (id: string) => EXPERIMENTS.find((r) => r.id === id);

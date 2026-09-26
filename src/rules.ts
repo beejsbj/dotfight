@@ -171,6 +171,8 @@ export interface RuleSet {
     // round 2: friction and grooves, not bounces
     /** Radians (1 sd) of extra aim error a line picks up each time it crosses another line, from that point on. */
     wobble?: number;
+    /** Most crossings of ink that jolt one line (0 = every one): past that, the flick's momentum carries it steady. */
+    joltMax?: number;
     /** Range gained crossing one of your own lines (Dawood: friendly ink boosts you). */
     boost?: number;
     /** Range lost crossing an enemy line (Dawood: enemy ink slows you). */

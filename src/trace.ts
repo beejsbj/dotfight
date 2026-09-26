@@ -324,6 +324,7 @@ function walk(ctx: Ctx, left: Left, pen: PenAt, budget: number, canSplit: boolea
   let guard = 0;
   let groove: TraceEvent | null = null; // the groove being ridden, if any
   const crossings: number[] = []; // distances where this branch crossed a line (scribble cover)
+  let jolts = 0; // how many times the hand has been jolted on this branch
   // one crossing of a wall or a line where two of its segments meet counts once
   let last = { key: "", d: -1 };
   outer: while ((j < S.len.length || budget > 1e-6) && guard++ < 4000) {
@@ -496,7 +497,8 @@ function walk(ctx: Ctx, left: Left, pen: PenAt, budget: number, canSplit: boolea
         budget = 0;
         break outer;
       }
-      const jolt = (ink.wobble ?? 0) > 0 && ctx.rand ? gauss(ctx.rand) * ink.wobble! : 0;
+      const jolt = (ink.wobble ?? 0) > 0 && ctx.rand && jolts < (ink.joltMax || Infinity) ? gauss(ctx.rand) * ink.wobble! : 0;
+      if (jolt) jolts++;
       if (ink.friction <= 0) ev("cross", sf.kind, { jolt });
       if (jolt) { turnTo(h + jolt); continue outer; }
     }

@@ -70,6 +70,14 @@ describe("ink physics: crossing a line jolts the hand (wobble), it doesn't cost 
     // and it's straight before the crossing
     expect(stray(me, up, shaken.path.filter((p) => p.y > 1001))).toBeLessThan(0.5);
   });
+  it("with joltMax, only the first crossings jolt: then the flick's momentum carries it", () => {
+    const { s, me } = lone({ ink: { wobble: 0.15, joltMax: 1 } });
+    for (let k = 0; k < 3; k++) line(s, 1, hline(1100 - k * 150));
+    const o = preview(s, flick(me, up, 1200, "shoot", 4242));
+    const crosses = o.events.filter((e) => e.kind === "cross");
+    expect(crosses.length).toBe(3);
+    expect(crosses.filter((e) => e.jolt).length).toBe(1);
+  });
   it("a wobbling act leaves a kink mark where the hand jolted", () => {
     const { s, me } = lone({ ink: { wobble: 0.15 } });
     line(s, 1, hline(1000));

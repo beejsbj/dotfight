@@ -109,6 +109,19 @@ The engine's options, grouped. Each is a field on `RuleSet` with a comment in [s
 | `ink` (`friction`, `ownBounces`, `enemyStops`, `edgeBounces`, `clear`, `fresh`) | lines as terrain: dried ink drags on a line, your own ink bounces it, enemy ink stops it, the page edge bounces it; `fresh` counts only each player's newest lines (wet ink) | Burooj (lines as walls and reflections), earlier sessions (friction, own ink reflects, enemy ink blocks), invented (wet ink) |
 | `firstFlick`, `openingExtra` | who flicks first once the bases are drawn; whether the opening turn can earn an extra flick | Invented (fairness) |
 | `prismSpread` | angle between a split line's halves | Invented |
+| **Round 2** | | |
+| `lunge` (`baseDeath`) | the move is a lunge; lunging into a manned enemy base kills the lunger at its wall (what he crossed before the wall still dies) | Burooj (ram), named Lunge by Burooj; the wall rule's details are a round-2 decision |
+| `earn` (`shoot`, `move`, `sameMover`, `shake`, `rise`) | what earns another flick: a snipe must take `shoot` (2: "two with one bullet"), a lunge `move` (1); an earned lunge is the same soldier's, shakier by `shake` per link; `rise` makes each further snipe need one more | Burooj (triggers, shakier chains), invented (`rise`, as the lightest streak limit) |
+| `transfer.pace`, `transfer.refill` | a send walks the page `pace` units per hand-over, and any line can cross a walker out; `refill` lets a send man an empty ring (yours, or anyone's to take it) | Burooj (free, slow, killable on the way), invented (numbers) |
+| `empty` | an emptied base is gone (round 1), stays as a ring, or stays crumbled (its walls stop working) | Burooj (bases stay; crumbling as an option) |
+| `position` (`reach`) | before the first flick each side rearranges its soldiers, in or within `reach` of their own base | Burooj |
+| `ink.wobble`, `ink.joltMax` | crossing a line steeply jolts the hand by a random angle (sd `wobble`), from there on; at most `joltMax` jolts a line | Burooj (wobble, not range loss); invented (`joltMax`) |
+| `ink.boost`, `ink.drag` | crossing your own line adds range, crossing theirs costs range | Dawood |
+| `ink.groove`, `grooveReach`, `groovePull`, `grooveOwn`, `grooveEnemy` | grooves pull like gravity: a pen near a line and within `groove` radians of parallel is bent along it, harder the closer, the more parallel and the slower the pen; riding your groove costs less range, theirs more | Burooj (grooves, gravity, the angle decides) |
+| `ink.scribble`, `scribbleSpan` | crossing `scribble` lines within `scribbleSpan` of travel soaks the line up | Burooj (scribbles are cover) |
+| `ink.taperHit`, `ink.taperWall` | each soldier crossed out, and each wall hit, takes this share of what's left of the line | Burooj |
+| `shapes.*.wobble` | passing through this shape's wall jolts the line (0: soft walls) | Burooj (wall friction), proposal (soft circles) |
+| `shapes.hex.wall: "bank"`, `bankGlance`, `bankMax` | billiards: any line coming in at a glance (more than `bankGlance` off square) reflects by its angle of incidence; straighter lines go in; lines leaving pass | Burooj (billiards hexagon), invented (the glance rule, so a hexagon isn't a fortress) |
 
 ## Questions for Dawood
 
