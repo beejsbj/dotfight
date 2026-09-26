@@ -150,10 +150,11 @@ export interface Env {
 
 /** Pick a backend by capability. Pure. */
 export function detect(env: Env): BackendKind {
-  if (typeof env.vibrate === "function") return "vibrate";
-  // Safari on a touch screen with switch controls: an iPhone or iPad.
-  // (Desktop Safari knows `switch` too, but a Mac has nothing to feel.)
-  if (env.hasSwitch && (env.maxTouchPoints ?? 0) > 0) return "switch";
+  // a laptop's browser may know vibrate or `switch` too, with nothing to feel
+  const touch = (env.maxTouchPoints ?? 0) > 0;
+  if (typeof env.vibrate === "function" && touch) return "vibrate";
+  // Safari on a touch screen with switch controls: an iPhone or iPad
+  if (env.hasSwitch && touch) return "switch";
   return "none";
 }
 

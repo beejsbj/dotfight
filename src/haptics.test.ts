@@ -152,6 +152,7 @@ describe("detect", () => {
     expect(detect({ maxTouchPoints: 0, hasSwitch: true })).toBe("none");
     expect(detect({ maxTouchPoints: 5, hasSwitch: false })).toBe("none");
     expect(detect({ vibrate: "nope", maxTouchPoints: 5 })).toBe("none");
+    expect(detect({ vibrate: () => true, maxTouchPoints: 0 })).toBe("none"); // desktop Chrome
     expect(detect({})).toBe("none");
   });
 });
