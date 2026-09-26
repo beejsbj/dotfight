@@ -140,8 +140,9 @@ describe("the pen round a camp", () => {
       if (look >= 111 && look < 118) expect(step).toBe(0);
       prev = u;
     }
-    // asked again for a recent look: the same place
+    // asked again for a recent look: the same place; for one long gone: unknown, so it's redrawn whole
     expect(life.ring(0, 138, 1700, 0.3)).toBe(life.ring(0, 138, 1700, 0.3));
+    expect(life.ring(0, 101, 1700, 0.3)).toBeNaN();
   });
 
   it("hurries while its men are in the line of fire", () => {

@@ -471,7 +471,8 @@ export class Life {
     }
     const m = r.memo.get(look);
     if (m !== undefined) return m;
-    if (look < r.look) return r.u; // an old look asked again: where it was last
+    // a look from before the last few: unknown (the layer then redraws the ring whole)
+    if (look < r.look) return NaN;
     r.u += ((look - r.look) * FRAME / lapMs) * this.pace(base, look * FRAME);
     r.look = look;
     r.memo.set(look, r.u);
