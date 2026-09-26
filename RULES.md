@@ -1,6 +1,6 @@
 # Rules
 
-_Pen Flick Tactics (working title). Consolidated 2026-09-26 from Burooj's decisions and two rounds of the rules lab. The same rules, with drawings, are in two books: [Core rules](https://pen-flick-tactics.vercel.app/rules) ([rules.html](rules.html)) and [Advanced rules](https://pen-flick-tactics.vercel.app/rules/advanced) ([rules/advanced.html](rules/advanced.html))._
+_Paper War (working title: other games already use the name, so it may change; the repo and site are still pen-flick-tactics). Consolidated 2026-09-26 from Burooj's decisions and two rounds of the rules lab. The same rules, with drawings, are in two books: [Core rules](https://pen-flick-tactics.vercel.app/rules) ([rules.html](rules.html)) and [Advanced rules](https://pen-flick-tactics.vercel.app/rules/advanced) ([rules/advanced.html](rules/advanced.html))._
 
 This is Dawood's game. He made it up at school, and he and Burooj played it in grades 5 and 6 with ballpoint pens on the back pages of their exercise books. Nobody wrote the rules down. What follows is the game remembered, argued over and rebuilt.
 
@@ -50,8 +50,9 @@ _Formerly "move"._
 ## Send
 
 - Free, once a turn, alongside your flick: **up to 5 soldiers** per send. (to test)
-- Soldiers walk visibly between your bases, slowly (lab: 150 units each time the pen changes hands, so a road takes two to four turns), and can be crossed out on the road by any line.
-- Slowness is the cost, and the size limits itself: a big convoy on open paper is exactly what a "two with one bullet" snipe is looking for.
+- **On the road for one turn.** In a Quick battle the convoy walks out visibly between turns and arrives at the start of your next turn. That leaves exactly one enemy turn in which it's on the road, and any line that crosses it then crosses them out. (to test)
+- Exposure is the cost, and the size limits itself: a big convoy on open paper is exactly what a "two with one bullet" snipe is looking for.
+- In the Long war, convoys walk for several turns instead (see [Sends in the long war](#sends-in-the-long-war)).
 
 ## Bases
 
@@ -89,7 +90,12 @@ For players who like long games. Everything in the core rules still holds. The L
 
 - **shaped bases** (below), each with its own walls;
 - **full pen physics**: grooves, jolts, wall friction and ink cover;
-- **bigger armies** than a Classic battle. (to test)
+- **bigger armies** than a Classic battle (to test);
+- **longer roads**: sends walk for several turns.
+
+## Sends in the long war
+
+A convoy walks over several turns, a step each time the pen changes hands (lab: 150 units a turn, so a road takes two to four turns), exposed to any line the whole way. Still up to 5 at a time, once a turn. (to test)
 
 ## Ink on the page
 
@@ -105,7 +111,7 @@ Every line runs at somebody's base, so ink piles up round bases over the game an
 
 | Shape | Name | What it does |
 |---|---|---|
-| Circle | camp | A **gravity well**: lines passing near it, anyone's, yours too, bend round it, so you can curve shots round a camp or through a gap. Soft walls. Still holds the most soldiers (lab: 12, against 8 and 6). |
+| Circle | camp | A **gravity well**: lines passing near it, anyone's, yours too, bend round it, so you can curve shots round a camp or through a gap. **Its pull is its garrison**: the more soldiers inside, the harder it bends. A full camp bends lines hard; as it's shot down the well weakens; an empty ring has no pull; a send arriving strengthens it again (to test). Soft walls. Still holds the most soldiers (lab: 12, against 8 and 6). |
 | Triangle | prism | Your lines passing out through it split in two, so place it in front of your other bases. (Lunges don't split: a lunger is one body.) |
 | Hexagon | cushion | Billiards: banks everyone's lines, yours too, by angle. Only a glancing line bounces (lab: more than 0.6 rad, about 34°, off square); a straight one goes in. |
 | Square, pentagon | | (being designed) |
@@ -129,7 +135,7 @@ Every value here is a lab guess or a direction nobody has played yet.
 | Lunge chain shake per link | Lab: 0.05 rad (about 3°). |
 | Positioning reach | Lab: 20 units. Inside-only changed nothing; 40 turned the game towards lunges. The lab also saw a whole garrison walk out of its base; "keep at least one inside" is not a rule. |
 | Send limit of 5 | New. The bet is that big convoys limit themselves as snipe targets. |
-| Send pace | Lab: 150 units a turn. |
+| Quick battle send timing | New: out between turns, on the road for exactly one enemy turn, home at the start of your next. |
 | Quick preset: 3 bases of 8 | Untried. The lab's advice if games drag was a smaller army. |
 | Game length | The lab's Lunge & snipe ran about 53 turns (88 flicks). Is that a phone game? |
 
@@ -137,7 +143,8 @@ Every value here is a lab guess or a direction nobody has played yet.
 
 | What | Where it stands |
 |---|---|
-| Circle as a gravity well: strength | New. How strongly it bends a line, and how far out. |
+| Circle as a gravity well: strength | New. The pull scales with the soldiers inside: how hard a full camp bends, how far out, and how fast it weakens as the camp is shot down. |
+| Long war send pace | Lab: 150 units a turn, two to four turns on a typical road. |
 | Crossing jolt, groove pull, and how far grooves carry or cut | Lab shipped jolts of 0.03 rad (one per line) and grooves within 7°. Dawood's version, friendly ink boosting and enemy ink slowing, was the least fair thing the lab tried (62% to the first player). |
 | Ink cover round bases | Intended, but the lab's scribble cover stalled games at every strength that showed. |
 | Camp, prism and cushion sizes (12, 6, 8), the glance angle (0.6 rad) | Lab guesses. |
