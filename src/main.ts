@@ -26,6 +26,7 @@ import { RULES } from "./rules";
 import { boldAt } from "./boil";
 import { comrades, LIFE, lastStand, planFlick } from "./life";
 import * as voice from "./voice";
+import { feel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
 import { boil, boilTick, forgetDrawn, life, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
@@ -475,6 +476,7 @@ function startUnitCam(id: number) {
   if (reduced) cam.snap(); // no swoop: just his view
   if (LIFE.chosen) life.add(id, { kind: "perk", t0: wall, amp: 1 });
   if (heard()) voice.say("look", id, me.owner, 0.05);
+  feel("unitcam");
   status("");
   dirty = true;
 }
@@ -517,6 +519,12 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   for (const { id, r } of plan.acts) if (on(r.kind)) life.add(id, { ...r, t0: wall + r.t0 });
   if (LIFE.camps) for (const h of plan.hush) life.hold(h.base, wall + h.at, wall + h.at + h.ms);
   if (!heard()) return;
+  // under your thumb: your camp cheering your kill; the bot's ink going right past one of yours
+  const shooter = s.soldiers[f.soldierId].owner;
+  const cheer = plan.acts.find((a) => a.r.kind === "cheer");
+  if (cheer && !isBot(shooter)) after(cheer.r.t0 * speed, () => feel("cheer"));
+  const close = plan.cues.find((c) => c.say === "eep" && !isBot(s.soldiers[c.id].owner));
+  if (close && isBot(shooter)) after(close.at * speed, () => feel("flinch"));
   for (const c of plan.cues) {
     const x = s.soldiers[c.id];
     voice.say(c.say, c.id, x.owner, c.at / 1000, c.gain, c.len);
@@ -529,6 +537,7 @@ function lastStandBegins(r: Resolve) {
     if (r.stood[p] || !lastStand(s, p)) continue;
     const few = alive(s, p);
     if (heard() && few[0]) voice.say("uhoh", few[0].id, p, 0.15, 0.8);
+    if (heard() && !isBot(p)) feel("stand");
   }
 }
 
