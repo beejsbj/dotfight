@@ -1,5 +1,6 @@
 // Ballpoint and pencil marks. Everything is seeded so a mark redraws the same
-// way every frame: the page is a record, not an animation.
+// way every frame: the page is a record, not an animation. The one exception
+// is the line boil (boil.ts): a few numbered redrawings of the same shape.
 
 import { rng, type Pt } from "./game";
 
@@ -26,17 +27,42 @@ function wave(seed: number) {
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
+// Line boil: the same shape drawn again by the same hand. How far each
+// redrawing strays from the first, per kind of mark, in units of the seeded
+// random values the drawing is built from. Small on purpose: the shape stays,
+// only the line that forms it shifts.
+export const REDRAW = {
+  dot: 0.5, // a soldier's lumps and core
+  circle: 0.02, // a camp's start, tilt and squash
+  ring: 0.012, // and its radius, as a fraction of it
+  cross: 0.2,
+  flick: 0.3, // a line's sideways jitter, as a fraction of its width
+};
+
+/**
+ * The seeded values for redrawing `wob` of a shape: the first drawing's
+ * values, each nudged by up to `amt / 2`. Drawing 0 is the first drawing,
+ * exactly, so the page and the boil agree on what a thing looks like.
+ */
+export function redrawn(seed: number, wob: number, amt: number) {
+  const r = rng(seed);
+  if (!wob) return r;
+  const j = rng((seed ^ Math.imul(wob, 0x9e3779b1)) >>> 0);
+  return () => r() + (j() - 0.5) * amt;
+}
+
 // A hand-drawn circle: never quite round, never quite closed. `upTo` (0..1)
 // draws it on: the first loop, then a lighter second pass overlapping its end.
 // Every seeded value is taken before anything is skipped, so a half-drawn
 // circle is exactly the start of the finished one.
-export function inkCircle(ctx: Ctx, cx: number, cy: number, r: number, color: string, seed: number, width = 2.6, passes = 2, upTo = 1) {
-  const rand = rng(seed);
+export function inkCircle(ctx: Ctx, cx: number, cy: number, r: number, color: string, seed: number, width = 2.6, passes = 2, upTo = 1, wob = 0) {
+  const rand = redrawn(seed, wob, REDRAW.circle);
   ctx.strokeStyle = color;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   for (let p = 0; p < passes; p++) {
     const w = wave(seed + p * 31);
+    const wb = wob ? wave(seed * 3 + wob * 101 + p) : null;
     const start = rand() * Math.PI * 2;
     const sweep = Math.PI * 2 * (1.03 + rand() * 0.1); // overshoot
     const squash = 1 + (rand() - 0.5) * 0.08;
@@ -46,7 +72,7 @@ export function inkCircle(ctx: Ctx, cx: number, cy: number, r: number, color: st
     const steps = 64;
     const at = (t: number): [number, number] => {
       const a = start + sweep * t;
-      const rr = r * (1 + w(t * 2.2) * 0.035 + p * 0.025);
+      const rr = r * (1 + w(t * 2.2) * 0.035 + p * 0.025 + (wb ? wb(t * 3.1) * REDRAW.ring : 0));
       const x = Math.cos(a) * rr * squash, y = Math.sin(a) * rr / squash;
       return [cx + x * Math.cos(tilt) - y * Math.sin(tilt), cy + x * Math.sin(tilt) + y * Math.cos(tilt)];
     };
@@ -109,9 +135,9 @@ export function inkPolygon(ctx: Ctx, corners: Pt[], color: string, seed: number,
 
 // A soldier: a pressed ballpoint dot, slightly lumpy.
 // `grow` (0..1) jots it: the ball presses in and spreads.
-export function inkDot(ctx: Ctx, x: number, y: number, r: number, color: string, seed: number, alpha = 1, grow = 1) {
+export function inkDot(ctx: Ctx, x: number, y: number, r: number, color: string, seed: number, alpha = 1, grow = 1, wob = 0) {
   if (grow <= 0) return;
-  const rand = rng(seed);
+  const rand = redrawn(seed, wob, REDRAW.dot);
   if (grow < 1) {
     const e = 1 - Math.pow(1 - grow, 3);
     r *= 0.35 + 0.65 * e;
@@ -139,9 +165,9 @@ export function inkDot(ctx: Ctx, x: number, y: number, r: number, color: string,
 
 // A cross: two quick strokes. Kills are big and hard; "moved" is small and light.
 // `upTo` (0..1) draws it the way a hand does: one stroke, a beat, the other.
-export function inkCross(ctx: Ctx, x: number, y: number, size: number, color: string, seed: number, width = 2.4, alpha = 1, upTo = 1) {
+export function inkCross(ctx: Ctx, x: number, y: number, size: number, color: string, seed: number, width = 2.4, alpha = 1, upTo = 1, wob = 0) {
   if (upTo <= 0) return;
-  const rand = rng(seed);
+  const rand = redrawn(seed, wob, REDRAW.cross);
   ctx.strokeStyle = color;
   ctx.lineCap = "round";
   ctx.globalAlpha = 0.9 * alpha;
@@ -172,10 +198,11 @@ export function inkCross(ctx: Ctx, x: number, y: number, size: number, color: st
 
 // A flicked ballpoint line. Heavy where the pen was resting, thinning and
 // skipping as it lifts off. `upTo` (0..1) draws only the first part, for animation.
-export function inkFlick(ctx: Ctx, pts: Pt[], color: string, seed: number, width: number, upTo = 1, alpha = 1) {
+export function inkFlick(ctx: Ctx, pts: Pt[], color: string, seed: number, width: number, upTo = 1, alpha = 1, wob = 0) {
   if (pts.length < 2) return;
   const rand = rng(seed);
   const w = wave(seed + 7);
+  const wb = wob ? wave(seed * 5 + wob * 211) : null;
   const n = pts.length - 1;
   if (upTo <= 0) return;
   const head = n * Math.min(1, upTo);
@@ -195,7 +222,7 @@ export function inkFlick(ctx: Ctx, pts: Pt[], color: string, seed: number, width
     const a = pts[i - 1], b = pts[i];
     // jitter perpendicular a hair so it isn't a vector-perfect curve
     const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1;
-    const j = w(t * 3) * width * 0.35;
+    const j = w(t * 3) * width * 0.35 + (wb ? wb(t * 7) * width * REDRAW.flick : 0);
     if (t > skipAt && rand() < (t - skipAt) * 1.6) continue; // dry skip
     const taper = t < 0.08 ? 1.15 : 1 - Math.pow(t, 1.8) * 0.72;
     ctx.globalAlpha = (0.88 - t * 0.25 + (rand() - 0.5) * 0.1) * alpha;
