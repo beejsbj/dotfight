@@ -1,0 +1,130 @@
+/* The rulebook bound as a book (html.paged), lying open on the desk under the
+   lamp. flip.ts sets --pw/--ph (a page), --sx (where the spine is) and --L
+   (a box big enough to clip along any fold). */
+
+html.paged, html.paged body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+html.paged { scroll-behavior: auto; }
+html.paged body { min-height: 0; padding: 0; touch-action: pinch-zoom; }
+.paged .back { position: fixed; }
+.paged .tools { position: fixed; }
+/* until the pages are bound, show only the desk */
+.paged:not(.ready) main, .paged:not(.ready) header.book, .paged:not(.ready) .stage { visibility: hidden; }
+
+.stage { position: fixed; inset: 0; overflow: clip; touch-action: pinch-zoom; }
+.area {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + 62px); bottom: calc(env(safe-area-inset-bottom) + 58px);
+  left: calc(env(safe-area-inset-left) + 10px); right: calc(env(safe-area-inset-right) + 10px);
+}
+.bk { position: absolute; top: 0; height: var(--ph); will-change: transform; }
+.staging { position: absolute; left: 0; top: 0; visibility: hidden; }
+
+/* --- a leaf: its front and its back, each inside a box that clips along the fold ----- */
+/* .leaves and main stay unpositioned, so every leaf is placed (and stacked) against the book */
+.clip { position: absolute; left: var(--sx); top: 0; width: var(--L); height: var(--L); transform-origin: 0 0; pointer-events: none; }
+.unclip { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.side {
+  position: absolute; left: 0; top: 0; width: var(--pw); height: var(--ph); overflow: clip;
+  transform-origin: 0 0; opacity: 0; pointer-events: none;
+}
+.leaf.f .side.recto, .leaf.b .side.verso, .leaf.t .side { opacity: 1; pointer-events: auto; will-change: transform; }
+.leaf.b .side.verso { transform: translateX(calc(-1 * var(--pw))); }
+.leaf.t .clip { overflow: clip; will-change: transform; }
+.leaf.t .unclip { will-change: transform; }
+/* the lifted leaf casts a soft shadow under the lamp */
+.leaf.t .side.verso { box-shadow: 0 0 22px rgba(18, 10, 3, 0.34), 0 0 4px rgba(18, 10, 3, 0.28); }
+
+/* the bend along the fold: shadow in the crease, light on the curve, fading out */
+.crease {
+  display: none; position: absolute; left: 0; top: 0; width: 100px; height: 100px; transform-origin: 0 0; pointer-events: none;
+  background: linear-gradient(to left, rgba(46, 28, 10, 0.3), rgba(46, 28, 10, 0.1) 5%, rgba(255, 244, 218, 0.34) 13%, rgba(255, 244, 218, 0.1) 32%, rgba(46, 28, 10, 0.07) 60%, transparent);
+  will-change: transform, opacity; z-index: 5;
+}
+.leaf.t .crease { display: block; }
+/* ...and its shadow on the page it's uncovering */
+.under-clip { position: absolute; left: var(--sx); top: 0; width: var(--pw); height: var(--ph); overflow: clip; pointer-events: none; z-index: 90; }
+.under {
+  position: absolute; left: 0; top: 0; width: 100px; height: 100px; transform-origin: 0 0; opacity: 0;
+  background: linear-gradient(to right, rgba(22, 12, 3, 0.42), rgba(22, 12, 3, 0.16) 30%, transparent);
+  will-change: transform, opacity;
+}
+
+/* --- pages ------------------------------------------------------------------------------ */
+.pg { display: flex; flex-direction: column; padding: 0 18px 22px calc(var(--mx) + 14px); color: var(--body-ink); }
+.pg .flow { flex: 1 1 auto; min-height: 0; display: flow-root; }
+/* the binding: every page darkens into the spine, fronts on the left, backs on the right */
+.side::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 4;
+  background: linear-gradient(to right, rgba(58, 36, 14, 0.26), rgba(58, 36, 14, 0.09) 2.5%, rgba(58, 36, 14, 0.02) 8%, transparent 14%),
+    linear-gradient(to left, rgba(40, 24, 8, 0.07), transparent 3%);
+}
+.side.verso::after {
+  background: linear-gradient(to left, rgba(58, 36, 14, 0.26), rgba(58, 36, 14, 0.09) 2.5%, rgba(58, 36, 14, 0.02) 8%, transparent 14%),
+    linear-gradient(to right, rgba(40, 24, 8, 0.07), transparent 3%);
+}
+/* a section carried overleaf: no number in the margin again */
+.rule.cont { padding-top: 12px; }
+.rule.cont::before { content: none; }
+.sub.cont { padding-top: 6px; }
+.sign { margin-top: 18px; }
+
+/* the back of a single page: its own squares, and the ink of the front showing through, reversed */
+.pg.ghost { padding: 0; }
+.pg.ghost .ink {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  padding: 0 18px 22px calc(var(--mx) + 14px); transform: scaleX(-1); opacity: 0.085;
+}
+.pg.ghost .ink canvas { cursor: default; }
+
+/* the cover, bound: the exercise book's label and the contents slip */
+.side.cover { background: var(--kraft); }
+.paged header.book {
+  position: absolute; inset: 0; width: auto; margin: 0; transform: none;
+  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 22px;
+  padding: 26px 22px 26px 36px; border-radius: 0 7px 7px 0;
+  box-shadow: inset 12px 0 14px -8px rgba(0, 0, 0, 0.45);
+}
+.paged header.book .label { width: min(100%, 430px); margin: 0 6px 0 0; }
+.paged header.book .slip { width: min(100% - 8px, 450px); margin: 0 -2px 0 6px; }
+.side.inside {
+  background:
+    radial-gradient(ellipse at 70% 30%, rgba(255, 230, 190, 0.12), transparent 60%),
+    repeating-linear-gradient(88deg, rgba(60, 35, 15, 0.05) 0 1px, transparent 1px 5px),
+    color-mix(in srgb, var(--kraft) 82%, #e8d4b4);
+}
+
+/* --- the book itself: boards, the thickness of the paper, the spine ------------------------ */
+.board {
+  position: absolute; top: -5px; height: calc(var(--ph) + 12px); pointer-events: none;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(255, 230, 190, 0.14), transparent 60%),
+    repeating-linear-gradient(92deg, rgba(60, 35, 15, 0.05) 0 1px, transparent 1px 4px),
+    var(--kraft);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.6), 0 3px 2px rgba(0, 0, 0, 0.4);
+}
+.board.r { left: calc(var(--sx) - 3px); width: calc(var(--pw) + 12px); border-radius: 2px 8px 8px 2px; }
+.board.l { left: calc(var(--sx) - var(--pw) - 9px); width: calc(var(--pw) + 12px); border-radius: 8px 2px 2px 8px; }
+.single .board.l { display: none; }
+/* one page at a time: the spine of the exercise book shows at the left, stitched */
+.single .board.r { left: -13px; width: calc(var(--pw) + 22px); border-radius: 5px 8px 8px 5px; }
+.single .board.r::before { content: ""; position: absolute; left: 5px; top: 10px; bottom: 10px; border-left: 2px dashed rgba(40, 22, 10, 0.4); }
+.edges { position: absolute; top: 0; width: var(--pw); height: var(--ph); background: #eee8da; pointer-events: none; }
+.edges.r { left: var(--sx); }
+.edges.l { left: calc(var(--sx) - var(--pw)); }
+
+/* --- turning controls, on the desk under the book -------------------------------------------- */
+.turner {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 8px); transform: translateX(-50%); z-index: 41;
+  display: flex; align-items: center; gap: 2px; padding: 0 6px; border-radius: 24px;
+  background: radial-gradient(ellipse at 50% 30%, rgba(255, 240, 215, 0.08), rgba(0, 0, 0, 0.28));
+  box-shadow: inset 0 0 0 1.5px rgba(243, 239, 228, 0.14);
+}
+.paged:not(.ready) .turner { visibility: hidden; }
+.turner button {
+  min-width: 44px; min-height: 44px; padding: 4px 10px 6px; border: 0; background: none; cursor: pointer;
+  font-family: var(--hand); font-weight: 700; font-size: 21px; line-height: 1; color: rgba(243, 239, 228, 0.86);
+  -webkit-tap-highlight-color: transparent;
+}
+.turner .prev, .turner .next { font-size: 34px; padding-bottom: 9px; }
+.turner button:disabled { opacity: 0.28; cursor: default; }
+.turner .where { min-width: 4.4em; text-align: center; font-family: var(--hand); font-size: 19px; color: rgba(243, 239, 228, 0.6); white-space: nowrap; }

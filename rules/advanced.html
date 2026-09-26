@@ -23,7 +23,14 @@
     <meta name="twitter:description" content="Book 2: the long war." />
     <meta name="twitter:image" content="https://dotfight.vercel.app/og-rules-advanced.jpg" />
     <script>
-      if (/[?&]og\b/.test(location.search)) document.documentElement.classList.add("og");
+      // a book you turn, unless it's the share card (?og) or you asked for one long page (?read=all)
+      (function (h, q) {
+        if (/[?&]og\b/.test(q)) return h.classList.add("og");
+        if (/[?&]read=all\b/.test(q)) return h.classList.add("scroll");
+        h.classList.add("paged");
+        // if the book hasn't bound itself in a few seconds, show the long page
+        setTimeout(function () { if (!h.classList.contains("ready")) { h.classList.remove("paged"); h.classList.add("scroll"); } }, 6000);
+      })(document.documentElement, location.search);
     </script>
   </head>
   <body class="book-2">
@@ -31,6 +38,10 @@
     <div class="dark" aria-hidden="true"></div>
 
     <a class="back" href="/" aria-label="Back to the game">← play</a>
+    <nav class="tools" aria-label="How to read">
+      <a class="as-page" href="?read=all">read as one page</a>
+      <a class="as-book" href="/rules/advanced">read as a book</a>
+    </nav>
 
     <header class="book">
       <div class="label">

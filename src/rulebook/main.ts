@@ -7,12 +7,17 @@ import "@fontsource/caveat/latin-700.css";
 import "@fontsource/patrick-hand/latin-400.css";
 import "@fontsource/special-elite/latin-400.css";
 import "./rulebook.css";
+import "./book.css";
 import { INK, inkCircle, inkPolygon, paperGrain } from "../ink";
 import { woodTexture } from "../textures";
 import { FIGURES, type Figure } from "./figures";
+import { clock } from "./clock";
+import { openBook } from "./flip";
 
 const root = document.documentElement;
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches || root.classList.contains("og");
+// Read as a book (turning pages) unless asked for one long page (?read=all) or the share card (?og).
+const paged = root.classList.contains("paged");
 
 // --- the desk and the paper, painted by the game's own texture code ------------
 
@@ -55,7 +60,8 @@ function fit(l: Live) {
 }
 
 let running = false;
-function tick(now: number) {
+function tick() {
+  const now = clock.now();
   running = false;
   for (const l of lives) {
     if (l.from === undefined) continue;
@@ -68,12 +74,41 @@ function tick(now: number) {
 }
 function play(l: Live) {
   if (still) return;
-  l.from = performance.now();
+  l.from = clock.now();
   if (!running) { running = true; requestAnimationFrame(tick); }
 }
 
-// Handwriting in the figures needs the fonts first.
-Promise.all([document.fonts.load("400 18px Caveat"), document.fonts.load("700 18px Caveat")]).finally(() => {
+/** A figure drawn finished and faint, for the ink showing through the back of its page. */
+function ghost(el: HTMLCanvasElement) {
+  const fig = FIGURES[el.dataset.ghost!];
+  const w = el.clientWidth;
+  if (!fig || !w) return;
+  const k = Math.min(1.5, window.devicePixelRatio || 1);
+  el.width = Math.round(w * k);
+  el.height = Math.round((w * k * fig.h) / fig.w);
+  const g = el.getContext("2d")!;
+  g.setTransform(el.width / fig.w, 0, 0, el.width / fig.w, 0, 0);
+  fig.draw(g, 1);
+}
+
+function book() {
+  try {
+    openBook({
+      still,
+      laidOut: () => lives.forEach(fit),
+      // a drawing draws itself when its page opens
+      opened: (sides) => { for (const l of lives) if (l.t === 0 && l.from === undefined && sides.some((s) => s?.contains(l.el))) play(l); },
+      ghost,
+    });
+    root.classList.add("ready");
+  } catch (e) {
+    // if the book can't be bound, read it as one long page
+    console.error(e);
+    location.replace(`${location.pathname}?read=all${location.hash}`);
+  }
+}
+
+function scroll() {
   for (const l of lives) fit(l);
   if (!still && "IntersectionObserver" in window) {
     const seen = new IntersectionObserver((entries) => {
@@ -86,6 +121,13 @@ Promise.all([document.fonts.load("400 18px Caveat"), document.fonts.load("700 18
     }, { threshold: 0.45 });
     for (const l of lives) seen.observe(l.el);
   } else for (const l of lives) { l.t = 1; paint(l); }
+}
+
+// Handwriting in the figures, and the pages' measurements, need the fonts first.
+const fonts = ["400 18px Caveat", "700 18px Caveat", "400 18px 'Patrick Hand'", "400 12px 'Special Elite'"];
+Promise.all(fonts.map((f) => document.fonts.load(f))).finally(() => {
+  if (paged && root.classList.contains("paged")) book();
+  else scroll();
   // tap a drawing to watch it again
   for (const l of lives) {
     if (still) continue;
@@ -115,7 +157,7 @@ function icons() {
 icons();
 
 let resizing = 0;
-addEventListener("resize", () => {
+if (!paged) addEventListener("resize", () => {
   cancelAnimationFrame(resizing);
   resizing = requestAnimationFrame(() => lives.forEach(fit));
 });
