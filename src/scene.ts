@@ -10,13 +10,14 @@
 // style writes and a couple of hundred pixels of gradient, not a repaint.
 
 import type { GameState, Pt } from "./game";
-import { INK, handText, pencilArrow, pencilLine, pencilLoop } from "./ink";
+import { INK, handText, lead, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
 import { cssMatrix, layerMatrix, project, stageCss, toLocal, type View } from "./projection";
 import { RULES } from "./rules";
 import { DESK, deskTexture } from "./textures";
+import { theme } from "./theme";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -85,17 +86,17 @@ class Box {
 let lastCss = { desk: "", page: "", live: "" };
 let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
 let airKey = "";
-let deskInit = false;
+let deskTheme = ""; // the theme the desk canvas was painted for
 
 /** Put the page-space layers where the camera says. Style writes only. */
 function place(els: Els, f: Frame) {
   const v = f.view;
-  if (!deskInit) {
+  if (deskTheme !== theme.id) {
     const d = deskTexture(RULES.pageW, RULES.pageH);
     els.desk.width = d.width; els.desk.height = d.height;
     els.desk.getContext("2d")!.drawImage(d, 0, 0);
     els.desk.style.width = `${d.width}px`; els.desk.style.height = `${d.height}px`;
-    deskInit = true;
+    deskTheme = theme.id;
   }
   const dm = cssMatrix(layerMatrix(v, DESK.S, -DESK.pad, -DESK.pad));
   if (dm !== lastCss.desk) { els.desk.style.transform = dm; lastCss.desk = dm; }
@@ -184,7 +185,7 @@ function renderAir(els: Els, f: Frame) {
   const { view: v, lamp, lean } = f;
   const age = ageOf(f.s);
   const tip = f.pen ?? (f.selected !== undefined ? f.s.soldiers[f.selected] : undefined);
-  const key = [v.x, v.y, v.z, v.rot, v.tilt, v.px, v.py, lamp.on, lamp.dawn, age, lean, tip?.x, tip?.y].map((n) => (typeof n === "number" ? n.toFixed(3) : n)).join("|");
+  const key = [theme.id, v.x, v.y, v.z, v.rot, v.tilt, v.px, v.py, lamp.on, lamp.dawn, age, lean, tip?.x, tip?.y].map((n) => (typeof n === "number" ? n.toFixed(3) : n)).join("|");
   if (key === airKey) return;
   airKey = key;
   stageStats.air++;
@@ -250,7 +251,7 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   const show = aimShow(a);
   if (a.power <= 0) return;
   // the cone of doubt, faint graphite
-  g.fillStyle = "rgba(60,58,56,0.09)";
+  g.fillStyle = lead(theme).cone;
   g.beginPath();
   g.moveTo(me.x, me.y);
   g.arc(me.x, me.y, show, a.angle - a.spread, a.angle + a.spread);
@@ -271,7 +272,7 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   g.save();
   g.translate(at.x, at.y);
   g.rotate(-t.rot);
-  const pencil = "rgba(52, 50, 48, 0.85)";
+  const pencil = lead(theme).note;
   if (t.kind === "place") {
     handText(g, "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
     handText(g, "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
@@ -309,9 +310,10 @@ export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: numbe
     g.rect(pb.x0, pb.y0, pb.x1 - pb.x0, pb.y1 - pb.y0);
     g.clip();
     g.globalCompositeOperation = "source-atop";
-    g.fillStyle = `rgba(22, 15, 10, ${Math.min(0.85, (1 - lit) * 0.9)})`;
+    const { shade, warm } = theme.light;
+    g.fillStyle = `rgba(${shade[0]}, ${shade[1]}, ${shade[2]}, ${Math.min(0.85, (1 - lit) * 0.9)})`;
     g.fillRect(0, 0, W, H);
-    g.fillStyle = `rgba(255, 196, 120, ${0.1 * f.lamp.on * (1 - f.lamp.dawn)})`;
+    g.fillStyle = `rgba(${warm[0]}, ${warm[1]}, ${warm[2]}, ${warm[3] * f.lamp.on * (1 - f.lamp.dawn)})`;
     g.fillRect(0, 0, W, H);
     g.restore();
   }
@@ -336,7 +338,7 @@ function guideThroughBarrel(g: Ctx, f: Frame) {
   const me = f.s.soldiers[a.soldierId];
   const show = aimShow(a);
   const dx = Math.cos(a.angle), dy = Math.sin(a.angle);
-  g.strokeStyle = "rgba(58, 56, 54, 0.5)";
+  g.strokeStyle = lead(theme).guide;
   g.lineCap = "round";
   const step = 14;
   for (let d = 8; d < show; d += step * 1.8) {
@@ -352,7 +354,7 @@ function guideThroughBarrel(g: Ctx, f: Frame) {
 function sheenStrokes(f: Frame) {
   const { s, lamp } = f;
   const out: { i: number; wet: number }[] = [];
-  if (lamp.on <= 0 || f.lean > 0.3) return out;
+  if (lamp.on <= 0 || f.lean > 0.3 || theme.ink.gloss <= 0) return out;
   const last = s.phase === "over" ? s.turn : s.turn - 1;
   for (let i = s.marks.length - 1; i >= 0; i--) {
     const m = s.marks[i];
@@ -381,8 +383,9 @@ function drawSheen(g: Ctx, f: Frame, list: { i: number; wet: number }[], box: Bo
       if (j) g.lineTo(q.x, q.y); else g.moveTo(q.x, q.y);
       box.add(q.x, q.y, 3);
     }
-    g.strokeStyle = `rgba(255, 246, 225, ${0.45 * wet * lightAt(lamp, mid.x, mid.y)})`;
-    g.lineWidth = Math.max(0.6, RULES.inkWidth * 0.3 * v.z);
+    const sh = theme.light.sheen;
+    g.strokeStyle = `rgba(${sh[0]}, ${sh[1]}, ${sh[2]}, ${Math.min(0.9, 0.45 * theme.ink.gloss * wet * lightAt(lamp, mid.x, mid.y))})`;
+    g.lineWidth = Math.max(0.6, RULES.inkWidth * theme.ink.width * 0.3 * v.z);
     g.stroke();
   }
 }
