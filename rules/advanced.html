@@ -17,7 +17,7 @@
     <meta property="og:image" content="https://pen-flick-tactics.vercel.app/og-rules-advanced.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="A second hand-written rulebook on the desk, with a drawing of an ink line bending round a camp to reach a soldier behind it." />
+    <meta property="og:image:alt" content="A second hand-written rulebook on the desk, with a drawing of ink lines bending hard round a full camp and barely round a thinned one." />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Advanced rules · %GAME_NAME%" />
     <meta name="twitter:description" content="Book 2: the long war." />
@@ -45,6 +45,7 @@
         <p class="slip-title">contents</p>
         <ol class="one-col">
           <li><a href="#long-war">Long war</a></li>
+          <li><a href="#send">Sends</a></li>
           <li><a href="#ink">Ink on the page</a></li>
           <li><a href="#cover">Ink as cover</a></li>
           <li><a href="#shapes">Shaped bases</a></li>
@@ -68,13 +69,23 @@
         <section id="long-war" class="rule" data-no="1">
           <h2>Long war</h2>
           <ul class="points">
-            <li><strong>Shaped bases</strong>: camps, prisms and cushions, each with its own walls (see 4).</li>
-            <li><strong>Full pen physics</strong>: grooves, jolts, wall friction and ink cover (see 2 and 3).</li>
+            <li><strong>Shaped bases</strong>: camps, prisms and cushions, each with its own walls (see 5).</li>
+            <li><strong>Full pen physics</strong>: grooves, jolts, wall friction and ink cover (see 3 and 4).</li>
+            <li><strong>Longer roads</strong>: sends walk for several turns (see 2).</li>
             <li><strong>Bigger armies</strong> than a Classic battle. <i class="tag">to test</i></li>
           </ul>
         </section>
 
-        <section id="ink" class="rule" data-no="2">
+        <section id="send" class="rule" data-no="2">
+          <h2>Sends</h2>
+          <p>In a quick battle a convoy is on the road for one enemy turn. In the long war it walks for <strong>several turns</strong>, a step each time the pen changes hands, and it's exposed the whole way. <i class="tag">to test</i> <span class="lab">lab: 150 units a turn, so a road takes two to four turns</span> Still up to 5 at a time, and still once a turn.</p>
+          <figure>
+            <canvas data-fig="send-long" role="img" aria-label="Three blue soldiers walk a dashed pencil road between two blue bases, a hop each turn; a red line crosses the road and crosses one of them out."></canvas>
+            <figcaption>fig. 1 · three turns on the road</figcaption>
+          </figure>
+        </section>
+
+        <section id="ink" class="rule" data-no="3">
           <h2>Ink on the page</h2>
           <p>A page that's been fought over isn't blank any more, and the pen feels it.</p>
           <ul class="points">
@@ -84,16 +95,16 @@
           </ul>
           <figure>
             <canvas data-fig="groove" role="img" aria-label="An old blue line across the page. A new line meeting it at a shallow angle is pulled into it and runs along it; another crossing it steeply jolts and changes direction."></canvas>
-            <figcaption>fig. 1 · a groove pull and a jolt</figcaption>
+            <figcaption>fig. 2 · a groove pull and a jolt</figcaption>
           </figure>
         </section>
 
-        <section id="cover" class="rule" data-no="3">
+        <section id="cover" class="rule" data-no="4">
           <h2>Ink as cover</h2>
           <p>Every line in a war runs at somebody's base, so ink piles up round the bases and becomes <strong>natural cover</strong>. That's on purpose: bases get safer as the page fills. <i class="tag">strengths to test</i></p>
           <figure>
             <canvas data-fig="cover" role="img" aria-label="A red base ringed by old lines in both colours. A new blue line runs at it, jolting at every old line it crosses, and runs out before the wall."></canvas>
-            <figcaption>fig. 2 · a base behind its own war</figcaption>
+            <figcaption>fig. 3 · a base behind its own war</figcaption>
           </figure>
         </section>
       </article>
@@ -102,16 +113,17 @@
       <article class="sheet" style="--tilt: -0.4deg">
         <p class="head"><span>Page No. <b>2</b></span><span>Date <b>26 · 9 · 26</b></span></p>
 
-        <section id="shapes" class="rule" data-no="4">
+        <section id="shapes" class="rule" data-no="5">
           <h2>Shaped bases</h2>
           <p>Each shape's walls have their own friction, and each shape does one thing to lines that come near it.</p>
 
           <section id="circle" class="sub">
             <h3><canvas class="icon" data-shape="circle" aria-hidden="true"></canvas>Circle, the <em>camp</em></h3>
-            <p>A <strong>gravity well</strong>. Lines passing near it, anyone's, yours too, bend round it, so you can curve a shot round a camp or through a gap. Its walls are soft, and it holds the most soldiers <span class="lab">lab: 12, against 8 and 6</span>. <i class="tag">strength to test</i></p>
+            <p>A <strong>gravity well</strong>. Lines passing near it, anyone's, yours too, bend round it, so you can curve a shot round a camp or through a gap. Its walls are soft, and it holds the most soldiers <span class="lab">lab: 12, against 8 and 6</span>.</p>
+            <p><strong>Its pull is its garrison.</strong> The more soldiers inside, the harder it bends: a full camp bends lines hard, and as it's shot down the well weakens. An empty ring has no pull at all, and a send arriving strengthens it again. <i class="tag">to test</i></p>
             <figure>
-              <canvas data-fig="well" role="img" aria-label="A red camp in the middle of the page, with a red soldier behind it. A straight line at him would go through the camp; a blue line aimed past the camp bends round it and crosses him out."></canvas>
-              <figcaption>fig. 3 · round the camp, not through it</figcaption>
+              <canvas data-fig="well" role="img" aria-label="Two red camps. A blue line passing a full camp bends hard round it; the same line passing a camp with most of its soldiers crossed out barely bends."></canvas>
+              <figcaption>fig. 4 · a full camp and a thinned one</figcaption>
             </figure>
           </section>
 
@@ -120,7 +132,7 @@
             <p>Your lines passing out through it <strong>split in two</strong>, so place it in front of your other bases. A lunger doesn't split: he's one body.</p>
             <figure>
               <canvas data-fig="prism" role="img" aria-label="A blue line from a camp passes through a blue triangle in front of it and splits in two as it leaves, each half crossing out a red soldier."></canvas>
-              <figcaption>fig. 4 · a prism in front of its camp</figcaption>
+              <figcaption>fig. 5 · a prism in front of its camp</figcaption>
             </figure>
           </section>
 
@@ -129,7 +141,7 @@
             <p><strong>Billiards.</strong> Its walls bank everyone's lines, yours too, by angle. Only a glancing line bounces <span class="lab">lab: more than 34° off square</span>; a straight one goes in.</p>
             <figure>
               <canvas data-fig="cushion" role="img" aria-label="A red hexagon. A blue line glancing off its top face bounces away; another coming in nearly square goes through the wall and crosses out a red soldier inside."></canvas>
-              <figcaption>fig. 5 · a glance banks; a straight line goes in</figcaption>
+              <figcaption>fig. 6 · a glance banks; a straight line goes in</figcaption>
             </figure>
           </section>
 
@@ -139,22 +151,23 @@
           </section>
         </section>
 
-        <section id="soldiers" class="rule" data-no="5">
+        <section id="soldiers" class="rule" data-no="6">
           <h2>Shaped soldiers</h2>
           <p>Soldiers are drawn in their base's shape: dots in a camp, little triangles in a prism, little hexagons in a cushion. For now it's only a look.</p>
           <figure>
             <canvas data-fig="soldiers" role="img" aria-label="Three blue bases, a circle, a triangle and a hexagon, each jotted full of soldiers drawn in its own shape."></canvas>
-            <figcaption>fig. 6 · every base's men in its shape</figcaption>
+            <figcaption>fig. 7 · every base's men in its shape</figcaption>
           </figure>
           <p>Their shape's power might wake up only in a last stand. <i class="tag">idea</i></p>
         </section>
 
-        <section id="open" class="rule" data-no="6">
+        <section id="open" class="rule" data-no="7">
           <h2>Still to test</h2>
           <ul class="open">
             <li><b>Jolts and grooves</b>: how hard they shake and pull. Friendly ink carrying you and enemy ink slowing you was the least fair thing the lab tried (62% to whoever shot first).</li>
             <li><b>Ink cover</b> round bases. Intended, but the lab's version stalled games.</li>
-            <li><b>The circle as a well</b>: how strongly it bends a line, and how far out.</li>
+            <li><b>The circle as a well</b>: how hard a full camp bends a line, how far out, and how fast it weakens as the camp is shot down.</li>
+            <li><b>Long-war sends</b>: the pace, and how long a road should be.</li>
             <li><b>Shape sizes</b> (12, 6, 8) and the glance angle.</li>
             <li><b>Bigger armies</b>: how big.</li>
             <li><b>Length</b>: the lab's pen-physics war ran about 81 turns. For people who like long games, is that long enough, or too long?</li>

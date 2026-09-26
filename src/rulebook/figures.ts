@@ -351,8 +351,8 @@ const groove: Figure = {
   },
 };
 
-/** A send: soldiers walk the road between your bases, a turn at a time, and can be caught on it. */
-const send: Figure = {
+/** A long war send: soldiers walk the road between your bases, a turn at a time, exposed the whole way. */
+const sendLong: Figure = {
   w: 400, h: 220, dur: 4200,
   draw(g, t) {
     const A = P(62, 100), B = P(338, 100), r = 42;
@@ -380,6 +380,37 @@ const send: Figure = {
     if (k > along(shot, target)) kill(g, walkers[2], RED, 117, seg(t, 0.8, 0.86));
     note(g, "a hop each turn", 70, 36, seg(t, 0.62, 0.72));
     note(g, "caught on the road", 236, 160, seg(t, 0.88, 1));
+  },
+};
+
+/** A quick battle send: out between turns, on the road for one enemy turn, home at the start of yours. */
+const send: Figure = {
+  w: 400, h: 220, dur: 4200,
+  draw(g, t) {
+    const A = P(62, 100), B = P(338, 100), r = 42, y = A.y;
+    inkCircle(g, A.x, A.y, r, BLUE, 100);
+    inkCircle(g, B.x, B.y, r, BLUE, 101);
+    jot(A, r, 4, 0.3).forEach((p, i) => dot(g, p, BLUE, 102 + i));
+    jot(B, r, 3, 1.7).forEach((p, i) => dot(g, p, BLUE, 108 + i));
+    pencilLine(g, P(A.x + r + 4, y + 1), P(B.x - r - 4, y - 1), 1.3, 111, true);
+    // out onto the road as the pen changes hands...
+    const out = ease(seg(t, 0.06, 0.26)), home = ease(seg(t, 0.72, 0.9));
+    const mid = P(214, y);
+    const walkers = [0, 1, 2].map((i) => {
+      const from = P(A.x + 10 - i * 10, A.y + 10 - i * 8), road = P(mid.x - i * 15, y), end = [P(B.x - 22, B.y - 2), P(B.x + 6, B.y - 6), P(B.x - 16, B.y + 20)][i];
+      return home > 0 ? lerp(road, end, home) : lerp(from, road, out);
+    });
+    // ...where they stand through one enemy turn
+    const target = P(mid.x - 30, y), from = P(target.x - 46, 214);
+    const shot = bowed(from, add(target, P((target.x - from.x) / (from.y - target.y), -1), 87), 0.002);
+    const k = ease(seg(t, 0.36, 0.56));
+    walkers.forEach((w, i) => { if (i < 2 || k <= along(shot, target)) dot(g, w, BLUE, 112 + i); });
+    dot(g, from, RED, 115);
+    flick(g, shot, RED, 116, k);
+    if (k > along(shot, target)) { dot(g, target, BLUE, 114); kill(g, target, RED, 117, seg(t, 0.48, 0.56)); }
+    note(g, "sent: out between turns", 16, 30, seg(t, 0.2, 0.3));
+    note(g, "their turn: on the road", 236, 170, seg(t, 0.56, 0.66));
+    note(g, "your turn: home", 396, 30, seg(t, 0.9, 1), { align: "right" });
   },
 };
 
@@ -559,31 +590,33 @@ const lungeThrough: Figure = {
   },
 };
 
-/** Long war's camp is a gravity well: anyone's line bends round it, and can reach what's behind it. */
-const WELL = { c: P(205, 120), r: 40, G: 22 };
-const wellPath = walk(P(24, 215), -0.1, 380, {
-  pull: (p) => { const dx = WELL.c.x - p.x, dy = WELL.c.y - p.y, d = Math.hypot(dx, dy); return { x: (dx * WELL.G) / d ** 3, y: (dy * WELL.G) / d ** 3 }; },
-}).pts;
+/**
+ * Long war's camp is a gravity well, and its pull is its garrison: a full
+ * camp bends a passing line hard, a thinned one barely, an empty ring not at all.
+ */
+const pullOf = (c: Pt, G: number) => (p: Pt) => { const dx = c.x - p.x, dy = c.y - p.y, d = Math.hypot(dx, dy); return { x: (dx * G) / d ** 3, y: (dy * G) / d ** 3 }; };
+const WELLS = [
+  { c: P(170, 64), alive: 8, of: 8 },
+  { c: P(170, 204), alive: 2, of: 8 },
+].map((w) => ({ ...w, r: 32, path: walk(P(16, w.c.y + 58), 0, 370, { pull: pullOf(w.c, (11 * w.alive) / w.of) }).pts }));
 const well: Figure = {
-  w: 400, h: 240, dur: 3600,
+  w: 400, h: 276, dur: 4000,
   draw(g, t) {
-    const { c, r } = WELL, s0 = wellPath[0];
-    const target = at(wellPath, 0.9);
-    inkCircle(g, c.x, c.y, r, RED, 270);
-    jot(c, r, 8, 0.2).forEach((p, i) => dot(g, p, RED, 271 + i));
-    // the pull, pencilled round the camp
-    for (let i = 0; i < 3; i++) pencilLoop(g, c.x, c.y, r + 14 + i * 13, 280 + i, 1, seg(t, 0.02 + i * 0.05, 0.14 + i * 0.05), 0.5 - i * 0.12);
-    dot(g, target, RED, 284);
-    dot(g, s0, BLUE, 285);
-    // straight at him, the camp is in the way
-    const ghost = seg(t, 0.14, 0.26);
-    if (ghost > 0) pencilLine(g, add(s0, P(0, 0), 1), lerp(s0, add(c, P(-16, 26), 1), ghost), 1.1, 286, true);
-    const k = ease(seg(t, 0.3, 0.76));
-    flick(g, wellPath, BLUE, 287, k);
-    if (k > 0.9) kill(g, target, BLUE, 288, seg(t, 0.7, 0.76));
-    note(g, "straight: blocked", 40, 196, seg(t, 0.2, 0.3), { rot: -0.4 });
-    note(g, "bent round it", 250, 196, seg(t, 0.8, 0.9));
-    note(g, "anyone's lines, yours too", 222, 30, seg(t, 0.88, 1));
+    WELLS.forEach((w, k) => {
+      const { c, r, path } = w, t0 = k * 0.42;
+      inkCircle(g, c.x, c.y, r, RED, 270 + k);
+      jot(c, r, w.of, 0.2 + k).forEach((p, i) => { dot(g, p, RED, 272 + k * 10 + i); if (i >= w.alive) kill(g, p, BLUE, 290 + k * 10 + i); });
+      // the pull, pencilled round the camp: a ring for every few men inside
+      for (let i = 0; i < Math.ceil((3 * w.alive) / w.of); i++) pencilLoop(g, c.x, c.y, r + 12 + i * 11, 310 + k * 5 + i, 1, seg(t, t0 + i * 0.04, t0 + 0.12 + i * 0.04), 0.5 - i * 0.12);
+      // where a straight line would have gone
+      const s0 = path[0];
+      const ghost = seg(t, t0 + 0.08, t0 + 0.16);
+      if (ghost > 0) pencilLine(g, s0, P(s0.x + 370 * ghost, s0.y), 1.1, 320 + k, true);
+      dot(g, s0, BLUE, 322 + k);
+      flick(g, path, BLUE, 324 + k, ease(seg(t, t0 + 0.14, t0 + 0.4)));
+    });
+    note(g, "a full camp bends it hard", 396, 20, seg(t, 0.36, 0.46), { align: "right" });
+    note(g, "thinned: barely", 396, 186, seg(t, 0.8, 0.9), { align: "right" });
   },
 };
 
@@ -676,6 +709,7 @@ export const FIGURES: Record<string, Figure> = {
   lunge,
   groove,
   send,
+  "send-long": sendLong,
   ring,
   "last-stand": lastStand,
   cushion,

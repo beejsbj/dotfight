@@ -4,6 +4,7 @@ import { FIGURES } from "./figures";
 import core from "../../rules.html?raw";
 import advanced from "../../rules/advanced.html?raw";
 import index from "../../index.html?raw";
+import manifest from "../../public/manifest.webmanifest?raw";
 
 const all = (html: string, re: RegExp) => [...html.matchAll(re)].map((m) => m[1]);
 const figs = (html: string) => all(html.replace(/<div id="og"[\s\S]*?<\/div>\s*<\/div>/, ""), /data-fig="([^"]+)"/g);
@@ -56,7 +57,7 @@ describe("the rulebooks", () => {
   it("deep-links every rule", () => {
     const ids = (html: string) => new Set(all(html, /<section id="([^"]+)"/g));
     for (const id of ["setup", "snipe", "lunge", "send", "bases", "last-stand", "winning", "quick-battle", "how-you-play", "open"]) expect(ids(core).has(id), id).toBe(true);
-    for (const id of ["long-war", "ink", "cover", "shapes", "circle", "prism", "cushion", "square", "soldiers", "open"]) expect(ids(advanced).has(id), id).toBe(true);
+    for (const id of ["long-war", "send", "ink", "cover", "shapes", "circle", "prism", "cushion", "square", "soldiers", "open"]) expect(ids(advanced).has(id), id).toBe(true);
   });
 
   it("links each book to the other", () => {
@@ -65,7 +66,7 @@ describe("the rulebooks", () => {
   });
 
   it("keeps the long war out of the core rules, apart from the pointer", () => {
-    const longWar = ["groove", "cover", "well", "prism", "cushion", "soldiers"];
+    const longWar = ["groove", "cover", "well", "prism", "cushion", "soldiers", "send-long"];
     for (const f of figs(core)) expect(longWar, f).not.toContain(f);
     for (const word of ["hexagon", "triangle", "gravity", "being designed", 'id="ink"', 'id="shapes"']) expect(core, word).not.toContain(word);
     for (const f of ["well", "cover", "prism", "cushion", "soldiers", "groove"]) expect(figs(advanced)).toContain(f);
@@ -75,6 +76,9 @@ describe("the rulebooks", () => {
     expect(core).toMatch(/they shoot him on the spot/);
     expect(core).toMatch(/empty enemy ring nothing happens/);
     expect(core).toMatch(/up to 5 soldiers/);
+    expect(core).toMatch(/exactly one enemy turn/);
+    expect(advanced).toMatch(/several turns/);
+    expect(advanced).toMatch(/pull is its garrison/);
     expect(core).toContain('data-fig="lunge-through"');
   });
 
@@ -83,6 +87,9 @@ describe("the rulebooks", () => {
       expect(text).not.toContain(GAME.name);
       expect(text).toContain("%GAME_NAME");
     }
+    const m = JSON.parse(manifest);
+    expect(m.name).toBe(GAME.name);
+    expect(m.short_name).toBe(GAME.short);
     expect(nameHtml("Pen Flick Tactics")).toBe("Pen Flick <em>Tactics</em>");
     expect(nameHtml("Inkwar")).toBe("<em>Inkwar</em>");
   });
