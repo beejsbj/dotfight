@@ -27,7 +27,10 @@ function play(rules: typeof PROTOTYPE, seed: number, maxActions: number, check?:
   return s;
 }
 
-const sets = [...RULESETS, ...EXPERIMENTS.filter((e) => !RULESETS.some((r) => r.id === e.id))];
+// Every named set and every round-1 experiment; for round 2, a sample that
+// between them turns on every new option (the rest are one-number tweaks).
+const R2_SAMPLE = ["r2", "r2-anylunger", "r2-costly", "r2-capture", "r2-crumble", "r2-pos", "r2-wobble-dawood", "r2-scribble", "r2-taper", "r2-shapes-glance30", "r2-rise", "f-pen", "h-pen4"];
+const sets = [...RULESETS, ...EXPERIMENTS.filter((e) => !RULESETS.some((r) => r.id === e.id) && (!/^(r2|f|g|h)(-|$)/.test(e.id) || R2_SAMPLE.includes(e.id)))];
 
 describe("replay determinism", () => {
   for (const rules of sets) {

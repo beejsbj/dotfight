@@ -454,11 +454,12 @@ function note(who: Player, o: Outcome, verb: string) {
   else if (verb === "sent") parts.push(`${name(who)} sent soldiers down the road.`);
   else parts.push(verb === "run" ? `${name(who)} ${s.rules.lunge ? "lunged" : "moved"}.` : `${name(who)} missed.`);
   if (c) parts.push(`Cut the road: ${c} lost.`);
-  if (o.fell?.length) parts.push(o.fell.length > 1 ? `${o.fell.length} bases fell.` : "A base fell.");
+  const ring = (s.rules.empty ?? "gone") !== "gone";
+  if (o.fell?.length) parts.push(o.fell.length > 1 ? `${o.fell.length} bases ${ring ? "emptied" : "fell"}.` : ring ? "A base emptied." : "A base fell.");
   if (o.founded?.length) parts.push("Took a base!");
   if (o.refilled?.length) parts.push("A ring is manned again.");
   if (o.stood?.length) parts.push(`${o.stood.map((p) => name(p)).join(" & ")}: last stand!`);
-  if (o.again && (n || w || c) && !o.crashed) parts.push(s.must ? "Lunge again?" : "Go again.");
+  if (o.again && (n || w || c) && !o.crashed && !s.must) parts.push("Go again.");
   return parts.join(" ");
 }
 
