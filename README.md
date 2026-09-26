@@ -1,6 +1,8 @@
-# Pen Flick Tactics
+# Paper War
 
-A digital version of Dawood's pen-and-paper flick tactics game, fought on the back page of a maths copy under a desk lamp. The imprecise pen flick and the page as a permanent record are the core constraints. The rules are in [RULES.md](RULES.md), and drawn out by hand in two books: [/rules](https://pen-flick-tactics.vercel.app/rules), the core rules ([rules.html](rules.html)), and [/rules/advanced](https://pen-flick-tactics.vercel.app/rules/advanced), the long war ([rules/advanced.html](rules/advanced.html)); the game itself still plays the first, simpler rules. The name is a working title, kept in [src/name.ts](src/name.ts). The redesign's concept and rejected directions are in [docs/redesign/concept.md](docs/redesign/concept.md); rules ideas for Dawood are in [docs/redesign/ideas.md](docs/redesign/ideas.md).
+_Working title (other games already use it in the stores, so it may change). The repo, domain and Vercel project are still `pen-flick-tactics`; the name lives in [src/name.ts](src/name.ts)._
+
+A digital version of Dawood's pen-and-paper flick tactics game, fought on the back page of a maths copy under a desk lamp. The imprecise pen flick and the page as a permanent record are the core constraints. The rules are in [RULES.md](RULES.md), and drawn out by hand in two books: [/rules](https://pen-flick-tactics.vercel.app/rules), the core rules ([rules.html](rules.html)), and [/rules/advanced](https://pen-flick-tactics.vercel.app/rules/advanced), the long war ([rules/advanced.html](rules/advanced.html)); the game itself still plays the first, simpler rules. The redesign's concept and rejected directions are in [docs/redesign/concept.md](docs/redesign/concept.md); rules ideas for Dawood are in [docs/redesign/ideas.md](docs/redesign/ideas.md).
 
 The Linear board is canonical for status, decisions, and work history.
 
