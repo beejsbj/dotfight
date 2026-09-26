@@ -23,7 +23,7 @@ import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, t
 import { GAME } from "./name";
 import { RULES } from "./rules";
 import { BOIL_STYLE } from "./boil";
-import { boil, boilTick, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { boil, boilTick, forgetDrawn, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { Timeline, reachFraction } from "./timeline";
 
@@ -1173,6 +1173,21 @@ function leanOf() {
   return Math.max(0, Math.min(1, cam.tiltScale > 0 ? p.tilt / 0.55 : (p.m - 1) / 1.1));
 }
 
+// Dev: how two drawings of a layer differ, beyond antialiasing (a channel off by more than 24).
+function differ(a: ImageData | null, b: ImageData | null) {
+  if (!a || !b) return { bad: a === b ? 0 : -1, box: null };
+  if (a.width !== b.width || a.height !== b.height) return { bad: -1, box: null };
+  let bad = 0, x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+  const p = a.data, q = b.data;
+  for (let i = 0; i < p.length; i += 4) {
+    if (Math.abs(p[i] - q[i]) <= 24 && Math.abs(p[i + 1] - q[i + 1]) <= 24 && Math.abs(p[i + 2] - q[i + 2]) <= 24 && Math.abs(p[i + 3] - q[i + 3]) <= 24) continue;
+    bad++;
+    const x = (i >> 2) % a.width, y = Math.floor((i >> 2) / a.width);
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+  }
+  return { bad, of: a.width * a.height, box: bad ? [x0, y0, x1, y1] : null };
+}
+
 function renderNow() {
   const f = currentFrame();
   const bg = farColour(f.lamp);
@@ -1199,6 +1214,20 @@ if (import.meta.env.DEV) {
     get selected() { return selected; }, get res() { return res; },
     set speed(v: number) { speed = v; }, get speed() { return speed; },
     poke: () => { dirty = true; },
+    /**
+     * Every layer drawn incrementally must match a full redraw of the same
+     * frame: per layer, how many pixels differ by more than antialiasing, and where.
+     */
+    redrawCheck: () => {
+      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, rings: boil.parts[0].c, rest: boil.parts[1].c };
+      const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => [k, c.width && c.height && c.style.visibility !== "hidden" ? c.getContext("2d")!.getImageData(0, 0, c.width, c.height) : null]));
+      renderNow();
+      const a = grab();
+      forgetDrawn();
+      renderNow(); renderNow(); // the boil draws one of its two canvases a render
+      const b = grab();
+      return Object.fromEntries(Object.keys(layers).map((k) => [k, differ(a[k], b[k])]));
+    },
     frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view }; },
     frames: (reset = false) => {
       const stats = (src: number[]) => {

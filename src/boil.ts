@@ -268,6 +268,8 @@ class BoilCanvas {
   }
 
   get empty() { return this.things.length === 0; }
+  /** Draw everything on the next tick, as if new (the dev redraw check). */
+  redrawAll() { this.shown = null; this.grid = -1; }
   get boiling() { return this.things.some((t) => t.boils); }
 
   /** Take this frame's plan (cheap when it hasn't changed). */
@@ -551,6 +553,8 @@ export class BoilLayer {
   get settled() { return this.parts.every((p) => p.settled); }
 
   set(plan: Plan, s: GameState, S: number) { for (const p of this.parts) p.set(plan, s, S); }
+  /** Draw both canvases whole on their next ticks (the dev redraw check). */
+  redrawAll() { for (const p of this.parts) p.redrawAll(); }
 
   private turn = 0;
 

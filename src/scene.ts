@@ -164,6 +164,16 @@ function onScreen(f: Frame) {
   return { x0: Math.min(...xs) - pad, y0: Math.min(...ys) - pad, x1: Math.max(...xs) + pad, y1: Math.max(...ys) + pad };
 }
 
+/**
+ * Dev check: forget every layer's dirty rectangles, so the next render draws
+ * each whole. An incremental frame must match that full redraw (pft.redrawCheck).
+ */
+export function forgetDrawn() {
+  liveDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
+  inked = { x: 0, y: 0, w: 1e6, h: 1e6 };
+  boil.redrawAll();
+}
+
 /** Between rendered frames: redraw the boil if its frame has ticked. Returns whether it did. */
 export function boilTick(ms: number) {
   if (boil.empty || !boil.draw(ms, seen)) return false;
@@ -352,7 +362,8 @@ export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: numbe
     const pb = penBox(f.pen, f.view);
     box.add(pb.x0, pb.y0); box.add(pb.x1, pb.y1);
     drawPen(g, f.pen, f.view);
-    if (f.aim && f.aim.power > 0) guideThroughBarrel(g, f);
+    // the guide runs past the pen's box: its dashes join the box, or they'd never be cleared
+    if (f.aim && f.aim.power > 0) guideThroughBarrel(g, f, box);
     // the pen stands in the same light as everything else
     const lit = lightAt(f.lamp, f.pen.x, f.pen.y);
     g.save();
@@ -382,7 +393,7 @@ function penBox(p: PenPose, v: View) {
   };
 }
 
-function guideThroughBarrel(g: Ctx, f: Frame) {
+function guideThroughBarrel(g: Ctx, f: Frame, box: Box) {
   const a = f.aim!;
   const me = f.s.soldiers[a.soldierId];
   const show = aimShow(a);
@@ -394,6 +405,7 @@ function guideThroughBarrel(g: Ctx, f: Frame) {
     const p = project(f.view, me.x + dx * d, me.y + dy * d), q = project(f.view, me.x + dx * Math.min(show, d + step), me.y + dy * Math.min(show, d + step));
     g.lineWidth = Math.max(1.2, 2.2 * p.k);
     g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); g.stroke();
+    box.add(p.x, p.y, g.lineWidth); box.add(q.x, q.y, g.lineWidth);
   }
 }
 
