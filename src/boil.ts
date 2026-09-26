@@ -32,6 +32,12 @@ export const BOIL = {
   variants: 3,
   /** A boil tick costing more than this (ms, median of recent ticks) and the device can't afford it: stop. */
   budgetMs: 6,
+  /**
+   * Sprite pixels made per tick after new things join: the browser rasterises
+   * each batch the first time it's copied from, and a big batch is a hitch.
+   * About one camp drawing and a handful of dots.
+   */
+  predrawPx: 120_000,
 };
 
 /** Which boil frame it is at wall time `ms`. */
@@ -149,6 +155,14 @@ interface Thing {
 // Things bigger than this (page px, either side) are drawn as vectors each tick, not cached.
 const SPRITE_MAX = 400;
 
+function pixels(t: Thing, S: number) {
+  const px0 = Math.floor(t.x0 * S), py0 = Math.floor(t.y0 * S);
+  return { px0, py0, pw: Math.ceil(t.x1 * S) - px0, ph: Math.ceil(t.y1 * S) - py0 };
+}
+
+interface Batch { src: CanvasImageSource; n: number }
+interface Sprite { batch: Batch; x: number; y: number }
+
 /**
  * The boil layer: a page-space canvas covering only the living things, placed
  * by the same CSS matrix as the page, so the camera never redraws it. It is
@@ -165,7 +179,12 @@ export class BoilLayer {
   private things: Thing[] = [];
   private sig = "";
   private frame = -1;
-  private sprites = new Map<string, { c: CanvasImageSource; u: number; w: number }>();
+  /** Where each thing's drawings sit: `${key}|${drawing}`. */
+  private sprites = new Map<string, Sprite>();
+  /** Drawings still to make, a few each tick. */
+  private later: { t: Thing; wob: number }[] = [];
+  /** Every sprite made: the layer's steady state. */
+  get settled() { return this.later.length === 0; }
   private drawn: [number, number, number, number][] = [];
   /** Recent tick costs (ms), to judge whether the device can afford the boil. */
   private recent: number[] = [];
@@ -185,7 +204,7 @@ export class BoilLayer {
   /** Take this frame's plan (cheap when it hasn't changed). */
   set(plan: Plan, s: GameState, S: number) {
     if (plan.sig === this.sig && S === this.S) return;
-    if (S !== this.S) { for (const sp of this.sprites.values()) if (sp.c instanceof ImageBitmap) sp.c.close(); this.sprites.clear(); }
+    if (S !== this.S) this.forget(() => true);
     this.sig = plan.sig;
     this.S = S;
     const pad = 3;
@@ -213,7 +232,13 @@ export class BoilLayer {
       things.push({ key: `m${i}@${m.seed}`, boils, x0, y0, x1, y1, paint: (g, w) => drawMark(g, m, 1, w) });
     }
     this.things = things;
-    this.prune();
+    const keep = new Set(things.map((t) => t.key));
+    this.forget((k) => !keep.has(k.slice(0, k.lastIndexOf("|"))));
+    // sprites for what's new are made a few a tick, first drawings first; until
+    // then a thing is drawn as ink straight onto the layer
+    const n = BOIL.variants;
+    this.later = [];
+    for (let wob = 0; wob < n; wob++) for (const t of things) if ((wob === 0 || t.boils) && !this.sprites.has(`${t.key}|${wob}`)) this.later.push({ t, wob });
     this.frame = -1; // redraw on the next tick, whatever frame it is
     // the canvas covers what it draws, snapped to whole pixels on the page's grid
     if (things.length) {
@@ -233,6 +258,17 @@ export class BoilLayer {
     const t0 = performance.now();
     const g = this.g, S = this.S;
     const X = Math.round(this.ox * S), Y = Math.round(this.oy * S);
+    // a tick that makes sprites or draws ink straight isn't a steady one
+    let steady = !this.later.length;
+    if (this.later.length) {
+      let px = 0, k = 0;
+      while (k < this.later.length && (k === 0 || px < BOIL.predrawPx)) {
+        const { pw, ph } = pixels(this.later[k].t, S);
+        px += pw * ph;
+        k++;
+      }
+      this.predraw(this.later.splice(0, k));
+    }
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalCompositeOperation = "source-over";
     for (const [x, y, w, h] of this.drawn) g.clearRect(x, y, w, h);
@@ -241,55 +277,73 @@ export class BoilLayer {
     g.globalCompositeOperation = "multiply";
     for (const t of this.things) {
       const wob = t.boils ? variantAt(frame, t.key) : 0;
-      const px0 = Math.floor(t.x0 * S), py0 = Math.floor(t.y0 * S), pw = Math.ceil(t.x1 * S) - px0, ph = Math.ceil(t.y1 * S) - py0;
-      if (pw > SPRITE_MAX || ph > SPRITE_MAX) {
+      const { px0, py0, pw, ph } = pixels(t, S);
+      const sp = this.sprites.get(`${t.key}|${wob}`);
+      if (sp) g.drawImage(sp.batch.src, sp.x, sp.y, pw, ph, px0 - X, py0 - Y, pw, ph);
+      else {
+        // not made yet, or too big to cache (a whole ink line, when the dead boil)
+        if (pw <= SPRITE_MAX && ph <= SPRITE_MAX) steady = false;
         g.setTransform(S, 0, 0, S, -X, -Y);
         t.paint(g, wob);
         g.setTransform(1, 0, 0, 1, 0, 0);
-      } else g.drawImage(this.sprite(t, wob, px0, py0, pw, ph), px0 - X, py0 - Y);
+      }
       this.drawn.push([px0 - X - 1, py0 - Y - 1, pw + 2, ph + 2]);
     }
     g.globalCompositeOperation = "source-over";
     this.redraws++;
-    this.cost(performance.now() - t0);
+    if (steady) this.cost(performance.now() - t0);
     return true;
   }
 
-  // A sprite is drawn once per drawing, then only copied. Where the browser
-  // can, it's an ImageBitmap: immutable, so it goes to the GPU once.
-  private sprite(t: Thing, wob: number, px0: number, py0: number, pw: number, ph: number) {
-    const k = `${t.key}|${wob}`;
-    let sp = this.sprites.get(k);
-    if (!sp || sp.u !== px0 || sp.w !== py0) {
-      const off = typeof OffscreenCanvas !== "undefined";
-      const c = off ? new OffscreenCanvas(pw, ph) : Object.assign(document.createElement("canvas"), { width: pw, height: ph });
-      const g = c.getContext("2d") as Ctx;
-      g.setTransform(this.S, 0, 0, this.S, -px0, -py0);
-      g.globalCompositeOperation = "multiply";
-      t.paint(g, wob);
-      sp = { c: off ? (c as OffscreenCanvas).transferToImageBitmap() : (c as HTMLCanvasElement), u: px0, w: py0 };
-      this.sprites.set(k, sp);
+  /**
+   * Draw these drawings, packed in rows on one new canvas that is never drawn
+   * into again; the ticks then only copy. (A canvas per sprite costs far more
+   * to make than its ink, and drawing into a canvas that has been copied from
+   * makes the browser copy all of it.)
+   */
+  private predraw(list: { t: Thing; wob: number }[]) {
+    const S = this.S, W = 1024;
+    const todo: { t: Thing; wob: number; x: number; y: number; pw: number; ph: number; px0: number; py0: number }[] = [];
+    let x = 0, y = 0, row = 0, w = 0;
+    for (const { t, wob } of list) {
+      const { px0, py0, pw, ph } = pixels(t, S);
+      if (pw > SPRITE_MAX || ph > SPRITE_MAX || this.sprites.has(`${t.key}|${wob}`)) continue;
+      if (x + pw > W) { x = 0; y += row; row = 0; }
+      todo.push({ t, wob, x, y, pw, ph, px0, py0 });
+      x += pw + 2;
+      w = Math.max(w, x);
+      row = Math.max(row, ph + 2);
     }
-    return sp.c;
+    if (!todo.length) return;
+    const h = y + row;
+    const off = typeof OffscreenCanvas !== "undefined";
+    const c = off ? new OffscreenCanvas(w, h) : Object.assign(document.createElement("canvas"), { width: w, height: h });
+    const g = c.getContext("2d") as Ctx;
+    g.globalCompositeOperation = "multiply";
+    // each box is padded past its ink, so no clipping is needed
+    for (const d of todo) {
+      g.setTransform(S, 0, 0, S, d.x - d.px0, d.y - d.py0);
+      d.t.paint(g, d.wob);
+    }
+    const batch: Batch = { src: off ? (c as OffscreenCanvas).transferToImageBitmap() : (c as HTMLCanvasElement), n: todo.length };
+    for (const d of todo) this.sprites.set(`${d.t.key}|${d.wob}`, { batch, x: d.x, y: d.y });
   }
 
-  // Sprites are drawn the first time each drawing shows, so the first ticks
-  // after a change cost more: judge the device on the steady ticks.
+  /** Let go of drawings whose key matches (a camp emptied, a soldier moved on); a batch goes when all its drawings have. */
+  private forget(gone: (key: string) => boolean) {
+    for (const [k, sp] of this.sprites) {
+      if (!gone(k)) continue;
+      this.sprites.delete(k);
+      if (--sp.batch.n === 0 && sp.batch.src instanceof ImageBitmap) sp.batch.src.close();
+    }
+  }
+
+  // Judge the device on the median of recent steady ticks, not one slow one.
   private cost(ms: number) {
     this.recent.push(ms);
     if (this.recent.length > 24) this.recent.shift();
     if (this.recent.length < 24) return;
     const med = [...this.recent].sort((a, b) => a - b)[this.recent.length >> 1];
     if (med > BOIL.budgetMs) this.tooDear = true;
-  }
-
-  /** Forget sprites of things no longer on the layer (a camp emptied, a soldier moved on). */
-  private prune() {
-    const live = new Set(this.things.map((t) => t.key));
-    for (const [k, sp] of this.sprites) {
-      if (live.has(k.slice(0, k.lastIndexOf("|")))) continue;
-      if (sp.c instanceof ImageBitmap) sp.c.close();
-      this.sprites.delete(k);
-    }
   }
 }
