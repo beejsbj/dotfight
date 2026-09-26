@@ -90,7 +90,15 @@ for (const phone of PHONES) {
       const n0 = s.actions.length;
       const me = s.soldiers.find((x) => x.alive && x.owner === s.current);
       const home = s.bases[me.home];
-      const a = await toScreen(me.x, me.y), to = await toScreen(home.x + (home.x > 500 ? -1 : 1) * (home.r + 20), home.y);
+      // a legal spot for him: around his base, just inside or outside the wall
+      const spot = await p.evaluate(([id, hx, hy, r]) => {
+        for (const k of [1.1, 0.9, 0.6, 0.3]) for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2, x = hx + Math.cos(a) * r * k, y = hy + Math.sin(a) * r * k;
+          if (!window.pft.canArrange(id, x, y)) return { x, y };
+        }
+        return { x: hx, y: hy };
+      }, [me.id, home.x, home.y, home.r]);
+      const a = await toScreen(me.x, me.y), to = await toScreen(spot.x, spot.y);
       await touch("touchStart", a.x, a.y);
       await p.waitForTimeout(80);
       for (let i = 1; i <= 8; i++) { await touch("touchMove", a.x + ((to.x - a.x) * i) / 8, a.y + ((to.y + 40 - a.y) * i) / 8); await p.waitForTimeout(16); }

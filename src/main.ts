@@ -1074,4 +1074,5 @@ if (import.meta.env.DEV) (window as unknown as { pft: object }).pft = {
   /** Flick exactly this, animated as if a hand did it. */
   fire: (f: Flick, power = 0.6) => fire(f, power),
   send: (from: number, to: number, n: number) => send(from, to, n),
+  canArrange: (id: number, x: number, y: number) => canArrange(s, id, x, y),
 };

@@ -4,7 +4,97 @@ _2026-09-25. Branch `rules/lab-2`, on top of round 1 (`rules/lab`, PR #3). Raw d
 
 Round 2 builds Burooj's new direction into the engine, lets the bot play it, and measures it. The design principle he keeps returning to is a real pen on paper. Round 1's own-ink and page-edge bounces stay out of every new set (a matter of taste, not a law), and the page does four new things to a line instead: it jolts the hand, pulls the pen into grooves, soaks it up in scribbles, and wears it down.
 
-<!-- RESULTS -->
+## The short version
+
+- **Play "Lunge & snipe".** It's Burooj's lunge and snipe on Dawood's classic page, with free walking sends and empty rings, plus three things the lab added to keep it fair: a rising bar on snipe streaks, a tremor on lunge chains, and round 1's last stand. Soldiers are arranged before the first flick. It's even (52% to the first player), streaks stay short (a 4.7-flick worst turn on average, 9 at most), and every new mechanic gets used: lunges are 37% of flicks, sends 10 a game, and a ring is manned again in 99% of games.
+- **Billiards is the second game**: the same rules with camps, a prism and two cushions. It averages 15 bank shots and 7 split lines a game, and it's just as fair.
+- **Pen physics works, but the page fights back.** Every ink effect makes games longer, because ink piles up right in front of the targets. The shipped version is the lightest of each (jolts, grooves, wall friction) and still runs about half as long again as Lunge & snipe. Scribble cover and taper are left out: every combination with them stalled.
+- **The cost of round 2 is length.** A kill no longer reliably earns a flick, so games take ~88 flicks rather than Last stand's 55. That's the first thing to feel out at the table.
+
+## Results
+
+2,000 bot-vs-bot games per set, a human-like hand, the round-1 harness (`npm run lab`), seeds 1–2000 for every set. Standard error on the percentages is about ±1.1 points.
+
+<!-- TABLE -->
+
+How to read it (as in round 1):
+- **Turns** are pen hand-overs; a free send doesn't hand over the pen.
+- **Comebacks** is how often the side ahead at half-time loses; the bracket counts only leads of at least 15% of an army.
+- **Longest turn** is the most flicks one player makes in a single turn (sends not counted): how long the other person watches.
+- **Stalled** games hit the 400-turn cap with nobody winning.
+
+"Last stand (round 1)" is round 1's recommendation re-run on this engine and bot. Round 1 published 21.3 turns and 46% first-player wins; the re-run gives 21.4 and 49%. The small shift comes from the bot now counting a last stand's second flick the way the earn rules do. "As stated (r2)" is Burooj's round-2 direction taken literally on the classic page: lunge and snipe with unlimited chains, free walking sends, empty rings, and nothing added.
+
+## What the lab found
+
+Exploration ran in six passes of 100–140 games per variant (tables in [data/round-2/explore.md](data/round-2/explore.md)), one change at a time, then the finals.
+
+1. **Do the stricter triggers self-limit? Partly.** Snipe-on-two and lunge-kills-only halve the worst turn compared with classic's any-kill chain (6.1 flicks against 14.7), but they don't bound it: "as stated" still produces turns of up to 17 flicks, and big comebacks fall to 5%, because whoever gets ahead gets more doubles. Snipe-on-one goes straight back to 9.6. **The lightest fix is a rising bar** (`earn.rise`): each further snipe in a turn needs one more kill (two, then three, then four). The worst turn falls to 3.6 with no hard cap, and the first-player edge stays at 52%. A hard cap of three also bounds it, but gave 58% to the first player and no big comebacks.
+2. **Death at the wall is the whole lunge economy.** With it, lunges are only 6% of flicks, because at the start everyone is inside a base and lunging in is suicide. Without it, 86% of flicks are lunges, a quarter of lunge chains run to six or more, and games collapse to 15 turns. Lunges come alive when soldiers stand in the open: positioning outside the walls took them to 44–49%.
+3. **"Shakier every link" needs a tremor, not a multiplier.** Chain lunges are short, soft flicks whose error is tiny, so multiplying it by 1.35 or 1.6 per link changed almost nothing (chains of up to 14). A fixed tremor of 0.05 rad per link, however soft the flick, cut 6+ chains from 6% to 0% and the longest to 8–10, and it still reads as Burooj's rule.
+4. **Free walking sends get used: 10–13 a game.** When a send costs the flick, it's 2 a game. Walk speed barely matters in the range tried (90–300 units per hand-over).
+5. **Empty rings get manned again in nearly every game** (3–4 times a game). Crumbling makes no difference on an all-circle page, because circles have no wall effects to lose.
+6. **Positioning changes the game only if soldiers may stand outside their walls.** Inside only, the bot's arrangement changed nothing measurable. Within 40 of the wall, the bot spreads soldiers outside to spoil the enemy's lines, which feeds lunges (49% of flicks) and shortens games (65 → 51 turns). Within 20 is the middle ground that ships. A flaw: the bot sometimes moves a whole garrison outside, so that base counts as empty from the first flick (visible in the screenshots). The simplest fix is "each base keeps at least one inside"; it isn't in these numbers.
+7. **Ink physics: the page fights back.** Ink piles up where the targets are, because every line runs toward an enemy base. So anything that weakens a line as ink accumulates makes bases into fortresses:
+   - wobble of 0.02 rad per crossing: 99 turns; 0.035: 140 turns, with 7% of games stalled;
+   - scribble cover (three lines in 40 units): 168 turns, 32% stalled;
+   - taper (25% per kill, 15% per wall): 111 turns, 13% stalled;
+   - grooves at 17° and 24 units: 188 catches a game and 95 turns (lines get pulled off their targets).
+
+   Gentle versions are fine one at a time (grooves at 0.12 rad and 12 units, jolts limited to one per line, scribble five-in-30, taper 10%/5%), but they compound. The shipped Pen physics keeps jolts, grooves and a little wall friction.
+8. **Dawood's version (friendly ink boosts, enemy ink slows) is the least fair thing tried**: 74 turns, 62% to the first player, 2% big comebacks. Enemy ink radiates from enemy bases, so every attack drags, and the side that shoots first lays the ink the other must cross. Combined with wobble it was longer again (119 turns). Wobble is the better of the two, but only gently.
+9. **Longer flicks are less accurate, as they should be** (table above). In play the bot's hit rate falls from ~89% for 300–600-unit shots to ~59% beyond 1500.
+10. **Billiards works as a skill layer.** 15 banks and 7 splits a game with a glance angle of 0.6 rad. Reflecting every incoming line would make a hexagon a fortress; with the glance rule, a straight shot still gets in.
+
+## Recommendation
+
+**Play Lunge & snipe.** It's the only round-2 set that keeps round 1's fairness and short streaks while using every new mechanic. Lunges, sends and rings all matter in it, and its last stand keeps a big lead losable 13% of the time. It's twice as long as Last stand in turns (53 against 21) and 60% longer in flicks. That's the price of kills no longer reliably earning a flick, and the one thing to check with real people. If it drags, the first lever is a smaller army (four bases), not the chain rules.
+
+**Billiards** is the second game and the more tactical one: bank shots and prisms in front of your other bases are real plans. **Pen physics** is for trying the feel of the page. It's slower, and the numbers say to keep it light; the grooves are the part Burooj likes, and they're in. **"As stated"** stays in the lab as the reference for Dawood: it's what the direction does on its own.
+
+## What failed, and why
+
+- **Scribble cover and taper**, in every strength that showed on the page: ink piles up in front of the targets, so lines die exactly where they matter and games stall.
+- **Strong wobble** (0.035 rad per crossing and up), for the same reason.
+- **Grooves as a lock-on** (my first version) was replaced by gravity at Burooj's direction. Strong gravity grabbed lines everywhere.
+- **Dawood's boost/drag**: unfair to the second player (above).
+- **Lunges without the wall rule**: a lunge fest with 15-link chains.
+- **A plain multiplier for "shakier"**: no effect on short chains; replaced by the tremor.
+- **A hard streak cap** worked, but less fairly than the rising bar.
+
+## What I guessed
+
+Every number below is invented, and most were chosen by the lab from a handful of alternatives:
+
+- the walk pace (150 per hand-over);
+- rise 1 and the tremor 0.05 rad;
+- positioning reach 20;
+- the glance angle 0.6 rad (34°) and three banks per line;
+- camps of 12, cushions of 8, the prism of 6;
+- every ink constant;
+- that an earned lunge is the same soldier's (tested: letting any soldier take it made little difference);
+- that kills before the wall still count when a lunge crashes, and the crash ends the chain;
+- that sends are free once a turn.
+
+The one design addition beyond Burooj's brief is the glance rule on hexagons, so a cushion isn't a fortress.
+
+
+## Screenshots
+
+Phone size (390×844), headless Chrome, from seeded scenes (`scripts/round2-scenes.ts`, then `scripts/round2-shots.mjs`). Each has a close-up, a `-page` view, and for flicks a `-drawing` frame mid-stroke:
+
+- [wobble](shots/round-2/wobble.jpg) (zigzags where the hand jolted crossing ink)
+- [groove](shots/round-2/groove.jpg) ("=" where a groove caught the pen)
+- [lunge](shots/round-2/lunge.jpg) (a lunge kill: lunge again or stop)
+- [crash](shots/round-2/crash.jpg) (dead at a manned wall)
+- [send](shots/round-2/send.jpg) and [convoy](shots/round-2/convoy.jpg) (walkers on the road)
+- [empty](shots/round-2/empty.jpg) (an empty ring)
+- [bank](shots/round-2/bank.jpg) (a cushion bounce)
+- [split](shots/round-2/split.jpg) (a prism split)
+- [position](shots/round-2/position-page.jpg) (the positioning phase)
+- rules cards: [Lunge & snipe](shots/round-2/card-lunge-snipe.png), [Pen physics](shots/round-2/card-pen-physics.png), [Billiards](shots/round-2/card-billiards.png)
+
+The marks are deliberately plain so they port to Lamplight. At full-page zoom on a busy page the groove "=" is hard to pick out; the close-ups read.
 
 ## What I built
 
@@ -91,4 +181,19 @@ Engine, bot, lab and rules cards are UI-agnostic and port as they are (`src/game
 
 ## Questions for Burooj and Dawood
 
-<!-- QUESTIONS -->
+For Burooj:
+
+1. **Is ~50 turns (~90 flicks) a game you'd play on a phone?** It's the main cost of lunge and snipe. If not, try four bases before touching the chain rules.
+2. **Positioning: inside the base, or just outside it too?** Inside only changed nothing; outside turns the game toward lunges. And should a base have to keep one soldier inside?
+3. **Which ink effect matters most to you?** Each one costs length. Jolts and grooves are in Pen physics; scribble cover and taper are options that stalled games in every strength that showed.
+4. **Hexagon cushions with the glance rule**: does a straight shot going through feel right, or should they bank everything and hold fewer soldiers?
+5. **Is the lunge tremor the "shakier" you meant?** It widens the aim cone by a fixed amount per link, however softly you flick.
+
+For Dawood:
+
+1. **Did friendly lines really carry a flick further, and enemy lines slow it?** Taken literally, it favours whoever shoots first (62%).
+2. **When a line ran along another one, did it follow it?** Grooves are in as gravity: the slower the pen, the more it's pulled.
+3. **Did a soldier who charged through someone go again, and was it the same soldier?**
+4. **How fast did sent soldiers walk?** Here, a column crosses a typical road in two to four turns, and anyone can cross them out on the way.
+5. **Did an empty base stay a base?** Here it stays as a ring, and anyone of yours who walks in (or is sent in) mans it again.
+
