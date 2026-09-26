@@ -84,6 +84,7 @@ export const unit = (...n: number[]) => hash(...n) / 4294967296;
 // screen, a flinch's "away from the line"), `s` a stretch along that direction
 // (under 1 squashes), `k` a swell, `r` the scribble rate.
 
+/** `side`: off to one side of the reaction's direction (a shake), in the same units as `d`. */
 export interface Key { d?: number; s?: number; k?: number; r?: number; side?: number }
 
 export const KEYS = {
@@ -96,15 +97,29 @@ export const KEYS = {
     { d: 0, s: 0.74, k: 1.02 },
     { d: 0, s: 1.08 },
   ],
-  /** A flinch as ink goes by: jerk away and shrink, then ease back, heart racing. */
+  /**
+   * A flinch as ink goes by, the page's favourite. He sees it coming and leans
+   * away, tight; as it passes he jerks away, flattened and small, his heart
+   * going like mad; he shakes; then a big breath out, "phew", and his
+   * scribble slows right down before it comes back to itself. The ink passes
+   * on the third key (FLINCH_HIT).
+   */
   flinch: [
-    { d: 0.75, s: 0.72, k: 0.86, r: 3 },
-    { d: 1, s: 0.82, k: 0.84, r: 3 },
-    { d: 0.85, s: 0.95, k: 0.88, r: 2.6 },
-    { d: 0.6, s: 1.05, k: 0.92, r: 2.4 },
-    { d: 0.35, s: 0.97, k: 0.96, r: 2.2 },
-    { d: 0.15, s: 1.02, k: 0.98, r: 2 },
-    { d: 0.05, r: 1.8 },
+    { d: 0.15, s: 1.08, r: 2 },
+    { d: 0.3, s: 1.14, k: 0.98, r: 2.6 },
+    { d: 1, s: 0.58, k: 0.8, r: 4 },
+    { d: 0.95, s: 0.7, k: 0.82, r: 4 },
+    { d: 0.75, side: 0.3, s: 0.92, k: 0.88, r: 3.5 },
+    { d: 0.6, side: -0.28, s: 1.04, k: 0.9, r: 3.2 },
+    { d: 0.45, side: 0.22, k: 0.92, r: 3 },
+    { d: 0.35, side: -0.16, k: 0.94, r: 2.8 },
+    { d: 0.25, side: 0.1, k: 0.96, r: 2.5 },
+    { d: 0.15, side: -0.05, k: 0.98, r: 2.2 },
+    { d: 0.06, s: 1.04, k: 1.05, r: 1.2 },
+    { d: 0, s: 1.06, k: 1.08, r: 0.5 },
+    { k: 1.06, r: 0.4 },
+    { k: 1.03, r: 0.6 },
+    { k: 1.01, r: 0.85 },
   ],
   /** He sees it coming: rears back from the ink, tall and tight, scribbling wildly. */
   gasp: [
@@ -128,6 +143,19 @@ export const KEYS = {
     { d: 0, s: 0.92, k: 1.04, r: 1.8 },
     { d: 0, s: 1.06, k: 1.05, r: 1.7 },
   ],
+  /**
+   * A defender turning on an intruder in his camp: he rounds on him, draws
+   * back, and jabs (the line goes on JAB_FIRE), then eases off. `d` toward him.
+   */
+  jab: [
+    { d: 0.3, s: 1.15, r: 2.5 },
+    { d: 0.5, s: 1.25, k: 1.04, r: 3 },
+    { d: -0.35, s: 0.78, k: 1.02, r: 3.5 },
+    { d: 1, s: 1.38, r: 4 },
+    { d: 0.55, s: 1.12, r: 3 },
+    { d: 0.25, s: 1.04, r: 2 },
+    { d: 0.1, r: 1.5 },
+  ],
   /** Arriving where his ink stopped: squashed along the way he came, then up. `d` along his travel. */
   land: [
     { d: 0.5, s: 0.66, k: 1.04, r: 2 },
@@ -138,6 +166,9 @@ export const KEYS = {
 } satisfies Record<string, Key[]>;
 
 export type ReactionKind = keyof typeof KEYS | "cheer" | "mourn";
+/** Which flinch key the ink passes on, and which jab key the line goes on. */
+export const FLINCH_HIT = 2;
+export const JAB_FIRE = 3;
 
 export interface Reaction {
   kind: ReactionKind;
@@ -210,7 +241,7 @@ class Acc {
 }
 
 /** Full-size reach of each reaction's `d` (page units), at amp 1. */
-export const AMP = { hop: 7.5, flinch: 6, gasp: 4, recoil: 6, perk: 5, land: 5, cheer: 8, mourn: 1 };
+export const AMP = { hop: 7.5, flinch: 8.5, gasp: 4, recoil: 6, perk: 5, land: 5, cheer: 8, mourn: 1, jab: 6 };
 
 // --- what's going on round him ----------------------------------------------------
 
@@ -274,7 +305,7 @@ export interface Pass {
  * flinch and who will be crossed out. `soldiers` is the page after the flick
  * (so the killed are already dead: `killed` names them). Pure.
  */
-export function passes(soldiers: readonly Soldier[], path: Pt[], shooter: number, killed: readonly number[], near = 70): Pass[] {
+export function passes(soldiers: readonly Soldier[], path: Pt[], shooter: number, killed: readonly number[], near = NEAR): Pass[] {
   const dead = new Set(killed);
   const out: Pass[] = [];
   for (const x of soldiers) {
@@ -313,11 +344,15 @@ export class Life {
   private rings = new Map<number, { look: number; u: number; memo: Map<number, number> }>();
   /** Camps holding their breath: base id -> [from, until] (wall ms). */
   private hush = new Map<number, [number, number]>();
+  /** Men stopped for good from a wall time on (a volley's crossed-out intruder, before the rules record it). */
+  private stilled = new Map<number, number>();
+  /** He stops being drawn at `from` (wall ms): still, like the dead. */
+  still(id: number, from: number) { this.stilled.set(id, from); this.memo.delete(id); }
 
-  /** Queue a reaction for soldier `id`. A new one of the same kind replaces the old. */
+  /** Queue a reaction for soldier `id`. Of one kind, the latest to have started plays: a new jolt cuts off the last. */
   add(id: number, r: Reaction) {
     this.memo.delete(id);
-    const list = (this.acts.get(id) ?? []).filter((x) => x.kind !== r.kind && x.t0 + span(x) > r.t0 - 2000);
+    const list = (this.acts.get(id) ?? []).filter((x) => x.t0 + span(x) > r.t0 - 2000 && !(x.kind === r.kind && x.t0 === r.t0));
     list.push(r);
     this.acts.set(id, list);
   }
@@ -326,7 +361,7 @@ export class Life {
     const h = this.hush.get(base);
     this.hush.set(base, h && h[1] >= from ? [Math.min(h[0], from), Math.max(h[1], until)] : [from, until]);
   }
-  clear() { this.memo.clear(); this.acts.clear(); this.dread.clear(); this.beats.clear(); this.rings.clear(); this.hush.clear(); }
+  clear() { this.stilled.clear(); this.memo.clear(); this.acts.clear(); this.dread.clear(); this.beats.clear(); this.rings.clear(); this.hush.clear(); }
   reactions(id: number) { return this.acts.get(id) ?? []; }
 
   /** Sides at their last stand, counted once a frame rather than once a soldier. */
@@ -359,6 +394,8 @@ export class Life {
     const sc = this.scene;
     const x = sc?.s.soldiers[id];
     if (!sc || !x) return { ...REST };
+    const dead = this.stilled.get(id);
+    if (dead !== undefined && ms >= dead) return { ...REST, rate: 0 };
     const a = new Acc();
     const h = hash(id, 77);
     const up = sc.up;
@@ -380,12 +417,18 @@ export class Life {
         }
       }
     }
-    for (const r of this.acts.get(id) ?? []) {
+    const acts = this.acts.get(id) ?? [];
+    for (const r of acts) {
+      // of each kind, only the latest to have started
+      if (acts.some((o) => o !== r && o.kind === r.kind && o.t0 > r.t0 && o.t0 <= ms)) continue;
       const key = keyAt(r, ms);
       if (!key) continue;
       const dir = r.dir ?? up;
-      const d = (key.d ?? 0) * AMP[r.kind] * r.amp * (r.dir === undefined ? tall : 1);
+      // hops and flinches are what you watch from bird's-eye: drawn bigger there
+      const big = r.dir === undefined || r.kind === "flinch" ? tall : 1;
+      const d = (key.d ?? 0) * AMP[r.kind] * r.amp * big;
       a.push(dir, d, key.s ?? 1, key.k ?? 1);
+      if (key.side) a.push(dir + Math.PI / 2, key.side * AMP[r.kind] * r.amp * big);
       a.rate *= key.r ?? 1;
     }
     const chosen = sc.chosen;
@@ -501,7 +544,7 @@ export class Life {
 // --- a flick, as the page will feel it ------------------------------------------
 
 /** Something a soldier says (voice.ts), `at` ms after the flick. */
-export interface Cue { at: number; id: number; say: "eep" | "gasp" | "oh" | "cheer" | "wheee" | "land"; gain: number; len?: number }
+export interface Cue { at: number; id: number; say: "eep" | "gasp" | "oh" | "cheer" | "wheee" | "land" | "phew" | "jab"; gain: number; len?: number }
 
 export interface FlickPlan {
   /** Reactions, with t0 in ms after the flick. */
@@ -512,7 +555,7 @@ export interface FlickPlan {
 }
 
 /** How near the ink must come to make a man flinch (page units, centre to line). */
-export const NEAR = 70;
+export const NEAR = 85;
 
 /**
  * What a flick does to the living, planned the moment it's fired: the
@@ -544,7 +587,9 @@ export function planFlick(
     }
   }
   const ps = passes(s.soldiers, P, shooter, o.killed);
-  let eeps = 0;
+  let eeps = 0, phews = 0;
+  const near = new Set(ps.map((p) => p.id));
+  const twitched = new Set<number>();
   for (const p of ps) {
     const at = when(p.index);
     const x = s.soldiers[p.id];
@@ -553,9 +598,18 @@ export function planFlick(
       act(p.id, { kind: "gasp", t0: at - KEYS.gasp.length * FRAME, dir: p.away, amp: 1 });
       plan.cues.push({ at: at - 170, id: p.id, say: "gasp", gain: 0.8 });
     } else {
-      const amp = Math.max(0.35, 1 - p.d / NEAR) * (x.owner === me.owner ? 0.6 : 1);
-      act(p.id, { kind: "flinch", t0: at - FRAME, dir: p.away, amp });
-      if (p.d < 40 && eeps++ < 3) plan.cues.push({ at: at - FRAME, id: p.id, say: "eep", gain: 0.5 + 0.5 * amp });
+      // generous: a near-ish miss still makes him jump
+      const amp = Math.max(0.4, 1 - Math.pow(p.d / NEAR, 1.6)) * (x.owner === me.owner ? 0.6 : 1);
+      // the ink passes him on his flinch's FLINCH_HIT key
+      act(p.id, { kind: "flinch", t0: at - FLINCH_HIT * FRAME, dir: p.away, amp });
+      if (p.d < 45 && eeps++ < 3) plan.cues.push({ at, id: p.id, say: "eep", gain: 0.5 + 0.5 * amp });
+      if (p.d < 30 && phews++ < 1) plan.cues.push({ at: at + 9 * FRAME, id: p.id, say: "phew", gain: 0.7 });
+      // a close one makes the men right beside him jump too, a beat later
+      if (p.d < 40) for (const c of comrades(s, x.owner, x, 34, x.id)) {
+        if (near.has(c.id) || twitched.has(c.id) || twitched.size >= 8) continue;
+        twitched.add(c.id);
+        act(c.id, { kind: "flinch", t0: at - FLINCH_HIT * FRAME + 2 * FRAME, dir: Math.atan2(c.y - x.y, c.x - x.x), amp: 0.3 });
+      }
     }
   }
   // the fallen: his campmates hold still for him, and one of them says so
@@ -589,5 +643,83 @@ export function planFlick(
     const voices = Math.min(crowd.length, 1 + o.killed.length, 4);
     for (let i = 0; i < voices; i++) plan.cues.push({ at: at0 + i * 70, id: crowd[i].id, say: "cheer", gain: i ? 0.7 / Math.sqrt(voices) : 1 });
   }
+  return plan;
+}
+
+// --- a volley: a camp turning on an intruder ----------------------------------------
+
+/**
+ * A lunger who lands in an enemy camp is shot on the spot by the men inside
+ * (the rules-lab lunge: he "dies at the wall"). Every living defender rounds
+ * on him and jabs a tiny quick line at him, in a fast ripple round the camp;
+ * each jab jolts him; the last one crosses him out; the camp gives a little
+ * cheer. Timings (ms) are from the moment he lands.
+ */
+export const VOLLEY = {
+  /** Between one defender's jab and the next, round the ring. */
+  ripple: 55,
+  /** A jab's line, drawn. */
+  jabMs: 80,
+  /** And how long it glints before it's gone (it's the flick of a pen, not a mark). */
+  fade: 420,
+  /** The cross, drawn. */
+  crossMs: 170,
+};
+
+export interface Jab { id: number; at: number; dur: number; pts: Pt[]; seed: number; owner: Player }
+export interface VolleyPlan {
+  base: number;
+  target: { id: number; x: number; y: number };
+  jabs: Jab[];
+  acts: { id: number; r: Reaction }[];
+  cues: Cue[];
+  /** When his cross starts, and when it's all over. */
+  cross: number;
+  ends: number;
+}
+
+/**
+ * The volley for intruder `target` (where he stands now) in camp `base`, or
+ * null if nobody's home: an empty ring does nothing. Pure.
+ */
+export function planVolley(s: GameState, base: number, target: { id: number; x: number; y: number }): VolleyPlan | null {
+  const b = s.bases[base];
+  if (!b) return null;
+  const home = inBase(s.soldiers.filter((d) => d.alive && d.owner === b.owner && d.id !== target.id), b);
+  if (!home.length) return null;
+  const at = (d: Pt) => Math.atan2(d.y - target.y, d.x - target.x);
+  // the ripple goes round the ring from the man nearest him
+  const first = home.reduce((p, q) => (Math.hypot(q.x - target.x, q.y - target.y) < Math.hypot(p.x - target.x, p.y - target.y) ? q : p));
+  const a0 = at(first), round = (d: Pt) => ((at(d) - a0 + Math.PI * 4) % (Math.PI * 2));
+  const order = [...home].sort((p, q) => round(p) - round(q));
+  const plan: VolleyPlan = { base, target, jabs: [], acts: [], cues: [], cross: 0, ends: 0 };
+  const R = RULES.soldierRadius;
+  order.forEach((d, i) => {
+    const t0 = i * VOLLEY.ripple + unit(d.id, 17) * 20;
+    const dir = Math.atan2(target.y - d.y, target.x - d.x), dist = Math.hypot(target.x - d.x, target.y - d.y);
+    plan.acts.push({ id: d.id, r: { kind: "jab", t0, dir, amp: 1 } });
+    const fire = t0 + JAB_FIRE * FRAME;
+    // a quick short line from him to the intruder, bowed a hair, stopping at his dot
+    const seed = hash(d.id, target.id, 23);
+    const bow = (unit(seed, 1) - 0.5) * 0.12 * dist, nx = -Math.sin(dir), ny = Math.cos(dir);
+    const from = R * 1.1, to = Math.max(from + 4, dist - R * 0.8);
+    const pts = Array.from({ length: 7 }, (_, k) => {
+      const u = k / 6, l = from + (to - from) * u, off = bow * 4 * u * (1 - u);
+      return { x: d.x + Math.cos(dir) * l + nx * off, y: d.y + Math.sin(dir) * l + ny * off };
+    });
+    plan.jabs.push({ id: d.id, at: fire, dur: VOLLEY.jabMs, pts, seed, owner: d.owner });
+    plan.cues.push({ at: fire, id: d.id, say: "jab", gain: 0.7 / Math.sqrt(1 + i * 0.3) });
+    // each one jolts him, away from whoever jabbed
+    plan.acts.push({ id: target.id, r: { kind: "flinch", t0: fire + VOLLEY.jabMs - FLINCH_HIT * FRAME, dir, amp: 0.35 } });
+  });
+  const last = Math.max(...plan.jabs.map((j) => j.at + j.dur));
+  plan.cross = last + 40;
+  // he rears up as they round on him, and is cut off by his cross
+  plan.acts.unshift({ id: target.id, r: { kind: "gasp", t0: 0, dir: Math.atan2(target.y - b.y, target.x - b.x), amp: 1 } });
+  plan.cues.unshift({ at: Math.max(0, plan.cross - 170), id: target.id, say: "gasp", gain: 0.8 });
+  // and the camp's grim little cheer
+  order.slice(0, 5).forEach((d, i) => plan.acts.push({ id: d.id, r: { kind: "cheer", t0: plan.cross + 160 + i * 50, amp: 0.6, n: 1 } }));
+  order.slice(0, 2).forEach((d, i) => plan.cues.push({ at: plan.cross + 200 + i * 80, id: d.id, say: "cheer", gain: 0.5 }));
+  plan.ends = Math.max(plan.cross + VOLLEY.crossMs, last + VOLLEY.fade) + 60;
   return plan;
 }

@@ -4,6 +4,7 @@
 //   flinch   the bot's ink goes right past one of yours: a single tiny tick
 //   unitcam  down at his level: a soft double step
 //   stand    your side is down to its last three: two slow heartbeats
+//   volley   a camp turning on a lunger in it: a rattle of jabs, then the cross
 //
 // feel/haptics (PR #7) brings a semantic vocabulary, haptic("..."), with one
 // global gate and an iPhone backend. This doesn't depend on it: until it
@@ -14,12 +15,12 @@
 //   setFeel((ev) => haptic(TO_HAPTICS[ev] as HapticEvent));
 //
 // "stand" is already in that vocabulary (PR #7 lists it, unwired). "cheer",
-// "flinch" and "unitcam" would be added there, with PATTERNS below as their
-// Android shapes and the iOS tick rhythms in IOS below.
+// "flinch", "unitcam" and "volley" would be added there, with PATTERNS below
+// as their Android shapes and the iOS tick rhythms in IOS below.
 
 import { LIFE } from "./life";
 
-export type Feel = "cheer" | "flinch" | "unitcam" | "stand";
+export type Feel = "cheer" | "flinch" | "unitcam" | "stand" | "volley";
 
 /** navigator.vibrate patterns: on, off, on... (ms). Short and sparse, never a buzz. */
 export const PATTERNS: Record<Feel, number[]> = {
@@ -27,11 +28,12 @@ export const PATTERNS: Record<Feel, number[]> = {
   flinch: [5],
   unitcam: [9, 70, 6],
   stand: [35, 130, 35, 160, 60],
+  volley: [5, 45, 5, 45, 5, 45, 18],
 };
 /** The same moments as iOS switch-tick times (ms from start), for feel/haptics' iPhone backend. */
-export const IOS: Record<Feel, number[]> = { cheer: [0, 90, 180], flinch: [0], unitcam: [0, 90], stand: [0, 160, 340] };
+export const IOS: Record<Feel, number[]> = { cheer: [0, 90, 180], flinch: [0], unitcam: [0, 90], stand: [0, 160, 340], volley: [0, 60, 120, 240] };
 /** Their names in feel/haptics' vocabulary. */
-export const TO_HAPTICS: Record<Feel, string> = { cheer: "cheer", flinch: "flinch", unitcam: "unitcam", stand: "stand" };
+export const TO_HAPTICS: Record<Feel, string> = { cheer: "cheer", flinch: "flinch", unitcam: "unitcam", stand: "stand", volley: "volley" };
 
 /** Nothing within this long of the last thing felt (ms), unless it's a last stand. */
 export const GAP = 120;

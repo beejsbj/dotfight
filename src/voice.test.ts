@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FORMANTS, MAX_VOICES, allowed, phrase, voicePitch, type Say } from "./voice";
 
-const ALL: Say[] = ["hup", "murmur", "eep", "gasp", "oh", "cheer", "wheee", "land", "uhoh", "look"];
+const ALL: Say[] = ["hup", "murmur", "eep", "gasp", "oh", "cheer", "wheee", "land", "uhoh", "look", "phew", "jab"];
 
 describe("voices", () => {
   it("every man has his own pitch, and keeps it", () => {

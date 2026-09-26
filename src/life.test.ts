@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act, newGame, placeBase, preview, type GameState } from "./game";
 import {
-  AMP, FRAME, KEYS, LAST_STAND, LIFE, LIFE_BOX, Life, MOURN, REACH, comrades, inLine, keyAt, lastStand, passes, planFlick, span,
+  AMP, FRAME, KEYS, LAST_STAND, LIFE, LIFE_BOX, Life, MOURN, REACH, comrades, inLine, keyAt, lastStand, passes, planFlick, planVolley, span,
   type Reaction, type Scene,
 } from "./life";
 import { RULES } from "./rules";
@@ -262,5 +262,82 @@ describe("a side's last few", () => {
     const c = comrades(s, me.owner, me, 200, me.id);
     expect(c.every((x) => x.owner === me.owner && x.id !== me.id)).toBe(true);
     for (let i = 1; i < c.length; i++) expect(Math.hypot(c[i].x - me.x, c[i].y - me.y)).toBeGreaterThanOrEqual(Math.hypot(c[i - 1].x - me.x, c[i - 1].y - me.y));
+  });
+});
+
+describe("a flinch, the page's favourite", () => {
+  it("leans away before the ink gets there, jerks as it passes, shakes, and breathes out", () => {
+    const s = setup();
+    const life = new Life();
+    Object.assign(LIFE, { idle: false });
+    life.see(scene(s, { zoom: 2.3 }), 0);
+    life.add(9, { kind: "flinch", t0: 0, dir: 0, amp: 1 });
+    const at = (f: number) => life.pose(9, f * FRAME + 1);
+    expect(at(1).ox).toBeGreaterThan(0); // already leaning away
+    expect(at(2).ox).toBeGreaterThan(at(1).ox * 2); // the jerk
+    expect(at(2).k).toBeLessThan(0.9); // small
+    expect(at(2).rate).toBeGreaterThanOrEqual(3); // heart going
+    const side = [4, 5, 6, 7].map((f) => Math.sign(at(f).oy));
+    expect(new Set(side).size).toBe(2); // shaking side to side
+    expect(at(11).k).toBeGreaterThan(1.03); // a big breath out
+    expect(at(12).rate).toBeLessThan(0.6); // and his heart slows right down
+  });
+
+  it("a close one makes the men right beside him jump too, a beat later and smaller", () => {
+    const s = setup();
+    const me = s.soldiers.find((x) => x.owner === 0 && Math.hypot(x.x - 300, x.y - 1200) < 70)!;
+    const f = { soldierId: me.id, kind: "shoot" as const, angle: -Math.PI / 2 + 0.02, length: 1800, bend: 0 };
+    const o = act(s, f);
+    const plan = planFlick(s, o, me.id, "shoot", (i) => 100 + i * 20, 900);
+    const direct = new Set(passes(s.soldiers, o.path, me.id, o.killed).map((p) => p.id));
+    const sympathy = plan.acts.filter((a) => a.r.kind === "flinch" && !direct.has(a.id));
+    for (const a of sympathy) expect(a.r.amp).toBeLessThan(0.5);
+    expect(plan.cues.filter((c) => c.say === "phew").length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("a volley: a camp turning on an intruder", () => {
+  const camp = (s: GameState) => s.bases.find((b) => b.owner === 1)!;
+
+  it("every man in the camp jabs at him, in a ripple round the ring, and then he's crossed out", () => {
+    const s = setup();
+    const b = camp(s);
+    const intruder = { id: 0, x: b.x + 10, y: b.y - 8 };
+    const v = planVolley(s, b.id, intruder)!;
+    const home = s.soldiers.filter((x) => x.alive && x.owner === 1 && Math.hypot(x.x - b.x, x.y - b.y) <= b.r * 1.05);
+    expect(v.jabs.map((j) => j.id).sort()).toEqual(home.map((x) => x.id).sort());
+    for (let i = 1; i < v.jabs.length; i++) expect(v.jabs[i].at).toBeGreaterThan(v.jabs[i - 1].at);
+    for (const j of v.jabs) {
+      const end = j.pts[j.pts.length - 1];
+      expect(Math.hypot(end.x - intruder.x, end.y - intruder.y)).toBeLessThan(RULES.soldierRadius * 1.5);
+      expect(j.owner).toBe(1);
+    }
+    const last = Math.max(...v.jabs.map((j) => j.at + j.dur));
+    expect(v.cross).toBeGreaterThan(last);
+    expect(v.ends).toBeGreaterThan(v.cross);
+    // quick: the whole camp's volley in well under two seconds
+    expect(v.cross).toBeLessThan(1200);
+    // he's jolted by each jab
+    expect(v.acts.filter((a) => a.id === 0 && a.r.kind === "flinch").length).toBe(home.length);
+  });
+
+  it("an empty ring does nothing", () => {
+    const s = setup();
+    const b = camp(s);
+    for (const x of s.soldiers) if (x.owner === 1 && Math.hypot(x.x - b.x, x.y - b.y) <= b.r * 1.05) x.alive = false;
+    expect(planVolley(s, b.id, { id: 0, x: b.x, y: b.y })).toBeNull();
+  });
+
+  it("each jolt cuts off the last, and once crossed out he's still for good", () => {
+    const s = setup();
+    const life = new Life();
+    Object.assign(LIFE, { idle: false });
+    life.see(scene(s), 0);
+    life.add(0, { kind: "flinch", t0: 0, dir: 0, amp: 1 });
+    life.add(0, { kind: "flinch", t0: 3 * FRAME, dir: Math.PI, amp: 1 });
+    // the second, fresh, pushes the other way
+    expect(life.pose(0, 5 * FRAME + 1).ox).toBeLessThan(0);
+    life.still(0, 1000);
+    expect(life.pose(0, 1200)).toEqual({ ox: 0, oy: 0, k: 1, st: 1, ax: 0, rate: 0 });
   });
 });

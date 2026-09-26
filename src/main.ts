@@ -24,7 +24,7 @@ import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, t
 import { GAME } from "./name";
 import { RULES } from "./rules";
 import { boldAt } from "./boil";
-import { comrades, LIFE, lastStand, planFlick } from "./life";
+import { comrades, LIFE, lastStand, planFlick, planVolley, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
 import { feel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
@@ -91,6 +91,11 @@ let penDrop = -1e9; // when the pen was set down on the selected soldier
 let penLift: { t0: number; x: number; y: number; owner: Player } | null = null; // and when it was picked up off him
 /** The unit cam (unitcam.ts): down at his level for a beat. `back`: where the camera was. */
 let unit: { id: number; t0: number; back: Pose; skip?: number; greeted?: boolean; rising?: boolean } | null = null;
+/**
+ * A volley (life.planVolley): a camp turning on an intruder. `t0`: wall ms he
+ * landed. `stamp`: draw his cross here, when the rules haven't marked him dead.
+ */
+let volley: { plan: VolleyPlan; t0: number; stamp: boolean } | null = null;
 /** The last pull on a man that wasn't let go (he looks down it in the unit cam). */
 let lastPull: { id: number; angle: number } | null = null;
 
@@ -251,6 +256,7 @@ function reset() {
   inkTL.clear();
   sfx.creak(0);
   life.clear();
+  volley = null;
   unit = null;
   penLift = null;
   lastPull = null;
@@ -426,12 +432,29 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   }
   snags.sort((a, b) => a.at - b.at);
   feelFlick(o, f, dur, snags, n);
+  // The lunge rule (rules-lab, not on this branch yet): a lunger who lands in an
+  // enemy camp while anyone's home "dies at the wall", and the engine reports
+  // which camp as `o.crashed`, with his "lost" cross. Its men shoot him on the
+  // spot: the volley starts as he lands, and his cross is held back to land on
+  // the last jab. On this branch `crashed` never comes, so this is dormant;
+  // `pft.volley(base, soldier)` plays the same thing by hand.
+  const crashed = (o as Outcome & { crashed?: number }).crashed;
+  let volleyHold = 0;
+  if (crashed !== undefined && !o.movedTo) {
+    const end = o.path[o.path.length - 1];
+    const lands = wallTime(dur, snags) / speed;
+    const plan = startVolley(crashed, { id: f.soldierId, x: end.x, y: end.y }, wall + lands, false);
+    if (plan) {
+      volleyHold = plan.cross * speed;
+      s.marks.forEach((m, i) => { if (i > first && m.t === "cross" && m.kind === "lost") inkTL.add(`m${i}`, 0, dur + volleyHold, VOLLEY.crossMs * speed); });
+    }
+  }
   const pen = opts.pen ?? true;
   const penTail = pen ? 900 * quick : 0;
   res = {
     f, o, owner: who, power, t0: T, dur, snags, kills, first,
     mover: f.kind === "move" ? f.soldierId : undefined,
-    end: Math.max(dur + penTail, dur + 330 * quick) + 60,
+    end: Math.max(dur + penTail, dur + 330 * quick, dur + volleyHold + VOLLEY.crossMs * speed + 300) + 60,
     stood,
     pen, cam: opts.cam ?? true, startLean: lean, startAngle: f.angle,
     done: () => {
@@ -531,6 +554,31 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
     const x = s.soldiers[c.id];
     voice.say(c.say, c.id, x.owner, c.at / 1000, c.gain, c.len);
   }
+}
+
+/**
+ * A camp turns on an intruder: every living defender jabs a quick line at him
+ * in a ripple round the ring, and he's crossed out. `at`: wall ms he lands.
+ * `stamp`: the rules haven't crossed him out, so draw it (the dev hook; with
+ * the lunge rule the engine's own cross is held back to land on the last jab).
+ * Returns the plan, or null for an empty ring.
+ */
+function startVolley(base: number, target: { id: number; x: number; y: number }, at = wall, stamp = true) {
+  if (!LIFE.crowd) return null;
+  const plan = planVolley(s, base, target);
+  if (!plan) return null;
+  volley = { plan, t0: at, stamp };
+  for (const { id, r } of plan.acts) life.add(id, { ...r, t0: at + r.t0 });
+  if (stamp) life.still(target.id, at + plan.cross);
+  if (LIFE.camps) life.hold(base, at + plan.cross, at + plan.cross + 500);
+  if (heard()) {
+    const lead = Math.max(0, at - wall);
+    for (const c of plan.cues) voice.say(c.say as voice.Say, c.id, s.soldiers[c.id].owner, (lead + c.at) / 1000, c.gain);
+    after(lead * speed, () => feel("volley"));
+    after((lead + plan.cross) * speed, () => { sfx.snag(false); sfx.cross(0.02, 1); });
+  }
+  dirty = true;
+  return plan;
 }
 
 /** After a flick: a side newly down to its last few gets nervous, and says so. */
@@ -1224,6 +1272,7 @@ function frame(now: number) {
   }
   if (res) { stepResolve(); active = true; }
   if (unit) { stepUnitCam(); active = true; }
+  if (volley && wall - volley.t0 < volley.plan.ends) active = true;
   const live = fx.end(T) > T || inkTL.end(0) > 0;
   if (live || wasLive || aim || botAim || lampOn.moving || dawn.moving || T - penDrop < (LIFE.pen ? SETTLE_MS + 240 : 260) || (penLift && T - penLift.t0 < LIFT_MS)) active = true;
   wasLive = live;
@@ -1320,6 +1369,15 @@ function currentFrame(): Frame {
       f.pen.alpha = k;
     }
   }
+  if (volley) {
+    const v = volley, e = wall - v.t0;
+    f.jabs = v.plan.jabs.map((j) => ({
+      pts: j.pts, owner: j.owner, seed: j.seed,
+      p: Math.max(0, Math.min(1, (e - j.at) / j.dur)),
+      alpha: Math.max(0, Math.min(1, 1 - (e - j.at - j.dur) / VOLLEY.fade)),
+    }));
+    if (v.stamp) f.stamp = { x: v.plan.target.x, y: v.plan.target.y, owner: s.bases[v.plan.base].owner, seed: v.plan.target.id * 131 + 5, p: Math.max(0, Math.min(1, (e - v.plan.cross) / VOLLEY.crossMs)) };
+  }
   if (hidePen) f.pen = undefined; // dev: to see the man under it
   // lifted off the man you put down: up and away, not gone in a blink
   if (!f.pen && penLift && screen === "game") {
@@ -1389,7 +1447,9 @@ showBoot();
 if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
-    get selected() { return selected; }, get res() { return res; }, haptics, get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; }, set hidePen(v: boolean) { hidePen = v; dirty = true; },
+    get selected() { return selected; }, get res() { return res; }, haptics, get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; },
+    /** A camp turns on an intruder (the lunge rule's execution, by hand): `pft.volley(baseId, soldierId)`. */
+    volley: (base: number, id: number) => { const x = s.soldiers[id]; return startVolley(base, { id, x: x.x, y: x.y }); }, set hidePen(v: boolean) { hidePen = v; dirty = true; },
     set speed(v: number) { speed = v; }, get speed() { return speed; },
     poke: () => { dirty = true; },
     /**

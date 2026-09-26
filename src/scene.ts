@@ -13,7 +13,7 @@
 
 import { BoilLayer, planBoil, type Plan } from "./boil";
 import type { GameState, Pt } from "./game";
-import { INK, handText, pencilArrow, pencilLine, pencilLoop } from "./ink";
+import { INK, handText, inkCross, inkFlick, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { Life } from "./life";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
@@ -55,6 +55,9 @@ export interface Frame {
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] };
   teach?: { kind: "aim" | "place"; at: Pt; p: number; rot: number };
   sig?: Signature;
+  /** A volley (life.ts): the defenders' jabs, drawn on and glinting away, and the intruder's cross if the rules haven't drawn one. */
+  jabs?: { pts: Pt[]; p: number; alpha: number; owner: 0 | 1; seed: number }[];
+  stamp?: { x: number; y: number; owner: 0 | 1; seed: number; p: number };
   /** The line boil: whether the living boil at all, wall time (ms) for its frame, and how bold (boil.ts boldAt). */
   boil?: { on: boolean; ms: number; bold: number };
 }
@@ -221,6 +224,16 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     drawDot(g, s.soldiers[f.mover.id], 1, 1, at);
     g.restore();
     box.add(at.x, at.y, 12 * stretch);
+  }
+  for (const j of f.jabs ?? []) {
+    if (j.p <= 0 || j.alpha <= 0) continue;
+    inkFlick(g, j.pts, INK.pens[j.owner], j.seed, RULES.inkWidth * 0.6, j.p, j.alpha);
+    for (const q of j.pts) box.add(q.x, q.y, 6);
+  }
+  if (f.stamp && f.stamp.p > 0) {
+    const t = f.stamp;
+    inkCross(g, t.x, t.y, RULES.soldierRadius * 2.1, INK.pens[t.owner], t.seed, 2.8, 1, t.p);
+    box.add(t.x, t.y, RULES.soldierRadius * 3.2);
   }
   if (f.sig && !page.isSigned && ink.live.has("sign")) {
     drawSignature(g, f.sig, ink.p("sign"));

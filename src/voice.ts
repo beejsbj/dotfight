@@ -23,7 +23,9 @@ export type Say =
   | "wheee" // riding his ink on a move
   | "land" // arriving
   | "uhoh" // his side's down to its last few
-  | "look"; // the unit cam: "hm?"
+  | "look" // the unit cam: "hm?"
+  | "phew" // the ink missed him: a breath out
+  | "jab"; // a defender jabbing an intruder: "ta!"
 
 export type Vowel = "a" | "e" | "i" | "o" | "u";
 
@@ -103,6 +105,11 @@ export function phrase(what: Say, pitch: number, seed: number, len = 0.6): Sylla
     }
     case "wheee": return [{ at: 0, dur: Math.max(0.25, Math.min(1, len)), f0: p * 1.35, f1: p * 1.9, vowel: "i", gain: 0.75, tick: true, vib: 7 }];
     case "land": return [{ at: 0, dur: 0.07, f0: p * 1.05, f1: p * 0.82, vowel: pick(9, ["u", "o"]), gain: 0.7, tick: true }];
+    case "phew": return [
+      { at: 0, dur: 0.07, f0: p * 1.3, f1: p * 1.25, vowel: "i", gain: 0.45 },
+      { at: 0.1, dur: 0.3, f0: p * 1.12, f1: p * 0.72, vowel: pick(12, ["u", "o"]), gain: 0.6 },
+    ];
+    case "jab": return [{ at: 0, dur: 0.045, f0: p * (1.25 + r(13) * 0.2), f1: p * 1.05, vowel: pick(14, ["a", "e"]), gain: 0.6, tick: true }];
     case "uhoh": return [
       { at: 0, dur: 0.1, f0: p * 1.2, f1: p * 1.25, vowel: "u", gain: 0.7 },
       { at: 0.17, dur: 0.2, f0: p * 0.98, f1: p * 0.8, vowel: "o", gain: 0.7, vib: 5 },
@@ -139,7 +146,7 @@ export function allowed(now: number, busy: number[], last: number | undefined, g
   if (last !== undefined && now - last < gap) return false;
   return busy.filter((t) => t > now).length < MAX_VOICES;
 }
-const GAP: Record<Say, number> = { hup: 0.15, look: 0.3, murmur: 0.25, eep: 0.05, gasp: 0.02, oh: 0.3, cheer: 0.03, wheee: 0.3, land: 0.2, uhoh: 1 };
+const GAP: Record<Say, number> = { phew: 0.5, jab: 0.03, hup: 0.15, look: 0.3, murmur: 0.25, eep: 0.05, gasp: 0.02, oh: 0.3, cheer: 0.03, wheee: 0.3, land: 0.2, uhoh: 1 };
 
 /**
  * Soldier `id` (of side `owner`) says `what`, `delay` seconds from now,

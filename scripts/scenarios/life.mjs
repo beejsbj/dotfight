@@ -169,6 +169,52 @@ export default async function (T, out) {
       await seq("last-stand", 24, 1000 / 12, { "last-stand": await box(pick, 90) });
     } else console.log("no last stand on this page");
   }
+  // --- the flinch: a shot that just misses a camp, close ---------------------------
+  if (want("flinch")) {
+    await war(7, 12);
+    const camp = await fullest("theirs");
+    const me = await page.evaluate((b) => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))[0]; }, camp);
+    // aim to graze just outside the ring: the near side of the camp flinches, nobody's hit
+    const d = Math.hypot(camp.x - me.x, camp.y - me.y), nx = -(camp.y - me.y) / d, ny = (camp.x - me.x) / d;
+    const aimAt = { x: camp.x + nx * (camp.r + 16), y: camp.y + ny * (camp.r + 16) };
+    const rot = await page.evaluate(() => window.pft.cam.cur.rot);
+    const hold = async () => page.evaluate(({ at, rot }) => { const c = window.pft.cam; c.tgt = { ...c.tgt, rot }; c.sit(at, 3.4, 0, 0.5); c.snap(); window.pft.poke(); }, { at: camp, rot });
+    await hold();
+    await step(0, 150);
+    const clip = await box(camp, 110);
+    await seq("flinch", 56, 1000 / 24, { flinch: clip }, async (i) => {
+      if (i === 2) {
+        const killed = await page.evaluate(({ me, a }) => { const o = window.pft.act({ soldierId: me.id, kind: "shoot", angle: Math.atan2(a.y - me.y, a.x - me.x), length: 1800, bend: 0 }); return window.pft.res?.o.killed.length; }, { me, a: aimAt });
+        console.log("flinch shot, killed:", killed);
+      }
+      await hold();
+    });
+  }
+
+  // --- a volley: your man lands in their camp, and they turn on him ------------------
+  if (want("volley")) {
+    await war(7, 12);
+    const camp = await fullest("theirs");
+    const me = await page.evaluate((b) => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y))[0]; }, camp);
+    const rot = await page.evaluate(() => window.pft.cam.cur.rot);
+    // aim at a gap: the middle of the camp, nudged toward where it's emptiest
+    const to = { x: camp.x + 6, y: camp.y + 6 };
+    const hold = async () => page.evaluate(({ at, rot }) => { const c = window.pft.cam; c.tgt = { ...c.tgt, rot }; c.sit(at, 3.4, 0, 0.5); c.snap(); window.pft.poke(); }, { at: camp, rot });
+    await hold();
+    await step(0, 150);
+    const clip = await box(camp, 110);
+    let landed = false;
+    await seq("volley", 70, 1000 / 24, { volley: clip }, async (i) => {
+      if (i === 2) await page.evaluate(({ me, to }) => window.pft.act({ soldierId: me.id, kind: "move", angle: Math.atan2(to.y - me.y, to.x - me.x), length: Math.hypot(to.x - me.x, to.y - me.y), bend: 0 }), { me, to });
+      if (i > 2 && !landed && await page.evaluate(() => !window.pft.res?.f || window.pft.res.o.movedTo && window.pft.res.dur <= (window.pft.T - window.pft.res.t0))) {
+        landed = true;
+        const v = await page.evaluate(({ b, id }) => window.pft.volley(b, id), { b: camp.id, id: me.id });
+        console.log("volley:", v ? `${v.jabs.length} jabs, cross at ${Math.round(v.cross)}ms` : "empty ring");
+      }
+      await hold();
+    });
+  }
+
   // --- the unit cam ---------------------------------------------------------------
   if (want("unit-cam")) {
     await war(7, 12);
