@@ -154,6 +154,30 @@ export default async function (T, out) {
       await seq("last-stand", 24, 1000 / 12, { "last-stand": await box({ x: cx, y: cy }, 140) });
     } else console.log("no last stand on this page");
   }
+  // --- voices, rendered offline to WAV (to listen to: headless Chrome has no ears) ---
+  if (want("voices")) {
+    const fs = await import("node:fs");
+    fs.mkdirSync(`${out}/voices`, { recursive: true });
+    const wav = async (name, lines) => {
+      const r = await page.evaluate((lines) => window.pft.voiceWav(lines), lines);
+      fs.writeFileSync(`${out}/voices/${name}.wav`, Buffer.from(r.wav, "base64"));
+      console.log(`voice ${name.padEnd(14)} ${r.secs.toFixed(2)}s peak ${r.peak.toFixed(3)}`);
+    };
+    for (const what of ["hup", "murmur", "eep", "gasp", "oh", "cheer", "wheee", "land", "uhoh", "look"]) {
+      await wav(what, [0, 1, 2].map((k) => ({ what, id: 3 + k * 11, owner: (k % 2), at: k * 0.9, len: 0.6 })));
+    }
+    // a whole kill, voiced as the game would: picked up, a campmate mutters; the ink goes;
+    // a man in the line gasps (cut off by his cross), one beside him squeaks;
+    // the shooter's camp cheers; one of the fallen man's camp sighs
+    await wav("a-kill", [
+      { what: "hup", id: 4, owner: 0, at: 0 }, { what: "murmur", id: 6, owner: 0, at: 0.3, gain: 0.8 },
+      { what: "gasp", id: 33, owner: 1, at: 1.35, gain: 0.8 }, { what: "eep", id: 35, owner: 1, at: 1.42, gain: 0.8 },
+      { what: "cheer", id: 4, owner: 0, at: 1.75 }, { what: "cheer", id: 6, owner: 0, at: 1.82, gain: 0.4 },
+      { what: "cheer", id: 9, owner: 0, at: 1.89, gain: 0.4 }, { what: "oh", id: 37, owner: 1, at: 2.3, gain: 0.8 },
+    ]);
+    await wav("a-move", [{ what: "hup", id: 12, owner: 1, at: 0 }, { what: "wheee", id: 12, owner: 1, at: 0.7, len: 0.7, gain: 0.8 }, { what: "land", id: 12, owner: 1, at: 1.45, gain: 0.7 }]);
+    await wav("last-stand", [{ what: "uhoh", id: 21, owner: 1, at: 0, gain: 0.8 }]);
+  }
   await page.evaluate(() => window.pft.hand(false));
 }
 

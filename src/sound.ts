@@ -4,7 +4,7 @@
 let ac: AudioContext | null = null;
 let noise: AudioBuffer | null = null;
 let out: GainNode | null = null;
-export let muted = localStorage.getItem("pft:muted") === "1";
+export let muted = typeof localStorage !== "undefined" && localStorage.getItem("pft:muted") === "1";
 
 export function setMuted(m: boolean) {
   muted = m;
@@ -30,6 +30,11 @@ export function unlock() {
 }
 
 const ready = () => !muted && ac && noise && out;
+
+/** The room's audio, for other voices to play into (voice.ts): only once unlocked by a touch, and not muted. */
+export function bus() {
+  return ready() ? { ac: ac!, out: out!, noise: noise! } : null;
+}
 
 // Filtered noise shaped like a stroke: fast attack, decays as the pen lifts.
 export function scratch(dur: number, gain = 0.5, pitch = 2600, delay = 0, q = 0.9) {

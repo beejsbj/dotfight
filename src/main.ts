@@ -24,7 +24,8 @@ import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, t
 import { GAME } from "./name";
 import { RULES } from "./rules";
 import { boldAt } from "./boil";
-import { LIFE, lastStand, planFlick } from "./life";
+import { comrades, LIFE, lastStand, planFlick } from "./life";
+import * as voice from "./voice";
 import { boil, boilTick, forgetDrawn, life, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { Timeline, reachFraction } from "./timeline";
@@ -439,9 +440,16 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
 
 // --- the living feel it (life.ts, voice.ts) --------------------------------------
 
-/** A soldier picked up: he perks up. */
+const heard = () => screen === "game"; // replays are watched in silence
+
+/** A soldier picked up: he perks up and says so; a campmate mutters. */
 function pickUp(id: number) {
+  const x = s.soldiers[id];
   if (LIFE.chosen) life.add(id, { kind: "perk", t0: wall, amp: 1 });
+  if (!heard()) return;
+  voice.say("hup", id, x.owner, 0.03);
+  const mate = comrades(s, x.owner, x, RULES.baseRadius * 1.6, id)[0];
+  if (mate) voice.say("murmur", mate.id, x.owner, 0.32, 0.8);
 }
 
 /**
@@ -456,12 +464,19 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   const on = (k: string) => (k === "recoil" || k === "flinch" || k === "gasp" ? LIFE.line : k === "land" ? LIFE.chosen : LIFE.crowd);
   for (const { id, r } of plan.acts) if (on(r.kind)) life.add(id, { ...r, t0: wall + r.t0 });
   if (LIFE.camps) for (const h of plan.hush) life.hold(h.base, wall + h.at, wall + h.at + h.ms);
+  if (!heard()) return;
+  for (const c of plan.cues) {
+    const x = s.soldiers[c.id];
+    voice.say(c.say, c.id, x.owner, c.at / 1000, c.gain, c.len);
+  }
 }
 
-/** After a flick: a side newly down to its last few gets nervous. */
+/** After a flick: a side newly down to its last few gets nervous, and says so. */
 function lastStandBegins(r: Resolve) {
   for (const p of [0, 1] as Player[]) {
     if (r.stood[p] || !lastStand(s, p)) continue;
+    const few = alive(s, p);
+    if (heard() && few[0]) voice.say("uhoh", few[0].id, p, 0.15, 0.8);
   }
 }
 
@@ -659,6 +674,7 @@ function showSettings() {
     ${row("handoff", settings.handoff, "pause between turns", "pass & play: tap before the next go")}
     ${row("sound", !sfx.muted, "sound", "pen, paper, lamp")}
     ${haptics.supported ? row("haptics", haptics.enabled, "haptics", "the pen felt under your thumb") : ""}
+    ${row("voices", voice.level > 0, `voices: ${voice.levelName()}`, "the soldiers' little voices")}
     <button class="act" data-a="back">done</button>`);
   card.onclick = (e) => {
     const b = (e.target as HTMLElement).closest("button");
@@ -667,6 +683,12 @@ function showSettings() {
     const k = b.dataset.set;
     if (k === "sound") sfx.setMuted(!sfx.muted);
     else if (k === "haptics") { haptics.setEnabled(!haptics.enabled); haptic("tap"); }
+    else if (k === "voices") {
+      // on, soft, off
+      voice.setLevel(voice.level >= 1 ? 0.5 : voice.level > 0 ? 0 : 1);
+      const mine = alive(s, s.current)[0] ?? s.soldiers[0];
+      if (mine) voice.say("hup", mine.id, mine.owner, 0.05);
+    }
     else if (k === "tilt" || k === "handoff") {
       settings[k] = !settings[k];
       localStorage.setItem(`pft:${k}`, settings[k] ? "1" : "0");
@@ -1317,7 +1339,21 @@ if (import.meta.env.DEV) {
     /** Frame-exact captures: `pft.hand(true)`, then `pft.step(ms)` moves the game and the boil on together. */
     hand: (on: boolean) => { handClock = on ? { due: 0 } : null; if (on) boilClock ??= wall; else boilClock = undefined; },
     step: (ms: number) => { if (!handClock) return; handClock.due += ms; boilClock = (boilClock ?? wall) + ms; },
-    get wall() { return wall; },
+    say: voice.say, voice, get wall() { return wall; },
+    /** Voices rendered offline, as 16-bit mono WAV bytes (base64), for listening outside the game. */
+    voiceWav: async (lines: Parameters<typeof voice.renderLines>[0]) => {
+      const pcm = await voice.renderLines(lines);
+      const b = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+      const str = (o: number, s: string) => [...s].forEach((c, i) => b.setUint8(o + i, c.charCodeAt(0)));
+      str(0, "RIFF"); b.setUint32(4, 36 + pcm.length * 2, true); str(8, "WAVEfmt "); b.setUint32(16, 16, true);
+      b.setUint16(20, 1, true); b.setUint16(22, 1, true); b.setUint32(24, 44100, true); b.setUint32(28, 88200, true);
+      b.setUint16(32, 2, true); b.setUint16(34, 16, true); str(36, "data"); b.setUint32(40, pcm.length * 2, true);
+      let peak = 0;
+      pcm.forEach((v, i) => { peak = Math.max(peak, Math.abs(v)); b.setInt16(44 + i * 2, Math.max(-1, Math.min(1, v)) * 32767, true); });
+      let bin = "";
+      new Uint8Array(b.buffer).forEach((x) => (bin += String.fromCharCode(x)));
+      return { wav: btoa(bin), peak, secs: pcm.length / 44100 };
+    },
     cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
     get slow() { return slow; }, set slow(v: boolean) { slow = v; cam.quick = v ? 1.8 : 1; probeSlow = v; },
     start, showTitle, replay: () => replay(file(s, mode)), apply: (st: Step) => { apply(s, st); dirty = true; },
