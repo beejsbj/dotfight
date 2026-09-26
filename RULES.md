@@ -1,6 +1,6 @@
 # Rules
 
-_Margin Front (working title, it may still change; the repo and site are still pen-flick-tactics). Consolidated 2026-09-26 from Burooj's decisions and two rounds of the rules lab. The same rules, with drawings, are in two books: [Core rules](https://pen-flick-tactics.vercel.app/rules) ([rules.html](rules.html)) and [Advanced rules](https://pen-flick-tactics.vercel.app/rules/advanced) ([rules/advanced.html](rules/advanced.html))._
+_Dotfight. Consolidated 2026-09-26 from Burooj's decisions and two rounds of the rules lab. The same rules, with drawings, are in two books: [Core rules](https://dotfight.vercel.app/rules) ([rules.html](rules.html)) and [Advanced rules](https://dotfight.vercel.app/rules/advanced) ([rules/advanced.html](rules/advanced.html))._
 
 This is Dawood's game. He made it up at school, and he and Burooj played it in grades 5 and 6 with ballpoint pens on the back pages of their exercise books. Nobody wrote the rules down. What follows is the game remembered, argued over and rebuilt.
 
@@ -175,5 +175,5 @@ What Dawood confirmed on 2026-09-25: 5 bases of 10 soldiers; no new soldiers, ev
 
 ## The lab reports
 
-- Round 1: 32,000 simulated games, five rule sets ([report](https://github.com/beejsbj/pen-flick-tactics/blob/rules/lab/docs/rules-lab/report.md), [PR #3](https://github.com/beejsbj/pen-flick-tactics/pull/3)).
-- Round 2: lunge and snipe, walking sends, rings, positioning, pen physics, billiards ([report](https://github.com/beejsbj/pen-flick-tactics/blob/rules/lab-2/docs/rules-lab/round-2.md), [PR #4](https://github.com/beejsbj/pen-flick-tactics/pull/4)).
+- Round 1: 32,000 simulated games, five rule sets ([report](https://github.com/beejsbj/dotfight/blob/rules/lab/docs/rules-lab/report.md), [PR #3](https://github.com/beejsbj/dotfight/pull/3)).
+- Round 2: lunge and snipe, walking sends, rings, positioning, pen physics, billiards ([report](https://github.com/beejsbj/dotfight/blob/rules/lab-2/docs/rules-lab/round-2.md), [PR #4](https://github.com/beejsbj/dotfight/pull/4)).
