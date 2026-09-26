@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0706" />
+    <title>Advanced rules · %GAME_NAME%</title>
+    <meta name="description" content="Book 2 of Dawood's pen-and-paper flick war: the long war, with bases that have shapes, grooves and jolts, ink that becomes cover, and bigger armies." />
+    <link rel="canonical" href="https://pen-flick-tactics.vercel.app/rules/advanced" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="%GAME_NAME%" />
+    <meta property="og:url" content="https://pen-flick-tactics.vercel.app/rules/advanced" />
+    <meta property="og:title" content="Advanced rules · %GAME_NAME%" />
+    <meta property="og:description" content="Book 2: the long war. Camps that bend lines round them, prisms, billiard cushions, grooves, jolts and ink cover." />
+    <meta property="og:image" content="https://pen-flick-tactics.vercel.app/og-rules-advanced.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A second hand-written rulebook on the desk, with a drawing of ink lines bending hard round a full camp and barely round a thinned one." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Advanced rules · %GAME_NAME%" />
+    <meta name="twitter:description" content="Book 2: the long war." />
+    <meta name="twitter:image" content="https://pen-flick-tactics.vercel.app/og-rules-advanced.jpg" />
+    <script>
+      if (/[?&]og\b/.test(location.search)) document.documentElement.classList.add("og");
+    </script>
+  </head>
+  <body class="book-2">
+    <div class="lamp" aria-hidden="true"></div>
+    <div class="dark" aria-hidden="true"></div>
+
+    <a class="back" href="/" aria-label="Back to the game">← play</a>
+
+    <header class="book">
+      <div class="label">
+        <p class="school">EXERCISE BOOK · SQUARED</p>
+        <h1>%GAME_NAME_HTML%</h1>
+        <p class="field"><span>Name</span><b>Dawood &amp; Burooj</b></p>
+        <p class="field"><span>Subject</span><b>Advanced Rules</b></p>
+        <p class="field"><span>Class</span><b>the long war</b></p>
+        <p class="vol" aria-label="Book 2">2</p>
+      </div>
+      <nav class="slip" aria-label="Contents">
+        <p class="slip-title">contents</p>
+        <ol class="one-col">
+          <li><a href="#long-war">Long war</a></li>
+          <li><a href="#send">Sends</a></li>
+          <li><a href="#ink">Ink on the page</a></li>
+          <li><a href="#cover">Ink as cover</a></li>
+          <li><a href="#shapes">Shaped bases</a></li>
+          <li><a href="#soldiers">Shaped soldiers</a></li>
+          <li><a href="#open">Still to test</a></li>
+        </ol>
+        <a class="other-book" href="/rules">← Book 1: core rules</a>
+      </nav>
+    </header>
+
+    <main>
+      <!-- page 1 -->
+      <article class="sheet" style="--tilt: 0.45deg">
+        <p class="head"><span>Page No. <b>1</b></span><span>Date <b>26 · 9 · 26</b></span></p>
+
+        <section id="intro" class="origin">
+          <p>Book 2 is for players who like long games. Everything in the core rules still holds; the long war adds a page that fights back, and bases with shapes.</p>
+          <p class="aside">Read <a href="/rules">book 1, the core rules</a>, first. Nothing here is played yet, and most of it is still to test.</p>
+        </section>
+
+        <section id="long-war" class="rule" data-no="1">
+          <h2>Long war</h2>
+          <ul class="points">
+            <li><strong>Shaped bases</strong>: camps, prisms and cushions, each with its own walls (see 5).</li>
+            <li><strong>Full pen physics</strong>: grooves, jolts, wall friction and ink cover (see 3 and 4).</li>
+            <li><strong>Longer roads</strong>: sends walk for several turns (see 2).</li>
+            <li><strong>Bigger armies</strong> than a Classic battle. <i class="tag">to test</i></li>
+          </ul>
+        </section>
+
+        <section id="send" class="rule" data-no="2">
+          <h2>Sends</h2>
+          <p>In a quick battle a convoy is on the road for one enemy turn. In the long war it walks for <strong>several turns</strong>, and you watch it walk in real time during each turn; it's exposed the whole way. <i class="tag">to test</i> <span class="lab">lab: 150 units a turn, so a road takes two to four turns</span> Still up to 5 at a time, and still once a turn.</p>
+          <figure>
+            <canvas data-fig="send-long" role="img" aria-label="Three blue soldiers walk a dashed pencil road between two blue bases, a hop each turn; a red line crosses the road and crosses one of them out."></canvas>
+            <figcaption>fig. 1 · three turns on the road</figcaption>
+          </figure>
+        </section>
+
+        <section id="ink" class="rule" data-no="3">
+          <h2>Ink on the page</h2>
+          <p>A page that's been fought over isn't blank any more, and the pen feels it.</p>
+          <ul class="points">
+            <li>Cross an old line and your hand <strong>jolts</strong>, slightly.</li>
+            <li><strong>The angle decides.</strong> Meet a line at a shallow angle and the pen drops into its groove and is carried along it, like gravity. Meet it steeply and it jolts.</li>
+            <li>Your own grooves carry you further. Enemy grooves cut you short. <i class="tag">to test</i></li>
+          </ul>
+          <figure>
+            <canvas data-fig="groove" role="img" aria-label="An old blue line across the page. A new line meeting it at a shallow angle is pulled into it and runs along it; another crossing it steeply jolts and changes direction."></canvas>
+            <figcaption>fig. 2 · a groove pull and a jolt</figcaption>
+          </figure>
+        </section>
+
+        <section id="cover" class="rule" data-no="4">
+          <h2>Ink as cover</h2>
+          <p>Every line in a war runs at somebody's base, so ink piles up round the bases and becomes <strong>natural cover</strong>. That's on purpose: bases get safer as the page fills. <i class="tag">strengths to test</i></p>
+          <figure>
+            <canvas data-fig="cover" role="img" aria-label="A red base ringed by old lines in both colours. A new blue line runs at it, jolting at every old line it crosses, and runs out before the wall."></canvas>
+            <figcaption>fig. 3 · a base behind its own war</figcaption>
+          </figure>
+        </section>
+      </article>
+
+      <!-- page 2 -->
+      <article class="sheet" style="--tilt: -0.4deg">
+        <p class="head"><span>Page No. <b>2</b></span><span>Date <b>26 · 9 · 26</b></span></p>
+
+        <section id="shapes" class="rule" data-no="5">
+          <h2>Shaped bases</h2>
+          <p>Each shape's walls have their own friction, and each shape does one thing to lines that come near it.</p>
+
+          <section id="circle" class="sub">
+            <h3><canvas class="icon" data-shape="circle" aria-hidden="true"></canvas>Circle, the <em>camp</em></h3>
+            <p>A <strong>gravity well</strong>. Lines passing near it, anyone's, yours too, bend round it, so you can curve a shot round a camp or through a gap. Its walls are soft, and it holds the most soldiers <span class="lab">lab: 12, against 8 and 6</span>.</p>
+            <p><strong>Its pull is its garrison.</strong> The more soldiers inside, the harder it bends: a full camp bends lines hard, and as it's shot down the well weakens. Even an empty ring keeps a faint pull, the dent of the pen in the paper, and a send arriving strengthens it again. <i class="tag">to test</i></p>
+            <figure>
+              <canvas data-fig="well" role="img" aria-label="Two red camps. A blue line passing a full camp bends hard round it; the same line passing a camp with most of its soldiers crossed out barely bends."></canvas>
+              <figcaption>fig. 4 · a full camp and a thinned one</figcaption>
+            </figure>
+          </section>
+
+          <section id="prism" class="sub">
+            <h3><canvas class="icon" data-shape="triangle" aria-hidden="true"></canvas>Triangle, the <em>prism</em></h3>
+            <p>Your lines passing out through it <strong>split in two</strong>, so place it in front of your other bases. A lunger doesn't split: he's one body.</p>
+            <figure>
+              <canvas data-fig="prism" role="img" aria-label="A blue line from a camp passes through a blue triangle in front of it and splits in two as it leaves, each half crossing out a red soldier."></canvas>
+              <figcaption>fig. 5 · a prism in front of its camp</figcaption>
+            </figure>
+          </section>
+
+          <section id="cushion" class="sub">
+            <h3><canvas class="icon" data-shape="hexagon" aria-hidden="true"></canvas>Hexagon, the <em>cushion</em></h3>
+            <p><strong>Billiards.</strong> Its walls bank everyone's lines, yours too, by angle. Only a glancing line bounces <span class="lab">lab: more than 34° off square</span>; a straight one goes in.</p>
+            <figure>
+              <canvas data-fig="cushion" role="img" aria-label="A red hexagon. A blue line glancing off its top face bounces away; another coming in nearly square goes through the wall and crosses out a red soldier inside."></canvas>
+              <figcaption>fig. 6 · a glance banks; a straight line goes in</figcaption>
+            </figure>
+          </section>
+
+          <section id="square" class="sub">
+            <h3><canvas class="icon" data-shape="square" aria-hidden="true"></canvas><canvas class="icon" data-shape="pentagon" aria-hidden="true"></canvas>Square and pentagon</h3>
+            <p><strong>Square, the eraser.</strong> A loose block on the page: lines that hit its walls shove it along, and as it slides it rubs out the ink beneath it, grooves and cover included. Shove it to clear a path, or into the ink round their camp. <i class="tag">idea</i></p>
+            <p><strong>Pentagon.</strong> <i class="tag">being designed</i></p>
+          </section>
+        </section>
+
+        <section id="soldiers" class="rule" data-no="6">
+          <h2>Shaped soldiers</h2>
+          <p>Soldiers are drawn in their base's shape: dots in a camp, little triangles in a prism, little hexagons in a cushion. For now it's only a look.</p>
+          <figure>
+            <canvas data-fig="soldiers" role="img" aria-label="Three blue bases, a circle, a triangle and a hexagon, each jotted full of soldiers drawn in its own shape."></canvas>
+            <figcaption>fig. 7 · every base's men in its shape</figcaption>
+          </figure>
+          <p>Their shape's power might wake up only in a last stand. <i class="tag">idea</i></p>
+        </section>
+
+        <section id="open" class="rule" data-no="7">
+          <h2>Still to test</h2>
+          <ul class="open">
+            <li><b>Jolts and grooves</b>: how hard they shake and pull. Friendly ink carrying you and enemy ink slowing you was the least fair thing the lab tried (62% to whoever shot first).</li>
+            <li><b>Ink cover</b> round bases. Intended, but the lab's version stalled games.</li>
+            <li><b>The circle as a well</b>: how hard a full camp bends a line, how far out, and how fast it weakens as the camp is shot down.</li>
+            <li><b>Long-war sends</b>: the pace, and how long a road should be.</li>
+            <li><b>Shape sizes</b> (12, 6, 8) and the glance angle.</li>
+            <li><b>Bigger armies</b>: how big.</li>
+            <li><b>Length</b>: the lab's pen-physics war ran about 81 turns. For people who like long games, is that long enough, or too long?</li>
+          </ul>
+        </section>
+
+        <footer class="sign">
+          <p class="signed">The long war.</p>
+          <p class="links">
+            <a href="/rules">← book 1: core rules</a>
+            <a href="/">→ play it</a>
+            <a href="https://github.com/beejsbj/pen-flick-tactics/blob/main/RULES.md#advanced-rules-long-war">→ the rules as plain text</a>
+          </p>
+        </footer>
+      </article>
+    </main>
+
+    <div id="og" aria-hidden="true">
+      <div class="scrap">
+        <canvas data-fig="well" data-still></canvas>
+        <p>book 2: the long war</p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/rulebook/main.ts"></script>
+  </body>
+</html>
