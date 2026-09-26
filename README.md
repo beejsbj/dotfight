@@ -19,7 +19,7 @@ npm run rules-art -- http://localhost:5173/ --og   # screenshots of both ruleboo
 node scripts/playtest.mjs <scenario> http://localhost:5173/ /tmp/out   # scripted phone playtests
 ```
 
-Open the exercise book and pick an opponent. Take turns drawing camps. On your turn, touch one of your soldiers (or anywhere in one of your camps): you lean in low over him and the pen stands on his dot; distant camps fade into haze. Pull back from anywhere on the screen and let go, and the view pulls straight back up to bird's-eye to watch the ink land. **Move** or **shoot** is chosen on the two cards at the bottom. Tap empty paper or **page** to stand back up; pinch to zoom. In pass and play the sheet turns round on the desk to face whoever's go it is. A finished page is signed, filed in the drawer, and can be replayed or saved as an image.
+Open the exercise book and pick an opponent. Take turns drawing camps. On your turn, touch one of your soldiers (or anywhere in one of your camps): you lean in low over him and the pen stands on his dot; distant camps fade into haze. Pull back from anywhere on the screen and let go, and the view pulls straight back up to bird's-eye to watch the ink land. **Move** or **shoot** is chosen on the two cards at the bottom. Tap empty paper or **page** to stand back up; pinch to zoom. What is alive (soldiers still standing, camps still manned) is being drawn over and over, the stop-motion "line boil" of hand-drawn animation; the dead and the ink lines are dry and still. In pass and play the sheet turns round on the desk to face whoever's go it is. A finished page is signed, filed in the drawer, and can be replayed or saved as an image.
 
 ## Shape
 
@@ -32,7 +32,8 @@ Open the exercise book and pick an opponent. Take turns drawing camps. On your t
 - `src/inkclock.ts`: ink time, which snags for a beat on every soldier it crosses (pure, tested)
 - `src/camera.ts`: the eye at the desk: bird's-eye by default, leaning in to aim, turning the page
 - `src/light.ts`: the lamp, the fog while aiming, and the dawn (painted at quarter resolution and stretched)
-- `src/page.ts`: the sheet as an append-only page-space canvas: every mark and every dot a soldier ever stood on is ink, drawn once
+- `src/page.ts`: the sheet as an append-only page-space canvas: every mark and every dot a soldier ever stood on is ink, drawn once (what boils is held off it until it stops)
+- `src/boil.ts`: the line boil: which side boils (`BOILS`, "living" by default), 3 drawings per thing cycled at 8 fps, who counts as alive, and the small page-space layer of cached sprites they boil on. Off with reduced motion, on slow phones, or if its ticks run over budget
 - `src/scene.ts`: one frame: the desk and page are placed by CSS `matrix3d` (never repainted for the camera); only ink still being drawn, pencil and the pen are drawn per frame
 - `src/pen.ts`: the clear hexagonal ballpoint, in 3D projection, and its lamp shadow
 - `src/ink.ts`: ballpoint and pencil drawing primitives (seeded, so the page redraws identically)
@@ -42,7 +43,7 @@ Open the exercise book and pick an opponent. Take turns drawing camps. On your t
 - `src/main.ts`: turn flow, input, HUD, the cover, cards, drawer and replay
 - `rules.html`, `rules/advanced.html`, `src/rulebook/`: the two rulebooks; `figures.ts` draws each mechanic with the game's ink
 
-In dev builds, `window.pft` exposes the game state, camera, timelines, a speed knob (`pft.speed`), a frame-time probe (`pft.frames()`), `renderNow`, `pageCanvas`, and helpers that file, resume and replay seeded bot-v-bot wars. `scripts/scenarios/` has the playtests used to build this: `first`, `pnp` (a whole war to the drawer), `tour` (first-time notes, bot turn; run with `TAUGHT=0`), `sizes` (set `W`, `H`, `DPR`), `fog` (the lean-in), `perf` (main-thread cost per frame on a late-war page; `THROTTLE=6`).
+In dev builds, `window.pft` exposes the game state, camera, timelines, a speed knob (`pft.speed`), a frame-time probe (`pft.frames()`), `renderNow`, `pageCanvas`, and helpers that file, resume and replay seeded bot-v-bot wars. `scripts/scenarios/` has the playtests used to build this: `first`, `pnp` (a whole war to the drawer), `tour` (first-time notes, bot turn; run with `TAUGHT=0`), `sizes` (set `W`, `H`, `DPR`), `fog` (the lean-in), `perf` (main-thread cost per frame on a late-war page; `THROTTLE=6`, `TURNS`, and `BOIL=on|off` to pin the boil with the slow-device probe stopped), `boil` (frame sequences of the boil, stitched into GIF/WebM with ffmpeg; `pft.boilClock` pins its clock).
 
 ## Saves
 
