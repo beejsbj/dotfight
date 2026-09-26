@@ -140,7 +140,7 @@ export default async function (T, out) {
   // the knock lands with the cross being drawn, well after the release
   const flickT = seq.felt[idx("flick")].t;
   if (kills[0].t - flickT < 100) fail(`the first knock came ${kills[0].t - flickT}ms after release: before the ink could reach anyone`);
-  if (evs.at(-1) !== "settle" && evs.at(-1) !== "over" && evs.at(-1) !== "turn") fail(`the line's end wasn't felt: ${evs.join(" ")}`);
+  if (evs.at(-1) !== "land" && evs.at(-1) !== "over" && evs.at(-1) !== "turn") fail(`the line's end wasn't felt: ${evs.join(" ")}`);
   // nothing ever closer together than the gate allows, unless it outranks
   const gaps = seq.felt.slice(1).map((f, i) => f.t - seq.felt[i].t);
   console.log(`ok: ${seq.kills} kill(s), ${notches.length} notches, gaps ${gaps.join(",")}ms`);

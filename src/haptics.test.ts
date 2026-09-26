@@ -4,7 +4,7 @@ import {
   type Backend, type BackendKind, type HapticEvent, type Pattern,
 } from "./haptics";
 
-const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "wobble", "flick", "settle", "kill", "thud", "turn", "stand", "over"];
+const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "over"];
 
 describe("pattern", () => {
   it("gives every event a playable pattern on both backends", () => {
@@ -154,6 +154,9 @@ describe("detect", () => {
     expect(detect({ vibrate: "nope", maxTouchPoints: 5 })).toBe("none");
     expect(detect({ vibrate: () => true, maxTouchPoints: 0 })).toBe("none"); // desktop Chrome
     expect(detect({})).toBe("none");
+    // iOS 17.4 knows `switch` but never ticks it
+    expect(detect({ maxTouchPoints: 5, hasSwitch: true, ua: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) Version/17.4 Mobile/15E148 Safari/604.1" })).toBe("none");
+    expect(detect({ maxTouchPoints: 5, hasSwitch: true, ua: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) Version/18.1 Mobile/15E148 Safari/604.1" })).toBe("switch");
   });
 });
 

@@ -445,7 +445,7 @@ function stepResolve() {
     // replays are watched, not felt
     if (r.cam) { cam.shake(k.last ? 9 : 4); haptic(k.last ? "over" : "kill", r.kills.filter((x) => x.hit).length); }
   }
-  if (!r.settled && it >= r.dur) { r.settled = true; if (r.pen && !isBot(r.owner)) haptic("settle"); }
+  if (!r.settled && it >= r.dur) { r.settled = true; if (r.pen && !isBot(r.owner)) haptic("land"); }
   if (it >= r.end) {
     const done = r.done;
     res = null;
@@ -629,10 +629,13 @@ function showSettings() {
 
 function showHandoff() {
   const nextP = s.current;
+  // a real button, so an iPhone's tap-only haptics have a switch label to land on
   const card = sheet(`
-    <p class="sub">${lastNote}</p>
-    <h2 style="color:${INK.pens[nextP]}">Your pen, ${name(nextP)}</h2>
-    <p class="fine">tap when you've got it</p>`, "handoff");
+    <button type="button" class="handoff-tap">
+      <p class="sub">${lastNote}</p>
+      <h2 style="color:${INK.pens[nextP]}">Your pen, ${name(nextP)}</h2>
+      <p class="fine">tap when you've got it</p>
+    </button>`, "handoff");
   sfx.rustle();
   card.parentElement!.onclick = () => {
     card.parentElement!.onclick = null;

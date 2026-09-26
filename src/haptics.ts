@@ -23,7 +23,8 @@ export type HapticEvent =
   | "notch" // a detent while pulling back (arg: power 0..1)
   | "wobble" // the hand starts to shake on a held flick
   | "flick" // let go (arg: power 0..1)
-  | "settle" // ink lands: a line reaches its end, a camp is drawn
+  | "settle" // a camp is drawn (under a tap)
+  | "land" // a flicked line reaches its end (after a drag)
   | "kill" // a cross drawn (arg: which cross on this line, 1-based)
   | "thud" // a lunge dies at a base wall
   | "turn" // the page turned round, the book opened
@@ -65,7 +66,7 @@ export function pattern(ev: HapticEvent, arg = 0): Pattern {
     // a tremor: uneven, fading in
     case "wobble": return { android: [12, 40, 16, 60, 20, 40, 14], ios: [0, 70, 170], priority: 2 };
     case "flick": return { android: [Math.round(32 + 30 * clamp01(arg))], ios: [0], priority: 3 };
-    case "settle": return { android: [16], ios: [0], priority: 1 };
+    case "settle": case "land": return { android: [16], ios: [0], priority: 1 };
     case "kill": {
       const n = Math.max(1, Math.round(arg) || 1);
       // one firm tap for a cross; every further cross on the same line lands
@@ -146,6 +147,14 @@ export interface Env {
   maxTouchPoints?: number;
   /** does this browser know the checkbox `switch` attribute? */
   hasSwitch?: boolean;
+  /** the user agent, for the iOS version */
+  ua?: string;
+}
+
+/** iOS major version from a user agent (Safari's `Version/` is the iOS version). Pure. */
+export function iosMajor(ua = ""): number | undefined {
+  const v = /Version\/(\d+)/.exec(ua) ?? /OS (\d+)_\d+/.exec(ua);
+  return v ? +v[1] : undefined;
 }
 
 /** Pick a backend by capability. Pure. */
@@ -154,7 +163,8 @@ export function detect(env: Env): BackendKind {
   const touch = (env.maxTouchPoints ?? 0) > 0;
   if (typeof env.vibrate === "function" && touch) return "vibrate";
   // Safari on a touch screen with switch controls: an iPhone or iPad
-  if (env.hasSwitch && touch) return "switch";
+  // iOS 17.4-17.x knows `switch` but never ticks it
+  if (env.hasSwitch && touch) return (iosMajor(env.ua) ?? 18) >= 18 ? "switch" : "none";
   return "none";
 }
 
@@ -187,7 +197,7 @@ export function browserEnv(): Env {
   const nav = navigator as Navigator & { vibrate?: unknown };
   let hasSwitch = false;
   try { hasSwitch = "switch" in document.createElement("input"); } catch { /* old engine */ }
-  return { vibrate: nav.vibrate, maxTouchPoints: nav.maxTouchPoints, hasSwitch };
+  return { vibrate: nav.vibrate, maxTouchPoints: nav.maxTouchPoints, hasSwitch, ua: nav.userAgent };
 }
 
 function vibrateBackend(): Backend {
@@ -199,14 +209,16 @@ function vibrateBackend(): Backend {
   };
 }
 
-// A switch, and a label that toggles it. aria-hidden, and never given a
-// tabindex: WebKit would then focus the switch on every click.
-function switchIn(label: HTMLLabelElement) {
-  label.setAttribute("aria-hidden", "true");
+// A switch, and a label that toggles it. The switch is aria-hidden and never
+// given a tabindex (WebKit would then focus it on every click); an overlay
+// label is hidden too, but a label wrapping real content (the page) is not.
+function switchIn(label: HTMLLabelElement, hideLabel = true) {
+  if (hideLabel) label.setAttribute("aria-hidden", "true");
   label.dataset.haptic = "";
   const input = document.createElement("input");
   input.type = "checkbox";
   input.setAttribute("switch", "");
+  input.setAttribute("aria-hidden", "true");
   input.style.cssText = "position:absolute;width:1px;height:1px;margin:0;visibility:hidden;pointer-events:none";
   // the label forwards its click to the switch; that copy is ours alone
   input.addEventListener("click", (e) => e.stopPropagation());
@@ -265,7 +277,7 @@ function tapSwitch(): Backend {
       new MutationObserver(dress).observe(document.body, { childList: true, subtree: true });
       // the page: wrapped in a label that takes no room. Its taps still reach
       // the canvas; the label ticks only if that tap did something to feel.
-      const wrap = switchIn(document.createElement("label"));
+      const wrap = switchIn(document.createElement("label"), false);
       wrap.style.display = "contents";
       canvas.replaceWith(wrap);
       wrap.prepend(canvas);
