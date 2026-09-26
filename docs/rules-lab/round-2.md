@@ -8,14 +8,30 @@ Round 2 builds Burooj's new direction into the engine, lets the bot play it, and
 
 - **Play "Lunge & snipe".** It's Burooj's lunge and snipe on Dawood's classic page, with free walking sends and empty rings, plus three things the lab added to keep it fair: a rising bar on snipe streaks, a tremor on lunge chains, and round 1's last stand. Soldiers are arranged before the first flick. It's even (52% to the first player), streaks stay short (a 4.7-flick worst turn on average, 9 at most), and every new mechanic gets used: lunges are 37% of flicks, sends 10 a game, and a ring is manned again in 99% of games.
 - **Billiards is the second game**: the same rules with camps, a prism and two cushions. It averages 15 bank shots and 7 split lines a game, and it's just as fair.
-- **Pen physics works, but the page fights back.** Every ink effect makes games longer, because ink piles up right in front of the targets. The shipped version is the lightest of each (jolts, grooves, wall friction) and still runs about half as long again as Lunge & snipe. Scribble cover and taper are left out: every combination with them stalled.
+- **Pen physics works, but the page fights back.** Every ink effect makes games longer, because ink piles up right in front of the targets. The shipped version is the lightest of each (jolts, grooves, wall friction) and still runs about half as long again as Lunge & snipe (81 turns against 53), with fewer comebacks (8% of big leads lost). Scribble cover and taper are left out: every combination with them stalled.
 - **The cost of round 2 is length.** A kill no longer reliably earns a flick, so games take ~88 flicks rather than Last stand's 55. That's the first thing to feel out at the table.
 
 ## Results
 
 2,000 bot-vs-bot games per set, a human-like hand, the round-1 harness (`npm run lab`), seeds 1–2000 for every set. Standard error on the percentages is about ±1.1 points.
 
-<!-- TABLE -->
+| rule set | turns (p10–p90) | flicks | 1st-player wins | stalled | kills/flick | ≥3 kills in one flick | comebacks (big) | endgame drag: flicks once a side has ≤3 (share) | turns that change the balance | longest turn in flicks: mean, p90, max |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Last stand (round 1) | 21.4 (18–26) | 54.9 | 49% | 0% | 1.73 | 25% | 32% (19%) | 8.9 (16%) | 86% | 4.0, 4, 4 |
+| **Lunge & snipe** | 53.1 (40–68) | 87.9 | 52% | 0% | 1.02 | 9% | 27% (13%) | 13.2 (13%) | 70% | 4.7, 6, 9 |
+| **Billiards** | 59.6 (43–78) | 92.9 | 52% | 0% | 0.90 | 7% | 27% (15%) | 17.2 (16%) | 64% | 4.4, 6, 9 |
+| As stated (r2) | 67.2 (40–98) | 94.1 | 51% | 0% | 1.00 | 13% | 21% (5%) | 25.9 (23%) | 46% | 6.1, 8, 17 |
+| **Pen physics** | 80.9 (55–109) | 116.2 | 51% | 0% | 0.76 | 6% | 22% (8%) | 21.2 (16%) | 55% | 4.2, 6, 8 |
+
+| rule set | lunges (share of flicks) | lunge chains: mean; length 1 / 2 / 3 / 4–5 / 6+; longest | snipes taking 2+ | sends a game | grooves ridden 40+ (all touches) | bank shots | splits | jolts | lunge deaths at a wall | off the page | rings manned again (games with one) | hit rate by shot length 300–600 / –900 / –1200 / –1500 / more |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Last stand (round 1) | 39% (moves) | – (a move's kill earns any flick) | 48% (any kill earns one) | 0.0 | 0.0 (0.0) | 0.0 | 0.0 | 0.0 | 0.0 | 1.0 | 0.0 (0%) | 92% / 81% / 78% / 70% / 66% |
+| **Lunge & snipe** | 37% | 1.78; 50% / 31% / 13% / 6% / 0%; 8 | 37% | 9.9 | 0.0 (0.0) | 0.0 | 0.0 | 0.0 | 4.4 | 1.2 | 3.8 (99%) | 89% / 73% / 69% / 64% / 59% |
+| **Billiards** | 30% | 1.74; 51% / 31% / 12% / 5% / 0%; 7 | 28% | 12.9 | 0.0 (0.0) | 14.9 | 6.7 | 104.8 | 3.3 | 1.0 | 3.9 (99%) | 80% / 64% / 59% / 54% / 49% |
+| As stated (r2) | 6% | 1.51; 64% / 25% / 7% / 3% / 0%; 6 | 28% | 12.6 | 0.0 (0.0) | 0.0 | 0.0 | 0.0 | 0.4 | 0.1 | 3.0 (97%) | 74% / 60% / 55% / 47% / 36% |
+| **Pen physics** | 25% | 1.57; 62% / 25% / 9% / 4% / 0%; 8 | 23% | 10.8 | 103.2 (169.8) | 0.0 | 0.0 | 394.4 | 4.5 | 1.6 | 4.1 (99%) | 78% / 58% / 55% / 49% / 41% |
+
+"Jolts" counts every jolt, walls included: Pen physics jolts a line leaving its own base and again entering theirs. "Grooves ridden" counts stretches of 40+ units running along a line.
 
 How to read it (as in round 1):
 - **Turns** are pen hand-overs; a free send doesn't hand over the pen.
@@ -50,7 +66,7 @@ Exploration ran in six passes of 100–140 games per variant (tables in [data/ro
 
 **Play Lunge & snipe.** It's the only round-2 set that keeps round 1's fairness and short streaks while using every new mechanic. Lunges, sends and rings all matter in it, and its last stand keeps a big lead losable 13% of the time. It's twice as long as Last stand in turns (53 against 21) and 60% longer in flicks. That's the price of kills no longer reliably earning a flick, and the one thing to check with real people. If it drags, the first lever is a smaller army (four bases), not the chain rules.
 
-**Billiards** is the second game and the more tactical one: bank shots and prisms in front of your other bases are real plans. **Pen physics** is for trying the feel of the page. It's slower, and the numbers say to keep it light; the grooves are the part Burooj likes, and they're in. **"As stated"** stays in the lab as the reference for Dawood: it's what the direction does on its own.
+**Billiards** is the second game and the more tactical one: bank shots and prisms in front of your other bases are real plans. **Pen physics** is for trying the feel of the page: 103 grooves ridden a game and a jolt at almost every wall. It's slower (81 turns, 116 flicks), and big leads hold more often (8% lost); the numbers say to keep it light. The grooves are the part Burooj likes, and they're in. **"As stated"** stays in the lab as the reference for Dawood: it's what the direction does on its own.
 
 ## What failed, and why
 
@@ -98,7 +114,7 @@ The marks are deliberately plain so they port to Lamplight. At full-page zoom on
 
 ## What I built
 
-Everything is a `RuleSet` option (defaults off, so round-1 sets play as before), with pure unit tests in `src/round2.test.ts` (50 tests) and the round-1 suite still green.
+Everything is a `RuleSet` option (defaults off, so round-1 sets play as before), with pure unit tests in `src/round2.test.ts` (51 tests) and the round-1 suite still green.
 
 ### Lunge and snipe
 
@@ -111,11 +127,13 @@ Everything is a `RuleSet` option (defaults off, so round-1 sets play as before),
 
 - **Sends are free, once a turn**, and **walk the page**: the convoy stands in a column on the road and steps `pace` units every time the pen changes hands (150 in the sets). Any line that touches a walker crosses him out, and a lunge through a column chains. Round 1's off-page convoy and "a line across the road kills them all" stay for the round-1 sets.
 - **Bases don't disappear.** An emptied base stays as a ring with "empty" pencilled in it. A soldier of its side standing in it again, or a send arriving, mans it again (`refill: "own"`); with `refill: "any"` and capture you can take the enemy's. **Crumble** (`empty: "crumble"`) is an option: the ring's walls stop working. On an all-circle page it makes no difference at all, because circles have no wall effects to lose.
-- **Positioning**: after the bases, whoever flicks first arranges first (drag a soldier, then **done**), then the other side, seeing the first. A soldier may stand anywhere in his base or up to `reach` (40) outside its wall. The bot spreads its soldiers to spoil the enemy's best line.
+- **Positioning**: after the bases, whoever flicks first arranges first (drag a soldier, then **done**), then the other side, seeing the first. A soldier may stand anywhere in his base or up to `reach` outside its wall (20 in the sets; 0 and 40 were tried). The bot spreads its soldiers to spoil the enemy's best line.
 
 ### Ink physics
 
 The tracer was rewritten as a turtle: a heading plus the arc's own curvature, walked step by step, so every effect is a change of heading rather than a transform of pre-sampled points. Round-1 sets reproduce: Geometry and Last stand give identical games; Wet ink shifts slightly because old strokes now keep finer collision geometry.
+
+Numbers below are the first try (the lab's single-mechanic runs); what ships is at the end of this section.
 
 - **The angle the pen meets a line decides.** Shallow (within 0.3 rad, about 17°) is a groove; steeper is a crossing.
 - **Crossing jolts the hand** (`ink.wobble`): the line turns by a random angle from that point on, drawn from a seed resolved with the flick, so the engine stays pure and replayable. No range is lost. `joltMax` limits how many crossings jolt one line.
@@ -123,7 +141,9 @@ The tracer was rewritten as a turtle: a heading plus the arc's own curvature, wa
 - **Grooves pull like gravity** (Burooj's correction, replacing my first lock-on version). A pen within `grooveReach` (24) of a line and within the groove angle of parallel is turned along it and leaned into it. The pull is stronger the closer, the more parallel, and the slower the pen. Speed goes as the square root of the line it has left, so a hard flick slices across and a slowing pen gets caught. There's no fixed "follow for N units": it rides for as long as the geometry holds it. Riding your own groove costs 0.6 range per unit; theirs costs 1.6.
 - **Scribbles are cover**: crossing three lines within 40 units of travel soaks the line up (a blot where it stopped).
 - **Taper**: each soldier crossed out takes 25% of what's left of the line, and each wall passed 15%. Pierce still works on top, and the stricter wins.
-- **Walls have friction**: passing through a wall jolts the line (`shapes.*.wobble`). In the Billiards set circles are soft; triangles and hexagons jolt.
+- **Walls have friction**: passing through a wall jolts the line (`shapes.*.wobble`). In the Billiards set circles are soft; triangles and hexagons jolt (0.04).
+
+**What Pen physics ships**: jolts of 0.03 rad, at most one per line; grooves within 0.12 rad (7°) and 12 units, pull 0.02, own grooves 0.7 range per unit and theirs 1.4; circle walls jolt 0.03. No scribble cover, no taper, no boost/drag (all options).
 
 ### Shapes (square and spiral dropped)
 
@@ -177,7 +197,7 @@ Engine, bot, lab and rules cards are UI-agnostic and port as they are (`src/game
 4. **Six small marks** (`Mark` type `kink`, drawn from its `x, y, dir`): a zigzag for a jolt, "=" for a groove catch, a small star for a bank, split or crash, and a blot for a scribble absorb. Plus the `empty` mark: "empty" in a ring, or cracks if crumbled.
 5. **Shape names** come from the rules (`shapeName`: a banking hexagon is a "cushion").
 6. **Round-2 cards** are generated from the rules (`round2Card`), so any look can render the list.
-7. **Aim cone**: `steadiness(s, id, kind)` now includes the lunge chain's shake, so the cone widens link by link.
+7. **Aim cone**: `steadiness(s, id, kind)` and `tremor(s, id, kind)` carry the lunge chain's shake, so the cone widens link by link; `release()` takes both, and every flick carries its wobble seed (`wob`).
 
 ## Questions for Burooj and Dawood
 
