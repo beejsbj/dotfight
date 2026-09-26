@@ -522,6 +522,7 @@ function showTitle() {
     <p class="row">
       <button data-a="drawer" class="pencil">the drawer${d.length ? ` (${d.length})` : ""}</button>
       <button data-a="how" class="pencil">how it's played</button>
+      <a href="/rules" class="pencil">the rulebook</a>
       <button data-a="settings" class="pencil">settings</button>
     </p>`;
   const cover = $("#cover");
@@ -590,7 +591,8 @@ function showHow() {
       <li>Hold a hard flick too long and your hand starts to shake.</li>
       <li>Nothing is ever rubbed out. Cross out every enemy to win.</li>
     </ol>
-    <p class="fine">Pinch to zoom · tap <b>page</b> to stand up and see everything. Rules from memory, waiting on Dawood.</p>
+    <p class="fine">Pinch to zoom · tap <b>page</b> to stand up and see everything. These are the first rules, from memory; the new ones, with drawings, are in the rulebook.</p>
+    <a class="act" href="/rules">the rulebook</a>
     <button class="act" data-a="back">back</button>`).onclick = (e) => {
     if ((e.target as HTMLElement).closest("button")) { closeSheet(); }
   };
