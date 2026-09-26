@@ -5,7 +5,7 @@
 
 import { act, newGame, placeBase, type Flick, type GameState, type Player } from "./game";
 
-export type Mode = { kind: "pnp" } | { kind: "bot"; level: 0 | 1 | 2 };
+export type Mode = { kind: "pnp" } | { kind: "bot"; level: 0 | 1 | 2 } | { kind: "room"; code: string };
 
 /** The live save, as stored under `pft:save`. Old saves are `{ s, mode }` only. */
 export interface Save {
