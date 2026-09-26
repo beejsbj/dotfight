@@ -144,6 +144,8 @@ export interface RuleSet {
     sameMover: boolean;
     /** Each link of a lunge chain shakes the hand more: error × (1 + shake·link). */
     shake: number;
+    /** And a tremor that doesn't care how hard you flick: this many radians (1 sd) more per link, added in quadrature. */
+    tremor?: number;
   };
   /** An empty base: struck out and gone (round 1), left as an empty ring, or a crumbled ring whose walls no longer work. */
   empty: "gone" | "ring" | "crumble";

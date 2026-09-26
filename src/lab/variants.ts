@@ -175,5 +175,21 @@ export const LAB2C: RuleSet[] = [
   v(F, "f-bil", { kit: KIT2, shapes: SHAPES2, soldiersPerBase: 12 }),
 ];
 
-export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2, ...ROUND3, ...ROUND4, ...LAB2.filter((r) => r !== LAST_STAND), ...LAB2B, ...LAB2C];
+// Pass 4: with soldiers allowed outside their walls, lunge chains ran to
+// 14; multiplying a soft flick's tiny error barely helps. A tremor adds a
+// fixed angle per link instead.
+const PEN_INK = { wobble: 0.04, joltMax: 2, ...GROOVE, scribble: 5, scribbleSpan: 30 };
+export const LAB2D: RuleSet[] = [
+  v(F, "g-t03", { earn: { ...EARN, rise: 1, tremor: 0.03 } }),
+  v(F, "g-t05", { earn: { ...EARN, rise: 1, tremor: 0.05 } }),
+  v(F, "g-t08", { earn: { ...EARN, rise: 1, tremor: 0.08 } }),
+  v(F, "g-t05-pos20", { earn: { ...EARN, rise: 1, tremor: 0.05 }, position: { reach: 20 } }),
+  v(F, "g-t05-pen", { earn: { ...EARN, rise: 1, tremor: 0.05 }, ink: PEN_INK, shapes: { circle: { wobble: 0.03 } } }),
+  v(F, "g-t05-bil", { earn: { ...EARN, rise: 1, tremor: 0.05 }, kit: KIT2, shapes: SHAPES2, soldiersPerBase: 12 }),
+  // the full gentle combo still choked (105 turns): leaner pen physics
+  v(F, "g-t05-pen2", { earn: { ...EARN, rise: 1, tremor: 0.05 }, ink: { wobble: 0.04, joltMax: 2, ...GROOVE }, shapes: { circle: { wobble: 0.03 } } }),
+  v(F, "g-t05-pen3", { earn: { ...EARN, rise: 1, tremor: 0.05 }, ink: { wobble: 0.04, joltMax: 2, ...GROOVE, scribble: 6, scribbleSpan: 24 }, shapes: { circle: { wobble: 0.03 } } }),
+];
+
+export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2, ...ROUND3, ...ROUND4, ...LAB2.filter((r) => r !== LAST_STAND), ...LAB2B, ...LAB2C, ...LAB2D];
 export const byId = (id: string) => EXPERIMENTS.find((r) => r.id === id);

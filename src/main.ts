@@ -9,7 +9,7 @@ import { CARDS, FEELS, round2Card, shapeName } from "./cards";
 import { pull, release, reach, sigma, wobble, type Aim } from "./flick";
 import {
   act, alive, apply, arrange, basesLeft, canAct, canArrange, canPlaceBase, canTransfer, doneArranging, garrison, kitLeft, migrate, newGame, pass, pathLen,
-  placeBase, powerFor, standing, nextBaseRot, steadiness, stuck, transfer, transferMax, baseRadius, walking,
+  placeBase, powerFor, standing, nextBaseRot, steadiness, stuck, transfer, transferMax, baseRadius, walking, tremor,
   type ActionKind, type Flick, type GameState, type Outcome, type Player, type Pt,
 } from "./game";
 import * as inkLib from "./ink";
@@ -889,7 +889,7 @@ function up(e: PointerEvent) {
   if (g.t === "aim" && g.id === e.pointerId) {
     const tapped = Math.hypot(p.x - g.sx, p.y - g.sy) < TAP;
     if (aim && e.type === "pointerup") {
-      const f = release(aim, performance.now(), s.rules, Math.random, steadiness(s, aim.soldierId, aim.kind));
+      const f = release(aim, performance.now(), s.rules, Math.random, steadiness(s, aim.soldierId, aim.kind), tremor(s, aim.soldierId, aim.kind));
       const pw = pull(aim).power;
       aim = null;
       if (f && canAct(s, f.soldierId, f.kind)) { learn("aim"); fire(f, pw); }
@@ -1047,7 +1047,7 @@ function overlay(now: number): Overlay {
       soldierId: aim.soldierId,
       angle: p.angle + wobble(aim, now) * st,
       power: p.power,
-      spread: sigma(p.power) * 2 * st,
+      spread: Math.hypot(sigma(p.power) * st, tremor(s, aim.soldierId, aim.kind)) * 2,
       reach: reach(s.rules, aim.kind, p.power),
     };
   } else if (botAim) {

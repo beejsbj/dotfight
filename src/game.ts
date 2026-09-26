@@ -340,6 +340,13 @@ export function canAct(s: GameState, soldierId: number, kind?: ActionKind) {
 /** Is this side in its last stand? */
 export const inLastStand = (s: GameState, p: Player) => !!s.rules.lastStand && s.stand[p] > 0;
 
+/** Extra aim error (radians, 1 sd) from a lunge chain's tremor, however soft the flick. Added in quadrature. */
+export function tremor(s: GameState, soldierId: number, kind: ActionKind = "shoot") {
+  const E = s.rules.earn;
+  void soldierId;
+  return E?.tremor && kind === "move" && s.link ? E.tremor * s.link : 0;
+}
+
 /**
  * Multiplier on the hand error of this soldier's flick. Last stand: steadier
  * (never 0: the flick stays a flick). A lunge chain: shakier with every link.

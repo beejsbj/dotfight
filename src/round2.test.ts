@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   act, alive, arrange, canAct, canArrange, canTransfer, doneArranging, garrison, kitLeft, newGame, pass, placeBase,
-  preview, ready, replay, standing, steadiness, transfer, type Flick, type GameState, type Soldier,
+  preview, ready, replay, standing, steadiness, transfer, tremor, type Flick, type GameState, type Soldier,
 } from "./game";
 import { dist, distToSeg, pathLen, type Pt } from "./geom";
 import { variant, type RuleSet } from "./rules";
@@ -325,6 +325,17 @@ describe("lunge: goes as far as a shot, crosses out what it passes, and chains w
     act(s, flick(me, Math.atan2(y.y - 800, y.x - 500), dist({ x: 500, y: 800 }, y) + 40, "move"));
     expect(s.current).toBe(0);
     expect(steadiness(s, me.id, "move")).toBeCloseTo(base * 1.6);
+  });
+  it("a tremor adds a fixed angle per link, however soft the flick", () => {
+    const s = setup(quiet({ ...LUNGE, earn: { ...LUNGE.earn, tremor: 0.05 } }));
+    const me = alive(s, 0)[0], [x] = alive(s, 1);
+    clear(s, [me, x]);
+    at(s, me, { x: 500, y: 1300 });
+    at(s, x, { x: 500, y: 1000 });
+    expect(tremor(s, me.id, "move")).toBe(0);
+    act(s, flick(me, -Math.PI / 2, 500, "move"));
+    expect(tremor(s, me.id, "move")).toBeCloseTo(0.05);
+    expect(tremor(s, me.id, "shoot")).toBe(0);
   });
   it("you can stop instead of lunging again (pass ends the turn)", () => {
     const { s, me } = field();

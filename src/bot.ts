@@ -8,7 +8,7 @@
 import { baseEdges, insideBase } from "./bases";
 import { sigma } from "./flick";
 import {
-  canAct, canArrange, canTransfer, earns, exposed, garrison, other, powerFor, preview, reachOf, ready, roadBetween, standing, steadiness, transferMax,
+  canAct, canArrange, canTransfer, earns, tremor, exposed, garrison, other, powerFor, preview, reachOf, ready, roadBetween, standing, steadiness, transferMax,
   type Action, type ActionKind, type Flick, type GameState, type Outcome, type Player,
 } from "./game";
 import { dist, gauss, reflectPt, rng, segHit, type Pt } from "./geom";
@@ -46,7 +46,7 @@ interface Intent { kind: ActionKind; soldierId: number; angle: number; power: nu
 /** Turn an intended flick into what a shaky hand actually does. */
 export function shake(s: GameState, it: Intent, sk: Skill, rand: () => number): Flick {
   const st = steadiness(s, it.soldierId, it.kind);
-  const sa = Math.hypot(sigma(it.power) * sk.hand, sk.aim) * st;
+  const sa = Math.hypot(Math.hypot(sigma(it.power) * sk.hand, sk.aim) * st, tremor(s, it.soldierId, it.kind));
   const sl = Math.hypot(FEEL.lengthJitter * sk.hand, sk.judge) * st;
   return {
     soldierId: it.soldierId,
