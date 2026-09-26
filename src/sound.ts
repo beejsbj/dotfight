@@ -40,8 +40,15 @@ export function scratch(dur: number, gain = 0.5, pitch = 2600, delay = 0) {
 }
 
 export const tap = () => scratch(0.05, 0.35, 3800);
-export const cross = (delay = 0) => { scratch(0.07, 0.45, 3000, delay); scratch(0.07, 0.4, 3300, delay + 0.09); };
-export const circle = () => scratch(0.5, 0.3, 2200);
+export const cross = (delay = 0, gain = 1) => { scratch(0.07, 0.45 * gain, 3000, delay); scratch(0.07, 0.4 * gain, 3300, delay + 0.09); };
+export const circle = () => scratch(0.38, 0.3, 2200);
+// a dot jotted with the ballpoint: a short, bright tick
+export const dot = (delay = 0) => scratch(0.035, 0.22, 4000 + Math.random() * 700, delay);
+
+// a retractable ballpoint: two tight clicks
+export const click = () => { scratch(0.018, 0.5, 5200); scratch(0.02, 0.4, 4300, 0.055); };
+// the page being handed over: a soft, low rustle
+export const rustle = () => { scratch(0.32, 0.35, 900); scratch(0.22, 0.2, 1500, 0.12); };
 
 export function buzz(pattern: number | number[]) {
   navigator.vibrate?.(pattern);

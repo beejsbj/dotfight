@@ -1,0 +1,22 @@
+{
+  "name": "Pen Flick Tactics",
+  "short_name": "Pen Flick",
+  "description": "Dawood's pen-and-paper flick war, on a notebook page.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#2b2825",
+  "theme_color": "#2b2825",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

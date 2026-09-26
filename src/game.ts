@@ -55,6 +55,7 @@ export interface GameState {
   marks: Mark[];
   flicks: Flick[]; // history, enough to replay the page
   winner?: Player;
+  page?: { no: number; date: string }; // written in the header; optional so older saves still load
 }
 
 // --- rng --------------------------------------------------------------------
@@ -74,8 +75,8 @@ const other = (p: Player): Player => (p === 0 ? 1 : 0);
 
 // --- setup ------------------------------------------------------------------
 
-export function newGame(seed = (Math.random() * 2 ** 32) >>> 0): GameState {
-  return { v: 1, seed, phase: "setup", current: 0, turn: 0, bases: [], soldiers: [], marks: [], flicks: [] };
+export function newGame(seed = (Math.random() * 2 ** 32) >>> 0, page?: GameState["page"]): GameState {
+  return { v: 1, seed, phase: "setup", current: 0, turn: 0, bases: [], soldiers: [], marks: [], flicks: [], ...(page && { page }) };
 }
 
 export function basesLeft(s: GameState, p: Player) {

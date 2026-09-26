@@ -1,5 +1,5 @@
 // Every tunable rule lives here. Most are guesses from Burooj's memory of
-// Daud's game (2026-06-07 transcript); the ones marked ASK DAUD are open
+// Dawood's game (2026-06-07 transcript); the ones marked ASK DAWOOD are open
 // questions tracked in RULES.md / BJS-128. Change them here, not in logic.
 
 export const RULES = {
@@ -14,7 +14,7 @@ export const RULES = {
   baseRadius: 62,
   soldierRadius: 7,
   minBaseGap: 40, // clear paper between any two bases
-  minEnemyBaseGap: 180, // ASK DAUD: could you build right next to an enemy?
+  minEnemyBaseGap: 180, // ASK DAWOOD: could you build right next to an enemy?
 
   // Shoot: the soldier stays put, the line runs "almost to the end of the page".
   shootMinLen: 700,
@@ -23,13 +23,13 @@ export const RULES = {
   moveMinLen: 60,
   moveMaxLen: 380,
 
-  // ASK DAUD: did movement lines kill, or only shots? Transcript reads as both.
+  // ASK DAWOOD: did movement lines kill, or only shots? Transcript reads as both.
   moveKills: true,
-  // ASK DAUD: could you hit your own soldiers?
+  // ASK DAWOOD: could you hit your own soldiers?
   friendlyFire: false,
-  // ASK DAUD: did a shot stop at the first body? Default: a line is a line.
+  // ASK DAWOOD: did a shot stop at the first body? Default: a line is a line.
   shotPierces: true,
-  // ASK DAUD: what happened if your flick left the page? Default: soldier is lost.
+  // ASK DAWOOD: what happened if your flick left the page? Default: soldier is lost.
   offPageMoveKills: true,
 
   // How generous a hit is: ink line vs dot, in world units beyond both radii.

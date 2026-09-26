@@ -1,6 +1,6 @@
-# Rules (from memory, pending Daud)
+# Rules (from memory, pending Dawood)
 
-The source is Burooj's description of Daud's pen-and-paper game (ChatGPT, 2026-06-07, "Flick-line strategy game"). Nothing here is canonical until Daud reviews it ([BJS-128](https://linear.app/bjs-projects/issue/BJS-128/reconstruct-the-canonical-ruleset-with-daud)). Every value below is in `src/rules.ts`.
+The source is Burooj's description of Dawood's pen-and-paper game (ChatGPT, 2026-06-07, "Flick-line strategy game"). Nothing here is canonical until Dawood reviews it ([BJS-128](https://linear.app/bjs-projects/issue/BJS-128/reconstruct-the-canonical-ruleset-with-daud)). Every value below is in `src/rules.ts`.
 
 ## What the prototype plays
 
@@ -21,7 +21,7 @@ The source is Burooj's description of Daud's pen-and-paper game (ChatGPT, 2026-0
 - The flick: the pen balanced on the page, flicked with the other hand. You can't just draw a line.
 - A cross in the enemy's colour means killed. A cross in your own colour means moved.
 
-## Guesses the prototype had to make (ask Daud)
+## Guesses the prototype had to make (ask Dawood)
 
 | Question | Prototype default | `rules.ts` |
 |---|---|---|
@@ -42,4 +42,4 @@ The source is Burooj's description of Daud's pen-and-paper game (ChatGPT, 2026-0
 
 - A slight hidden angle error on release and a visible tremble if you hold a hard flick. These stand in for the physical unreliability of a real flick.
 - Close-up aim: the camera zooms onto your soldier while you aim, so you can't see the whole page. This is the "limited perspective" idea from the seed.
-- Daud-bot, a computer opponent.
+- Dawood-bot, a computer opponent.
