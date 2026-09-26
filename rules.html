@@ -4,29 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0b0706" />
-    <title>The rules · %GAME_NAME%</title>
-    <meta name="description" content="The rules of Dawood's pen-and-paper flick war, written out by hand: snipe, lunge, send, the last stand, and what's still to test." />
+    <title>Core rules · %GAME_NAME%</title>
+    <meta name="description" content="The core rules of Dawood's pen-and-paper flick war, written out by hand: snipe, lunge, send, the last stand, and what's still to test." />
     <link rel="canonical" href="https://pen-flick-tactics.vercel.app/rules" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta property="og:type" content="article" />
     <meta property="og:site_name" content="%GAME_NAME%" />
     <meta property="og:url" content="https://pen-flick-tactics.vercel.app/rules" />
-    <meta property="og:title" content="The rules · %GAME_NAME%" />
+    <meta property="og:title" content="Core rules · %GAME_NAME%" />
     <meta property="og:description" content="Dawood's school paper game, written down at last. Snipe, lunge, send, the last stand, and what's still to test." />
     <meta property="og:image" content="https://pen-flick-tactics.vercel.app/og-rules.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="A hand-written rulebook on squared paper under a desk lamp, with a drawing of an ink line thinning as it passes through a base." />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="The rules · %GAME_NAME%" />
+    <meta name="twitter:title" content="Core rules · %GAME_NAME%" />
     <meta name="twitter:description" content="Dawood's school paper game, written down at last." />
     <meta name="twitter:image" content="https://pen-flick-tactics.vercel.app/og-rules.jpg" />
     <script>
       if (/[?&]og\b/.test(location.search)) document.documentElement.classList.add("og");
     </script>
   </head>
-  <body>
+  <body class="book-1">
     <div class="lamp" aria-hidden="true"></div>
     <div class="dark" aria-hidden="true"></div>
 
@@ -37,8 +37,9 @@
         <p class="school">EXERCISE BOOK · SQUARED</p>
         <h1>%GAME_NAME_HTML%</h1>
         <p class="field"><span>Name</span><b>Dawood &amp; Burooj</b></p>
-        <p class="field"><span>Subject</span><b>The Rules</b></p>
+        <p class="field"><span>Subject</span><b>Core Rules</b></p>
         <p class="field"><span>Class</span><b>after lights out</b></p>
+        <p class="vol" aria-label="Book 1">1</p>
       </div>
       <nav class="slip" aria-label="Contents">
         <p class="slip-title">contents</p>
@@ -51,14 +52,13 @@
           <li><a href="#lunge">Lunge</a></li>
           <li><a href="#send">Send</a></li>
           <li><a href="#bases">Bases</a></li>
-          <li><a href="#ink">Ink on the page</a></li>
           <li><a href="#last-stand">Last stand</a></li>
           <li><a href="#winning">Winning</a></li>
-          <li><a href="#shapes">Shaped bases</a></li>
-          <li><a href="#modes">Modes</a></li>
+          <li><a href="#quick-battle">Quick battle</a></li>
           <li><a href="#how-you-play">How you play</a></li>
           <li><a href="#open">Still to test</a></li>
         </ol>
+        <a class="other-book" href="/rules/advanced">Book 2: advanced rules →</a>
       </nav>
     </header>
 
@@ -69,7 +69,7 @@
 
         <section id="origin" class="origin">
           <p>Dawood made this game up at school. He and Burooj played it in grades 5 and 6, with ballpoint pens, on the back pages of their exercise books. Nobody wrote the rules down. Twenty years on, here they are: remembered, argued over, and written out properly.</p>
-          <p class="aside">The game on this site still plays the first, simpler version (shoot or move). These rules are next.</p>
+          <p class="aside">This book is Dawood's game with its core rules: everything you need to play. The game on this site still plays the first, simpler version (shoot or move); these rules are next.</p>
         </section>
 
         <section id="page" class="rule" data-no="1">
@@ -80,14 +80,14 @@
         <section id="setup" class="rule" data-no="2">
           <h2>Setup</h2>
           <ol class="steps">
-            <li>Take turns drawing <strong>bases</strong>, one at a time, and jot each one full of soldier dots.</li>
+            <li>Take turns drawing <strong>bases</strong> (circles), one at a time, and jot each one full of soldier dots.</li>
             <li><strong>Positioning.</strong> Before anyone flicks, each side arranges its soldiers: anywhere inside its bases, or a little outside the walls <span class="lab">lab: 20 units, a dot and a bit</span>. The first player arranges first, and the second gets to see it.</li>
           </ol>
           <figure>
             <canvas data-fig="setup" role="img" aria-label="A blue base drawn and jotted full of soldiers; one soldier is placed just outside its wall, inside a dashed pencil limit."></canvas>
             <figcaption>fig. 1 · a base, jotted full, one man stepping out</figcaption>
           </figure>
-          <p>Nobody has to stay in, but it pays. Walls protect: a snipe loses power going through one and a lunger's hand shakes. And a lunger who lands inside a base dies.</p>
+          <p>Nobody has to stay in, but it pays. Walls protect: a snipe loses power going through one and a lunger's hand shakes. And a lunger who lands among your soldiers gets shot.</p>
         </section>
 
         <section id="turn" class="rule" data-no="3">
@@ -124,13 +124,20 @@
           <h2>Lunge <small>formerly “move”</small></h2>
           <p>Your soldier runs along his own ink, as far as a shot can go, and crosses out every enemy he runs through. He stands where the ink stops.</p>
           <ul class="points">
-            <li><strong>Walls shake him.</strong> Crossing a wall shakes his hand more than crossing a soldier does. It's the snipe's power loss, paid in shake instead. <i class="tag">to test</i></li>
+            <li><strong>Walls shake him.</strong> Crossing a wall shakes his hand; crossing a soldier shakes it a little. It's the snipe's power loss, paid in shake instead. <i class="tag">to test</i></li>
             <li><strong>Lunge again.</strong> Each kill earns another lunge by the same soldier, a little shakier every time <span class="lab">lab: +0.05 rad, about 3°, a link</span>. You can always stop.</li>
-            <li><strong>He dies</strong> if he lands inside an enemy base, or runs off the page. Running through a wall is allowed, just shaky. Whoever he crossed out on the way stays crossed out.</li>
           </ul>
           <figure>
-            <canvas data-fig="lunge" role="img" aria-label="A blue soldier lunges along his line, crossing out a red soldier in the open, then lunges again with a wider aim, jolts crossing a red base's wall, lands inside and is crossed out."></canvas>
+            <canvas data-fig="lunge" role="img" aria-label="A blue soldier lunges along his line, crossing out a red soldier in the open, then lunges again with a wider aim, jolts crossing a red base's wall, lands among its soldiers and is crossed out."></canvas>
             <figcaption>fig. 4 · a kill, a shakier lunge, and one step too far</figcaption>
+          </figure>
+          <ul class="points">
+            <li><strong>Where he lands decides.</strong> Inside an enemy base with enemy soldiers in it, they shoot him on the spot. In an empty enemy ring nothing happens: there's nobody left to shoot him. Off the page, he's gone. Whoever he crossed out on the way stays crossed out.</li>
+            <li><strong>Through a base.</strong> He may cut right through an enemy base, crossing out the soldiers inside, as long as he doesn't land in it. He pays shake at both walls and at every man he crosses: costly, but legal.</li>
+          </ul>
+          <figure>
+            <canvas data-fig="lunge-through" role="img" aria-label="A blue lunger cuts straight through a red base, crossing out two soldiers inside, with a jolt at each wall, and lands safely on the far side."></canvas>
+            <figcaption>fig. 5 · in one wall, out the other</figcaption>
           </figure>
         </section>
       </article>
@@ -141,44 +148,25 @@
 
         <section id="send" class="rule" data-no="7">
           <h2>Send</h2>
-          <p>Once a turn, and free: send soldiers walking from one of your bases to another. They walk <strong>in the open, slowly</strong> <span class="lab">lab: 150 units a turn, so a road takes two to four turns</span>, and any line that crosses them on the road crosses them out. Slowness is the price.</p>
+          <p>Once a turn, and free: send <strong>up to 5 soldiers</strong> walking from one of your bases to another. <i class="tag">to test</i> They walk <strong>in the open, slowly</strong> <span class="lab">lab: 150 units a turn, so a road takes two to four turns</span>, and any line that crosses them on the road crosses them out. Slowness is the price.</p>
           <figure>
             <canvas data-fig="send" role="img" aria-label="Three blue soldiers walk a dashed pencil road between two blue bases, a hop each turn; a red line crosses the road and crosses one of them out."></canvas>
-            <figcaption>fig. 5 · three men on the road</figcaption>
+            <figcaption>fig. 6 · three men on the road</figcaption>
           </figure>
+          <p>Why five: a big convoy on open paper is exactly what a two-with-one-bullet snipe is looking for, so the size of a send keeps itself in check.</p>
         </section>
 
         <section id="bases" class="rule" data-no="8">
           <h2>Bases</h2>
-          <p>An emptied base <strong>doesn't vanish</strong>. It stays on the page as an empty ring, and a send can man it again.</p>
+          <p>An emptied base <strong>doesn't vanish</strong>. It stays on the page as an empty ring, and a send can man it again. Until then an enemy lunger can land in it safely.</p>
           <figure>
             <canvas data-fig="ring" role="img" aria-label="A blue base whose soldiers are all crossed out, with 'empty' pencilled under it; a blue soldier walks in from another base and mans it again."></canvas>
-            <figcaption>fig. 6 · an empty ring, manned again</figcaption>
+            <figcaption>fig. 7 · an empty ring, manned again</figcaption>
           </figure>
           <p>Walls have friction: snipes lose power through them and lungers shake.</p>
         </section>
 
-        <section id="ink" class="rule" data-no="9">
-          <h2>Ink on the page <i class="tag">Long war</i></h2>
-          <p>A page that's been fought over isn't blank any more, and the pen feels it.</p>
-          <ul class="points">
-            <li>Cross an old line and your hand <strong>jolts</strong>, slightly.</li>
-            <li><strong>The angle decides.</strong> Meet a line at a shallow angle and the pen drops into its groove and is carried along it, like gravity. Meet it steeply and it jolts.</li>
-            <li>Your own grooves carry you further. Enemy grooves cut you short.</li>
-            <li>Ink piles up round the bases as the war goes on and becomes cover. That's on purpose: bases get safer with time. <i class="tag">strengths to test</i></li>
-          </ul>
-          <figure>
-            <canvas data-fig="groove" role="img" aria-label="An old blue line across the page. A new line meeting it at a shallow angle is pulled into it and runs along it; another crossing it steeply jolts and changes direction."></canvas>
-            <figcaption>fig. 7 · a groove pull and a jolt</figcaption>
-          </figure>
-        </section>
-      </article>
-
-      <!-- page 4 -->
-      <article class="sheet" style="--tilt: 0.5deg">
-        <p class="head"><span>Page No. <b>4</b></span><span>Date <b>26 · 9 · 26</b></span></p>
-
-        <section id="last-stand" class="rule" data-no="10">
+        <section id="last-stand" class="rule" data-no="9">
           <h2>Last stand</h2>
           <p>When a side is down to its <strong>last 4</strong>, they've lost their comrades, and they fight like it: that side flicks <strong>twice a turn, with a steadier hand</strong>.</p>
           <figure>
@@ -187,61 +175,39 @@
           </figure>
         </section>
 
-        <section id="winning" class="rule" data-no="11">
+        <section id="winning" class="rule" data-no="10">
           <h2>Winning</h2>
           <p class="big">Cross out every enemy soldier.</p>
         </section>
-
-        <section id="shapes" class="rule" data-no="12">
-          <h2>Shaped bases <i class="tag">Long war</i></h2>
-          <dl class="shapes">
-            <dt><canvas class="icon" data-shape="circle" aria-hidden="true"></canvas>Circle, the <em>camp</em></dt>
-            <dd>Soft walls. Holds the most soldiers <span class="lab">lab: 12, against 8 and 6</span>.</dd>
-            <dt><canvas class="icon" data-shape="triangle" aria-hidden="true"></canvas>Triangle, the <em>prism</em></dt>
-            <dd>Your lines passing out through it split in two, so place it in front of your other bases.</dd>
-            <dt><canvas class="icon" data-shape="hexagon" aria-hidden="true"></canvas>Hexagon, the <em>cushion</em></dt>
-            <dd>Banks everyone's lines, yours too, by angle, like billiards. Only a glancing line bounces <span class="lab">lab: more than 34° off square</span>; a straight one goes in.</dd>
-            <dt><canvas class="icon" data-shape="square" aria-hidden="true"></canvas><canvas class="icon" data-shape="pentagon" aria-hidden="true"></canvas>Square and pentagon</dt>
-            <dd><i class="tag">being designed</i></dd>
-          </dl>
-          <figure>
-            <canvas data-fig="cushion" role="img" aria-label="A red hexagon. A blue line glancing off its top face bounces away; another coming in nearly square goes through the wall and crosses out a red soldier inside."></canvas>
-            <figcaption>fig. 9 · the cushion banks a glance and lets a straight line in</figcaption>
-          </figure>
-          <figure>
-            <canvas data-fig="prism" role="img" aria-label="A blue line from a camp passes through a blue triangle in front of it and splits in two as it leaves, each half crossing out a red soldier."></canvas>
-            <figcaption>fig. 10 · a prism in front of its camp</figcaption>
-          </figure>
-          <p class="ideas">Soldiers are drawn in their base's shape <i class="tag">idea</i>, and their shape powers might wake up only in a last stand <i class="tag">idea</i>.</p>
-        </section>
       </article>
 
-      <!-- page 5 -->
-      <article class="sheet" style="--tilt: -0.4deg">
-        <p class="head"><span>Page No. <b>5</b></span><span>Date <b>26 · 9 · 26</b></span></p>
+      <!-- page 4 -->
+      <article class="sheet" style="--tilt: 0.4deg">
+        <p class="head"><span>Page No. <b>4</b></span><span>Date <b>26 · 9 · 26</b></span></p>
 
-        <section id="modes" class="rule" data-no="13">
-          <h2>Modes</h2>
+        <section id="quick-battle" class="rule" data-no="11">
+          <h2>Quick battle</h2>
+          <p>Dawood's game: circles only, and the rules in this book. You choose the size.</p>
           <div class="modes">
             <div class="mode">
-              <h3>Quick battle</h3>
-              <p>Dawood's game. Circles only, with the core rules. You choose the size:</p>
-              <ul class="sizes">
-                <li><b>Quick</b> 3 bases of 8 <i class="tag">to test</i></li>
-                <li><b>Classic</b> Dawood's 5 bases of 10</li>
-                <li><b>Custom</b> pick the bases and the soldiers in each</li>
-              </ul>
+              <h3>Quick</h3>
+              <p>3 bases of 8 <i class="tag">to test</i></p>
             </div>
             <div class="mode">
-              <h3>Long war</h3>
-              <p>Shaped bases (billiards), full pen physics (grooves, jolts, wall friction, ink cover) and bigger armies. For players who like long games.</p>
+              <h3>Classic</h3>
+              <p>Dawood's 5 bases of 10</p>
+            </div>
+            <div class="mode">
+              <h3>Custom</h3>
+              <p>pick the bases, and the soldiers in each</p>
             </div>
           </div>
+          <a class="pointer" href="/rules/advanced"><b>There's more in the advanced rules.</b> Long war: bases with shapes, grooves and jolts, ink cover, bigger armies. <span>Book 2 →</span></a>
         </section>
 
-        <section id="how-you-play" class="rule" data-no="14">
+        <section id="how-you-play" class="rule" data-no="12">
           <h2>How you play</h2>
-          <p>A separate choice from the mode:</p>
+          <p>A separate choice from the size of the war:</p>
           <ul class="points ways">
             <li>pass one phone</li>
             <li>against Dawood-bot</li>
@@ -250,26 +216,23 @@
           </ul>
         </section>
 
-        <section id="open" class="rule" data-no="15">
+        <section id="open" class="rule" data-no="13">
           <h2>Still to test</h2>
-          <p>Every number on these pages is a guess from the rules lab, where a bot played itself a few thousand times. None of them has been felt at a real table yet.</p>
+          <p>Every number in this book is a guess from the rules lab, where a bot played itself a few thousand times. None of them has been felt at a real table yet.</p>
           <ul class="open">
             <li><b>Snipe power loss</b>, a wall and a man. It's a core rule now, so its strength is the first thing to feel out.</li>
             <li><b>Two with one bullet, with nothing else holding it back.</b> The lab needed a rising bar to keep turns short (without it, up to 17 flicks in a turn). Does power loss do the job alone?</li>
-            <li><b>Lunge shake</b> at walls and at men, and 3° a link.</li>
+            <li><b>Lunge shake</b> at walls and at men, and 3° a link. Is cutting through a base too cheap, or too dear?</li>
             <li><b>How far outside</b> the walls you may stand. Inside only changed nothing; further out turned the game into lunges.</li>
-            <li><b>Sends</b>: the pace, and how many at once.</li>
-            <li><b>A lunger landing in an enemy's empty ring</b>: does he die, walk in, or take it?</li>
-            <li><b>Grooves and jolts</b>: how hard they pull and shake. Friendly ink carrying you and enemy ink slowing you was the least fair thing the lab tried (62% to whoever shot first).</li>
-            <li><b>Ink cover</b> round bases. Intended, but the lab's version stalled games.</li>
+            <li><b>Sends</b>: the pace, and the limit of 5.</li>
             <li><b>Quick at 3 bases of 8</b>, and whether a war of about 50 turns is a phone game.</li>
-            <li><b>Shape sizes</b> (12, 6, 8) and the glance angle.</li>
           </ul>
         </section>
 
         <footer class="sign">
           <p class="signed">Dawood's game.</p>
           <p class="links">
+            <a href="/rules/advanced">→ book 2: advanced rules</a>
             <a href="/">→ play it</a>
             <a href="https://github.com/beejsbj/pen-flick-tactics/blob/main/RULES.md">→ the rules as plain text</a>
           </p>

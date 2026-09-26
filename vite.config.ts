@@ -18,7 +18,7 @@ export default defineConfig({
   ],
   build: {
     rollupOptions: {
-      input: { main: resolve(root, "index.html"), rules: resolve(root, "rules.html") },
+      input: { main: resolve(root, "index.html"), rules: resolve(root, "rules.html"), advanced: resolve(root, "rules/advanced.html") },
     },
   },
 });
