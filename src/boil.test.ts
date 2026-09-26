@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { BOIL, BOILS, boilFrame, planBoil, spotKey, variantAt } from "./boil";
+import { BOIL, BOIL_STYLE, BOILS, boilFrame, lookAt, planBoil, spotKey, variantAt } from "./boil";
 import { act, alive, newGame, placeBase, rng, type GameState } from "./game";
-import { redrawn } from "./ink";
+import { lapPath, redrawn } from "./ink";
 import { SETTLED, type Ink } from "./page";
 
 function setup() {
@@ -19,6 +19,44 @@ const shootAt = (s: GameState, me: { id: number; x: number; y: number }, foe: { 
 describe("which side boils", () => {
   it("is the living, as Burooj asked", () => {
     expect(BOILS).toBe("living");
+  });
+});
+
+describe("how it boils", () => {
+  it("camps and soldiers are both being drawn, by default", () => {
+    expect(BOIL_STYLE).toEqual({ camps: "draw", soldiers: "draw" });
+  });
+
+  it("a thing's look changes at its style's rate, and a still thing's never", () => {
+    const changes = (style: "still" | "swap" | "draw") => {
+      let n = 0, prev = lookAt(style, "3@1,2", 0);
+      for (let ms = 1; ms <= 1000; ms++) {
+        const v = lookAt(style, "3@1,2", ms);
+        if (v !== prev) n++;
+        prev = v;
+      }
+      return n;
+    };
+    expect(changes("draw")).toBe(BOIL.drawFps);
+    expect(changes("swap")).toBe(BOIL.fps);
+    expect(changes("still")).toBe(0);
+  });
+
+  it("a pen going round a camp never draws the same circle twice, and never strays into its middle", () => {
+    const r = 62, at = lapPath(500, 500, r, 1234);
+    let most = 0;
+    for (let t = 0; t < 1; t += 0.01) {
+      const [ax, ay] = at(t), [bx, by] = at(t + 1), [cx, cy] = at(t + 7);
+      most = Math.max(most, Math.hypot(ax - bx, ay - by), Math.hypot(ax - cx, ay - cy));
+      for (const [x, y] of [[ax, ay], [bx, by], [cx, cy]]) {
+        const d = Math.hypot(x - 500, y - 500);
+        // the boil layer treats 0.8r as the ring's clear middle: soldiers in there never touch it
+        expect(d).toBeGreaterThan(r * 0.86);
+        expect(d).toBeLessThan(r * 1.12);
+      }
+    }
+    expect(most).toBeGreaterThan(1.5);
+    expect(most).toBeLessThan(r * 0.2);
   });
 });
 

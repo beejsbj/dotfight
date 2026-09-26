@@ -11,13 +11,13 @@
 // pen lives on the untilted overlay. A camera move therefore costs a few
 // style writes and a couple of hundred pixels of gradient, not a repaint.
 
-import { BoilLayer, boilFrame, planBoil, type Plan } from "./boil";
+import { BoilLayer, planBoil, type Plan } from "./boil";
 import type { GameState, Pt } from "./game";
 import { INK, handText, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
-import { cssMatrix, layerMatrix, project, stageCss, toLocal, type View } from "./projection";
+import { cssMatrix, layerMatrix, project, stageCss, toLocal, unproject, type View } from "./projection";
 import { RULES } from "./rules";
 import { DESK, deskTexture } from "./textures";
 
@@ -89,7 +89,7 @@ class Box {
   get empty() { return this.x0 > this.x1; }
 }
 
-let lastCss = { desk: "", page: "", live: "", boil: "" };
+let lastCss = { desk: "", page: "", live: "", boil: ["", ""] };
 let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
 let airKey = "";
 let deskInit = false;
@@ -112,16 +112,18 @@ function place(els: Els, f: Frame) {
   if (c.style.width !== w) { c.style.width = w; c.style.height = h; }
   const pm = cssMatrix(layerMatrix(v, page.S));
   if (pm !== lastCss.page) { c.style.transform = pm; lastCss.page = pm; }
-  const b = boil.c;
-  if (b.parentElement !== els.boilHost) { els.boilHost.replaceChildren(b); lastCss.boil = ""; }
-  const bv = boil.empty ? "hidden" : "";
-  if (b.style.visibility !== bv) b.style.visibility = bv;
-  if (!boil.empty) {
+  const cs = boil.parts.map((p) => p.c);
+  if (cs.some((c, i) => els.boilHost.children[i] !== c)) { els.boilHost.replaceChildren(...cs); lastCss.boil = ["", ""]; }
+  boil.parts.forEach((p, i) => {
+    const b = p.c;
+    const bv = p.empty ? "hidden" : "";
+    if (b.style.visibility !== bv) b.style.visibility = bv;
+    if (p.empty) return;
     const bw = `${b.width}px`, bh = `${b.height}px`;
     if (b.style.width !== bw || b.style.height !== bh) { b.style.width = bw; b.style.height = bh; }
-    const bm = cssMatrix(layerMatrix(v, page.S, boil.ox, boil.oy));
-    if (bm !== lastCss.boil) { b.style.transform = bm; lastCss.boil = bm; }
-  }
+    const bm = cssMatrix(layerMatrix(v, page.S, p.ox, p.oy));
+    if (bm !== lastCss.boil[i]) { b.style.transform = bm; lastCss.boil[i] = bm; }
+  });
   const lc = stageCss(v);
   const lk = lc.transform + lc.origin;
   if (lk !== lastCss.live) { els.live.style.transform = lc.transform; els.live.style.transformOrigin = lc.origin; lastCss.live = lk; }
@@ -134,7 +136,8 @@ export function renderStage(els: Els, f: Frame) {
   page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold);
   boil.set(plan, s, pageState.S);
   place(els, f);
-  if (boil.draw(boilFrame(f.boil?.ms ?? 0))) stageStats.boil++;
+  seen = onScreen(f);
+  if (boil.draw(f.boil?.ms ?? 0, seen)) stageStats.boil++;
   renderLive(els.live.getContext("2d")!, els.live, f, ink, dpr);
   renderAir(els, f);
   stageStats.frames++;
@@ -151,9 +154,19 @@ function boilPlan(f: Frame, ink: Ink): Plan {
   return planMemo.plan!;
 }
 
+// The part of the page on screen (page units, padded), so the boil leaves
+// what you can't see alone. None if the view reaches the horizon.
+let seen: { x0: number; y0: number; x1: number; y1: number } | undefined;
+function onScreen(f: Frame) {
+  const pts = [[0, 0], [f.sw, 0], [0, f.ch], [f.sw, f.ch]].map(([x, y]) => unproject(f.view, x, y));
+  if (pts.some((p) => !p)) return undefined;
+  const xs = pts.map((p) => p!.x), ys = pts.map((p) => p!.y), pad = 40;
+  return { x0: Math.min(...xs) - pad, y0: Math.min(...ys) - pad, x1: Math.max(...xs) + pad, y1: Math.max(...ys) + pad };
+}
+
 /** Between rendered frames: redraw the boil if its frame has ticked. Returns whether it did. */
 export function boilTick(ms: number) {
-  if (boil.empty || !boil.draw(boilFrame(ms))) return false;
+  if (boil.empty || !boil.draw(ms, seen)) return false;
   stageStats.boil++;
   return true;
 }

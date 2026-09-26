@@ -22,6 +22,7 @@ import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
 import { RULES } from "./rules";
+import { BOIL_STYLE } from "./boil";
 import { boil, boilTick, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { Timeline, reachFraction } from "./timeline";
@@ -1211,6 +1212,8 @@ if (import.meta.env.DEV) {
     },
     stageStats, boil, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
     set boilClock(ms: number | undefined) { boilClock = ms; },
+    /** Compare the boil's styles: `pft.boilStyle({ camps: "swap" })`. */
+    boilStyle: (st: Partial<typeof BOIL_STYLE>) => { Object.assign(BOIL_STYLE, st); dirty = true; return { ...BOIL_STYLE }; },
     cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
     get slow() { return slow; }, set slow(v: boolean) { slow = v; cam.quick = v ? 1.8 : 1; probeSlow = v; },
     start, showTitle, replay: () => replay(file(s, mode)), apply: (st: Step) => { apply(s, st); dirty = true; },
