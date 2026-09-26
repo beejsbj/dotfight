@@ -14,8 +14,6 @@
     "rules-art": "node scripts/rules-page.mjs"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@vercel/node": "^3.0.0",
     "playwright-core": "^1.63.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
@@ -24,6 +22,7 @@
   "dependencies": {
     "@fontsource/caveat": "^5.3.0",
     "@fontsource/patrick-hand": "^5.3.0",
-    "@fontsource/special-elite": "^5.3.0"
+    "@fontsource/special-elite": "^5.3.0",
+    "@upstash/redis": "^1.39.0"
   }
 }
