@@ -154,6 +154,8 @@ new ResizeObserver(() => resize()).observe($("#bottom"));
 new ResizeObserver(() => resize()).observe($("#top"));
 for (const ev of ["touchend", "click", "keydown"]) window.addEventListener(ev, sfx.unlock, { passive: true });
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** The pen's and a moving man's own motion (LIFE.pen, the ride's smear): not with reduced motion. */
+const lively = () => !reduced;
 function applyTilt() { cam.tiltScale = settings.tilt && !reduced ? 1 : 0; }
 applyTilt();
 
@@ -1289,7 +1291,7 @@ function currentFrame(): Frame {
     const p = Math.min(1, it / r.dur);
     const h = headAt(r.o.path, 1 - Math.pow(1 - p, 2));
     // riding his ink: stretched out along it, most at the start when it's fastest
-    if (r.mover !== undefined && it < r.dur) f.mover = { id: r.mover, at: h, angle: h.angle, stretch: LIFE.chosen ? 1 + 0.6 * (1 - p) : 1 };
+    if (r.mover !== undefined && it < r.dur) f.mover = { id: r.mover, at: h, angle: h.angle, stretch: LIFE.chosen && lively() ? 1 + 0.6 * (1 - p) : 1 };
     f.pen = resolvePen(r, it);
   } else if (selected !== undefined && screen === "game" && !(unit && !unit.rising)) {
     const me = s.soldiers[selected];
@@ -1300,7 +1302,7 @@ function currentFrame(): Frame {
       const ang = aimAngle + wobble(aim, T);
       f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: sigma(pl.power) * 2, reach: reach(kind, pl.power), kind };
       // at full pull it shivers under the finger (the pen only: the aim is the hand's)
-      const sh = LIFE.pen && pl.live ? shiver(T, pl.power) : 0;
+      const sh = LIFE.pen && lively() && pl.live ? shiver(T, pl.power) : 0;
       f.pen = leaning(me.x, me.y, ang + sh * 3, pl.live ? penLean(pl.power) + sh : 0.04, owner, ink);
     } else if (botAim) {
       const k = Math.min(1, (T - botAim.t0) / 700);
@@ -1311,7 +1313,7 @@ function currentFrame(): Frame {
     } else {
       // set down on the dot: drops in, then rocks a few times finding its balance
       const k = Math.min(1, (T - penDrop) / 240);
-      const rock = LIFE.pen ? settle(T - penDrop - 240) : 0;
+      const rock = LIFE.pen && lively() ? settle(T - penDrop - 240) : 0;
       f.pen = leaning(me.x, me.y, (me.id * 2.39) % 6.283, 0.03 + rock, owner, ink);
       f.pen.h = 70 * (1 - k) * (1 - k);
       f.pen.alpha = k;

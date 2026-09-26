@@ -19,7 +19,7 @@ import { RULES } from "./rules";
 
 /**
  * Every idea is its own switch, so each can be compared on and off.
- * (Dev: `pft.life({ voices: false })`.)
+ * (Dev: `pft.LIFE.voices = false`, live.)
  */
 export const LIFE = {
   /** Breathing, and eager little hops from the side whose go it is. */
@@ -314,6 +314,7 @@ export class Life {
 
   /** Queue a reaction for soldier `id`. A new one of the same kind replaces the old. */
   add(id: number, r: Reaction) {
+    this.memo.delete(id);
     const list = (this.acts.get(id) ?? []).filter((x) => x.kind !== r.kind && x.t0 + span(x) > r.t0 - 2000);
     list.push(r);
     this.acts.set(id, list);
@@ -323,12 +324,19 @@ export class Life {
     const h = this.hush.get(base);
     this.hush.set(base, h && h[1] >= from ? [Math.min(h[0], from), Math.max(h[1], until)] : [from, until]);
   }
-  clear() { this.acts.clear(); this.dread.clear(); this.beats.clear(); this.rings.clear(); this.hush.clear(); }
+  clear() { this.memo.clear(); this.acts.clear(); this.dread.clear(); this.beats.clear(); this.rings.clear(); this.hush.clear(); }
   reactions(id: number) { return this.acts.get(id) ?? []; }
+
+  /** Sides at their last stand, counted once a frame rather than once a soldier. */
+  private stand = [false, false];
+  /** The last pose worked out for each soldier: his heartbeat and his drawing ask for the same moment. */
+  private memo = new Map<number, { ms: number; pose: Pose }>();
 
   /** Take what's going on now (every rendered frame). `ms`: wall time. */
   see(sc: Scene, ms: number) {
     this.scene = sc;
+    this.stand = [lastStand(sc.s, 0), lastStand(sc.s, 1)];
+    this.memo.clear();
     const now = new Set(LIFE.line && sc.aim && sc.chosen && sc.aim.power > 0.02 ? inLine(sc.s, sc.chosen.id, sc.aim.angle, sc.aim.reach, sc.aim.spread) : []);
     for (const id of this.dread.keys()) if (!now.has(id)) this.dread.delete(id);
     for (const id of now) if (!this.dread.has(id)) this.dread.set(id, ms);
@@ -338,6 +346,14 @@ export class Life {
 
   /** Soldier `id`'s pose at wall `ms` (on the 12 fps grid). */
   pose(id: number, ms: number): Pose {
+    const m = this.memo.get(id);
+    if (m && m.ms === ms) return m.pose;
+    const pose = this.work(id, ms);
+    this.memo.set(id, { ms, pose });
+    return pose;
+  }
+
+  private work(id: number, ms: number): Pose {
     const sc = this.scene;
     const x = sc?.s.soldiers[id];
     if (!sc || !x) return { ...REST };
@@ -401,7 +417,7 @@ export class Life {
         a.rate *= 1 + 1.3 * on;
       }
     }
-    if (LIFE.crowd && lastStand(sc.s, x.owner)) {
+    if (LIFE.crowd && this.stand[x.owner]) {
       // the last few: huddled toward the nearest of the others, trembling, hearts going
       const near = comrades(sc.s, x.owner, x, RULES.baseRadius * 3, id)[0];
       if (near) a.push(Math.atan2(near.y - x.y, near.x - x.x), 1.8, 1.1);
