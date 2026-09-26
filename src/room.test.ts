@@ -1,132 +1,227 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { clearStore } from "../api/_store";
-import {
-  replayActions,
-  getOpponentInfo,
-  type RoomAction,
-} from "./room";
-import { newGame, placeBase, act, type Flick } from "./game";
+import { beforeEach, describe, expect, it } from "vitest";
+import { stubRedis } from "../api/_redis-stub";
+import { RoomError, rooms, type Rooms } from "../api/_rooms";
+import { botBase, botFlick } from "./bot";
+import { canPlaceBase, type GameState } from "./game";
+import { ENGINE, acts, apply, check, fresh, replay, turn, type Act, type Setup } from "./room-engine";
+import { RoomHttpError, type RoomApi, type Seat } from "./room-protocol";
+import { listRooms, readRoom, RoomLink, type Saved } from "./room";
 
-describe("room protocol", () => {
-  beforeEach(() => {
-    clearStore();
-    // Mock fetch is set up per test if needed
+/** The real store over a stub Redis, behind the same interface as the HTTP client. */
+function fakeApi(r: Rooms) {
+  const net = { down: false, dropReply: false };
+  const wrap = async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (net.down) throw new TypeError("Failed to fetch");
+    try {
+      const out = await fn();
+      if (net.dropReply) { net.dropReply = false; throw new TypeError("Failed to fetch"); }
+      return out;
+    } catch (e) {
+      if (e instanceof RoomError) throw new RoomHttpError(e.status, e.message);
+      throw e;
+    }
+  };
+  const api: RoomApi = {
+    create: (b) => wrap(() => r.create(b)),
+    join: (code, name) => wrap(() => r.join({ code, name })),
+    read: (code, since) => wrap(() => r.read({ code, since })),
+    act: (b) => wrap(async () => {
+      try { return { ok: true as const, n: (await r.act(b)).n }; } catch (e) {
+        if (e instanceof RoomError && e.status === 409) return { ok: false as const, conflict: true as const, n: e.extra.n as number };
+        throw e;
+      }
+    }),
+  };
+  return { api, net };
+}
+
+function memStorage() {
+  const m = new Map<string, string>();
+  return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) };
+}
+
+/** One phone: its link, and its page, kept the way main.ts keeps it. */
+function phone(data: Saved, api: RoomApi) {
+  const storage = memStorage();
+  let s: GameState = replay(data.setup, data.log).s;
+  const p = {
+    storage,
+    get s() { return s; },
+    link: new RoomLink(data, { api, storage, onDiverged: () => { s = replay(p.link.data.setup, p.link.data.log.slice(0, p.link.data.applied)).s; } }),
+    /** draw whatever has arrived */
+    catchUp() {
+      for (let e = p.link.peek(); e; e = p.link.peek()) {
+        expect(check(s, e.seat, e.a)).toBeNull();
+        apply(s, e.a as Act);
+        p.link.drawn();
+      }
+    },
+    move(a: Act) {
+      expect(check(s, p.link.seat!, a)).toBeNull();
+      apply(s, a);
+      p.link.push(a);
+    },
+  };
+  return p;
+}
+
+const setup: Setup = { seed: 424242, page: { no: 1, date: "26 Sep 2026" } };
+const saved = (code: string, seat: Seat | null, secret: string | null, names: Saved["names"]): Saved =>
+  ({ v: 1, code, seat, secret, engine: ENGINE, setup, names, log: [], applied: 0, pending: [], updated: 0 });
+
+let k = 1;
+function botMove(s: GameState): Act {
+  if (s.phase === "setup") {
+    const spot = botBase(s, (x, y) => !canPlaceBase(s, x, y), k++)!;
+    return { t: "base", x: spot.x, y: spot.y };
+  }
+  return { t: "flick", f: botFlick(s, 1, k++) };
+}
+
+describe("room engine adapter", () => {
+  it("replays a log to the same page, and stops where it stops adding up", () => {
+    const s = fresh(setup);
+    const log: { seat: Seat; a: Act }[] = [];
+    while (s.phase !== "over" && log.length < 40) {
+      const a = botMove(s);
+      log.push({ seat: turn(s)!, a });
+      apply(s, a);
+    }
+    expect(replay(setup, log).s).toEqual(s);
+    expect(acts(s)).toEqual(log.map((e) => e.a));
+    const bad = [...log.slice(0, 7), { seat: log[7].seat === 0 ? 1 : 0, a: log[7].a } as { seat: Seat; a: Act }];
+    expect(replay(setup, bad).bad).toBe(7);
+    expect(check(fresh(setup), 0, { t: "flick", f: { soldierId: 0, kind: "shoot", angle: 0, length: 1, bend: 0 } })).toBe("illegal flick");
+    expect(check(fresh(setup), 0, { t: "base", x: NaN, y: 1 })).toBe("bad camp");
+    expect(check(fresh(setup), 0, { t: "nope" })).toBe("unknown action");
+  });
+});
+
+describe("room link", () => {
+  let r: Rooms, api: RoomApi, net: { down: boolean; dropReply: boolean };
+  beforeEach(() => { r = rooms(stubRedis()); ({ api, net } = fakeApi(r)); });
+
+  async function pair() {
+    const c = await api.create({ name: "Burooj", engine: ENGINE, setup });
+    const j = await api.join(c.code, "Dawood");
+    const a = phone(saved(c.code, 0, c.secret, ["Burooj", null]), api);
+    const b = phone(saved(c.code, 1, j.secret, ["Burooj", "Dawood"]), api);
+    return { a, b, code: c.code };
+  }
+
+  /** Whoever's turn it is moves; the other polls and draws it. */
+  async function turnOf(a: ReturnType<typeof phone>, b: ReturnType<typeof phone>) {
+    const [me, them] = turn(a.s) === 0 ? [a, b] : [b, a];
+    me.move(botMove(me.s));
+    await me.link.flush();
+    await them.link.poll();
+    them.catchUp();
+  }
+
+  it("two phones play a whole war and end on the same page", async () => {
+    const { a, b } = await pair();
+    await a.link.poll();
+    expect(a.link.names).toEqual(["Burooj", "Dawood"]);
+    for (let i = 0; i < 400 && a.s.phase !== "over"; i++) await turnOf(a, b);
+    expect(a.s.phase).toBe("over");
+    expect(b.s).toEqual(a.s);
+    expect(a.link.data.log.map((e) => e.a)).toEqual(acts(a.s));
   });
 
-  it("replays base placements", () => {
-    // Each player places 3 bases in alternating turns
-    const actions: RoomAction[] = [
-      { i: 0, t: "base", seat: 0, data: { x: 200, y: 300 } },
-      { i: 1, t: "base", seat: 1, data: { x: 800, y: 300 } },
-      { i: 2, t: "base", seat: 0, data: { x: 200, y: 600 } },
-      { i: 3, t: "base", seat: 1, data: { x: 800, y: 600 } },
-      { i: 4, t: "base", seat: 0, data: { x: 200, y: 900 } },
-      { i: 5, t: "base", seat: 1, data: { x: 800, y: 900 } },
-    ];
-
-    const replayed = replayActions(12345, actions);
-    expect(replayed.bases).toHaveLength(6);
-    expect(replayed.bases[0].owner).toBe(0);
-    expect(replayed.bases[1].owner).toBe(1);
-    expect(replayed.phase).toBe("play");
+  it("a phone that was away catches up from the log", async () => {
+    const { a, b } = await pair();
+    for (let i = 0; i < 6; i++) await turnOf(a, b);
+    // b closes the app: all that survives is its storage
+    b.link.save();
+    const code = b.link.code;
+    const kept = readRoom(b.storage, code)!;
+    expect(turn(a.s)).toBe(0);
+    a.move(botMove(a.s));
+    await a.link.flush();
+    // b comes back later
+    const b2 = phone(kept, api);
+    await b2.link.poll();
+    expect(b2.link.queued).toBe(1);
+    b2.catchUp();
+    expect(b2.s).toEqual(a.s);
+    expect(listRooms(b.storage).map((x) => x.code)).toEqual([code]);
   });
 
-  it("replays flicks", () => {
-    const flick: Flick = {
-      soldierId: 0,
-      kind: "shoot",
-      angle: Math.PI / 4,
-      length: 500,
-      bend: 0.05,
-    };
-
-    const actions: RoomAction[] = [
-      { i: 0, t: "base", seat: 0, data: { x: 200, y: 300 } },
-      { i: 1, t: "base", seat: 1, data: { x: 800, y: 300 } },
-      { i: 2, t: "base", seat: 0, data: { x: 200, y: 600 } },
-      { i: 3, t: "base", seat: 1, data: { x: 800, y: 600 } },
-      { i: 4, t: "base", seat: 0, data: { x: 200, y: 900 } },
-      { i: 5, t: "base", seat: 1, data: { x: 800, y: 900 } },
-      { i: 6, t: "flick", seat: 0, data: flick },
-    ];
-
-    const replayed = replayActions(12345, actions);
-    expect(replayed.flicks).toHaveLength(1);
-    expect(replayed.flicks[0].kind).toBe("shoot");
-    expect(replayed.turn).toBe(2);
+  it("moves made offline go when the network comes back", async () => {
+    const { a, b } = await pair();
+    net.down = true;
+    a.move(botMove(a.s));
+    await a.link.flush();
+    expect(a.link.offline).toBe(true);
+    expect(a.link.data.pending).toHaveLength(1);
+    net.down = false;
+    await a.link.flush();
+    expect(a.link.offline).toBe(false);
+    expect(a.link.data.pending).toHaveLength(0);
+    await b.link.poll();
+    b.catchUp();
+    expect(b.s).toEqual(a.s);
   });
 
-  it("reconstructs game state byte-identical after replay", () => {
-    const seed = 98765;
-    const game1 = newGame(seed);
-    placeBase(game1, 200, 300);
-    placeBase(game1, 800, 300);
-    placeBase(game1, 200, 600);
-    placeBase(game1, 800, 600);
-    placeBase(game1, 200, 900);
-    placeBase(game1, 800, 900);
-
-    // After 6 bases (3 per player), game should be in "play" phase
-    expect(game1.phase).toBe("play");
-
-    const flick: Flick = { soldierId: 0, kind: "shoot", angle: 0.5, length: 400, bend: 0 };
-    act(game1, flick);
-
-    const actions: RoomAction[] = [
-      { i: 0, t: "base", seat: 0, data: { x: 200, y: 300 } },
-      { i: 1, t: "base", seat: 1, data: { x: 800, y: 300 } },
-      { i: 2, t: "base", seat: 0, data: { x: 200, y: 600 } },
-      { i: 3, t: "base", seat: 1, data: { x: 800, y: 600 } },
-      { i: 4, t: "base", seat: 0, data: { x: 200, y: 900 } },
-      { i: 5, t: "base", seat: 1, data: { x: 800, y: 900 } },
-      { i: 6, t: "flick", seat: 0, data: flick },
-    ];
-
-    const game2 = replayActions(seed, actions);
-
-    // Compare key state
-    expect(game2.seed).toBe(game1.seed);
-    expect(game2.bases.length).toBe(game1.bases.length);
-    expect(game2.soldiers.length).toBe(game1.soldiers.length);
-    expect(game2.flicks.length).toBe(game1.flicks.length);
-    expect(game2.marks.length).toBe(game1.marks.length);
-    expect(game2.current).toBe(game1.current);
-    expect(game2.turn).toBe(game1.turn);
+  it("a lost reply doesn't double the move", async () => {
+    const { a, b } = await pair();
+    net.dropReply = true;
+    a.move(botMove(a.s));
+    await a.link.flush(); // landed, but we never heard
+    expect(a.link.data.pending).toHaveLength(1);
+    await a.link.flush(); // the retry gets a 409 and finds its own move there
+    expect(a.link.data.pending).toHaveLength(0);
+    expect((await api.read(a.link.code)).n).toBe(1);
+    await b.link.poll();
+    b.catchUp();
+    expect(b.s).toEqual(a.s);
   });
 
-  it("validates action data through replay (client-side validation)", () => {
-    const actions: RoomAction[] = [
-      { i: 0, t: "base", seat: 0, data: { x: 200, y: 300 } },
-      { i: 1, t: "base", seat: 1, data: { x: 800, y: 300 } },
-      { i: 2, t: "base", seat: 0, data: { x: 200, y: 600 } },
-      { i: 3, t: "base", seat: 1, data: { x: 800, y: 600 } },
-      { i: 4, t: "base", seat: 0, data: { x: 200, y: 900 } },
-      { i: 5, t: "base", seat: 1, data: { x: 800, y: 900 } },
-      { i: 6, t: "flick", seat: 0, data: { soldierId: 0, kind: "shoot", angle: 0.5, length: 400, bend: 0 } },
-    ];
-
-    // Should successfully replay valid actions
-    expect(() => replayActions(12345, actions)).not.toThrow();
-    const game = replayActions(12345, actions);
-    expect(game.flicks).toHaveLength(1);
+  it("a stale double-tap is refused and the page stays put", async () => {
+    const { a, b } = await pair();
+    await turnOf(a, b);
+    const first = a.link.data.log[0];
+    const again = await api.act({ code: a.link.code, seat: 0, secret: a.link.data.secret!, i: 0, a: first.a });
+    expect(again).toEqual({ ok: false, conflict: true, n: 1 });
+    expect((await api.read(a.link.code)).n).toBe(1);
   });
 
-  it("gets opponent info from room state", () => {
-    const roomState: { meta: any; actions: any[] } = {
-      meta: {
-        v: 1 as const,
-        created: Date.now(),
-        players: [
-          { seat: 0 as const, name: "Alice", secret: "s1" },
-          { seat: 1 as const, name: "Bob", secret: "s2" },
-        ],
-        seed: 12345,
-      },
-      actions: [],
-    };
+  it("if the page moved on without our move, we drop it and take the server's", async () => {
+    const { a, b, code } = await pair();
+    // a second device on seat 0 (same secret) gets there first
+    const twin = phone(saved(code, 0, a.link.data.secret, ["Burooj", "Dawood"]), api);
+    twin.move(botMove(twin.s));
+    await twin.link.flush();
+    a.move(botMove(a.s)); // a different camp, same index
+    await a.link.flush();
+    expect(a.link.data.pending).toHaveLength(0);
+    a.catchUp();
+    expect(a.s).toEqual(twin.s);
+    await b.link.poll();
+    b.catchUp();
+    expect(b.s).toEqual(twin.s);
+  });
 
-    const opponent = getOpponentInfo(roomState, 0);
-    expect(opponent.name).toBe("Bob");
-    expect(opponent.seat).toBe(1);
+  it("watchers read along but can't write", async () => {
+    const { a, b, code } = await pair();
+    const w = await api.join(code, "Someone");
+    expect(w.seat).toBeNull();
+    const watcher = phone(saved(code, null, null, ["Burooj", "Dawood"]), api);
+    for (let i = 0; i < 4; i++) await turnOf(a, b);
+    watcher.link.push(botMove(watcher.s)); // ignored
+    await watcher.link.poll();
+    watcher.catchUp();
+    expect(watcher.s).toEqual(a.s);
+    expect(watcher.link.data.pending).toHaveLength(0);
+  });
+
+  it("polls fast while waiting, then backs off", () => {
+    let t = 0;
+    const l = new RoomLink(saved("abc234", 0, "s", ["B", null]), { api, storage: memStorage(), now: () => t });
+    expect(l.pollDelay()).toBe(1500);
+    t = 3 * 60e3;
+    expect(l.pollDelay()).toBe(4000);
+    t = 20 * 60e3;
+    expect(l.pollDelay()).toBe(10000);
   });
 });

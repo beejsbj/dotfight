@@ -1,191 +1,239 @@
-// Client-side room logic. Handles joining, syncing, and replaying the action log.
+// A room link on this device: which room, which seat (and its secret), the
+// log as far as we've seen it, and our own moves still on their way. It posts
+// our moves in order, polls for the other side's while we wait, and keeps the
+// lot in localStorage so a closed app picks up where it left off.
+//
+// main.ts applies what arrives (`next()`), and hands over what the player
+// does (`push()`). The engine is only touched through `room-engine.ts`.
 
-import { act, newGame, placeBase, type Flick, type GameState } from "./game";
+import type { Act, Setup } from "./room-engine";
+import type { Entry, RoomApi, Seat } from "./room-protocol";
 
-export interface RoomInfo {
+export interface Saved {
+  v: 1;
   code: string;
-  seat: 0 | 1 | null; // null if spectating
+  seat: Seat | null; // null: watching
   secret: string | null;
-  opponentName: string;
-  opponentSeat: 0 | 1 | null;
+  engine: string;
+  setup: Setup;
+  theme?: string;
+  names: [string, string | null];
+  /** The server's log as far as we know it. */
+  log: Entry[];
+  /** How many of `log` are on the page here; the rest are still to be drawn. */
+  applied: number;
+  /** Our own moves, on the page here, not yet on the server. They follow `log`. */
+  pending: Act[];
+  updated: number;
+  /** For the cover's list. */
+  summary?: { turn: number; next: Seat | null; winner?: Seat };
 }
 
-export interface RoomAction {
-  i: number;
-  t: "base" | "flick";
-  seat: 0 | 1;
-  data: unknown;
+export interface Env {
+  api: RoomApi;
+  storage: Pick<Storage, "getItem" | "setItem" | "removeItem">;
+  hidden?: () => boolean;
+  now?: () => number;
+  /** Something arrived: entries to draw, a name, or a net state change. */
+  onNews?: () => void;
+  /** Our pending moves were refused because the page moved on without them. Rebuild from `log`. */
+  onDiverged?: () => void;
 }
 
-export interface RoomState {
-  meta: {
-    v: 1;
-    created: number;
-    players: Array<{ seat: 0 | 1; name: string; secret: string }>;
-    seed: number;
-    theme?: string;
-  };
-  actions: RoomAction[];
-}
+const KEY = (code: string) => `pft:room:${code}`;
+const INDEX = "pft:rooms";
 
-const API_BASE = "/api/rooms";
-
-// Store room info in localStorage
-function getStorageKey(code: string): string {
-  return `room:${code}`;
-}
-
-export function saveRoomInfo(code: string, info: RoomInfo): void {
-  localStorage.setItem(getStorageKey(code), JSON.stringify(info));
-}
-
-export function loadRoomInfo(code: string): RoomInfo | null {
-  const raw = localStorage.getItem(getStorageKey(code));
-  if (!raw) return null;
+export function readRoom(storage: Env["storage"], code: string): Saved | null {
   try {
-    return JSON.parse(raw);
+    const v = JSON.parse(storage.getItem(KEY(code)) || "null");
+    return v?.v === 1 && Array.isArray(v.log) && Array.isArray(v.pending) ? v : null;
   } catch {
     return null;
   }
 }
 
-/** Create a new room with the given seed. Returns room info and initial game state. */
-export async function createRoom(seed: number, theme?: string): Promise<{ info: RoomInfo; state: GameState }> {
-  const res = await fetch(`${API_BASE}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ seed, theme }),
-  });
-  if (!res.ok) throw new Error(`failed to create room: ${res.statusText}`);
-
-  const { code, seat, secret } = await res.json();
-  const info: RoomInfo = { code, seat, secret, opponentName: "", opponentSeat: null };
-  saveRoomInfo(code, info);
-
-  const gameState = newGame(seed);
-  if (theme) gameState.theme = theme;
-
-  return { info, state: gameState };
+/** Rooms this device has played in, most recent first. */
+export function listRooms(storage: Env["storage"]): Saved[] {
+  let codes: string[] = [];
+  try { codes = JSON.parse(storage.getItem(INDEX) || "[]"); } catch { /* start over */ }
+  return (Array.isArray(codes) ? codes : []).map((c) => readRoom(storage, c)).filter((r): r is Saved => !!r);
 }
 
-/** Join an existing room by code. Returns room info and replayed game state. */
-export async function joinRoom(code: string, name: string): Promise<{ info: RoomInfo; state: GameState }> {
-  // Fetch the room state
-  const res1 = await fetch(`${API_BASE}/${code}`);
-  if (!res1.ok) throw new Error(`room not found: ${code}`);
-  const roomState: RoomState = await res1.json();
+export function forgetRoom(storage: Env["storage"], code: string) {
+  storage.removeItem(KEY(code));
+  storage.setItem(INDEX, JSON.stringify(listRooms(storage).map((r) => r.code).filter((c) => c !== code)));
+}
 
-  // Join as a player
-  const res2 = await fetch(`${API_BASE}/${code}/join`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-  });
-  if (!res2.ok) throw new Error(`failed to join room: ${res2.statusText}`);
+const same = (e: Entry, seat: Seat | null, a: unknown) => e.seat === seat && JSON.stringify(e.a) === JSON.stringify(a);
 
-  const { seat, secret } = await res2.json();
-  if (seat === null) {
-    // Joining as spectator
-    const info: RoomInfo = { code, seat: null, secret: null, opponentName: "", opponentSeat: null };
-    const gameState = replayActions(roomState.meta.seed, roomState.actions);
-    return { info, state: gameState };
+export class RoomLink {
+  /** The last request failed for want of a network. */
+  offline = false;
+  /** The page on the server stopped adding up (or needs a newer client). */
+  broken = "";
+  private waitingFor = false;
+  private lastNews = 0;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private flushing: Promise<void> | null = null;
+  private polling: Promise<void> | null = null;
+  private retry = 0;
+  private running = false;
+  private readonly now: () => number;
+
+  constructor(public data: Saved, private env: Env) {
+    this.now = env.now ?? Date.now;
+    this.lastNews = this.now();
   }
 
-  const info: RoomInfo = {
-    code,
-    seat,
-    secret,
-    opponentName: "",
-    opponentSeat: null,
-  };
+  get code() { return this.data.code; }
+  get seat() { return this.data.seat; }
+  get names() { return this.data.names; }
+  get url() { return `${location.origin}/r/${this.data.code}`; }
+  /** Entries on the server that aren't drawn here yet. */
+  get queued() { return this.data.log.length - this.data.applied; }
 
-  // Find opponent
-  for (const p of roomState.meta.players) {
-    if (p.seat !== seat) {
-      info.opponentName = p.name;
-      info.opponentSeat = p.seat;
-      break;
+  /** The next entry to draw; call `drawn()` once it's on the page. */
+  peek(): Entry | undefined { return this.data.log[this.data.applied]; }
+  drawn() { this.data.applied++; this.save(); }
+
+  save(summary?: Saved["summary"]) {
+    const d = this.data;
+    d.updated = this.now();
+    if (summary) d.summary = summary;
+    const { storage } = this.env;
+    storage.setItem(KEY(d.code), JSON.stringify(d));
+    const rest = listRooms(storage).map((r) => r.code).filter((c) => c !== d.code);
+    storage.setItem(INDEX, JSON.stringify([d.code, ...rest].slice(0, 20)));
+  }
+
+  /** The player made a move here. It's already on the page; send it. */
+  push(a: Act) {
+    if (this.data.seat === null) return;
+    this.data.pending.push(a);
+    this.save();
+    void this.flush();
+  }
+
+  /** Tell the link whether we're waiting on the other side (it polls only then). */
+  waiting(on: boolean) {
+    if (on === this.waitingFor) return;
+    this.waitingFor = on;
+    if (on) this.lastNews = this.now();
+    this.schedule();
+  }
+
+  start() {
+    this.running = true;
+    this.schedule(0);
+  }
+
+  stop() {
+    this.running = false;
+    clearTimeout(this.timer);
+  }
+
+  /** The app came back to the front, or the network did: catch up now. */
+  wake() {
+    if (this.running) this.schedule(0);
+  }
+
+  /** How long until the next poll, given how long it's been quiet. */
+  pollDelay() {
+    const quiet = this.now() - this.lastNews;
+    return quiet < 2 * 60e3 ? 1500 : quiet < 10 * 60e3 ? 4000 : 10000;
+  }
+
+  private schedule(ms?: number) {
+    clearTimeout(this.timer);
+    if (!this.running || this.broken) return;
+    const hidden = this.env.hidden?.() ?? false;
+    if (this.data.pending.length) {
+      // keep trying to deliver, hidden or not
+      const wait = ms ?? Math.min(15000, 1000 * 2 ** this.retry);
+      this.timer = setTimeout(() => void this.flush(), wait);
+      return;
     }
+    if (hidden) return; // visibilitychange wakes us
+    if (ms === undefined && !this.waitingFor) return;
+    this.timer = setTimeout(() => void this.poll().finally(() => this.schedule()), ms ?? this.pollDelay());
   }
 
-  saveRoomInfo(code, info);
-
-  // Replay actions to reconstruct the game state
-  const gameState = replayActions(roomState.meta.seed, roomState.actions);
-  if (roomState.meta.theme) gameState.theme = roomState.meta.theme;
-
-  return { info, state: gameState };
-}
-
-/** Replay a list of actions from the start to reconstruct game state. */
-export function replayActions(seed: number, actions: RoomAction[]): GameState {
-  const game = newGame(seed);
-
-  for (const action of actions) {
-    try {
-      if (action.t === "base") {
-        const { x, y } = action.data as { x: number; y: number };
-        placeBase(game, x, y);
-      } else if (action.t === "flick") {
-        const flick = action.data as Flick;
-        act(game, flick);
+  /** Fetch whatever is new. Only when nothing of ours is in flight. */
+  poll(): Promise<void> {
+    if (this.data.pending.length) return this.flush();
+    if (this.polling) return this.polling;
+    this.polling = (async () => {
+      try {
+        const d = this.data;
+        const v = await this.env.api.read(d.code, d.log.length);
+        let news = this.offline;
+        this.offline = false;
+        if (v.engine !== d.engine) { this.broken = "this page needs a newer copy of the game: reload"; news = true; }
+        if (JSON.stringify(v.names) !== JSON.stringify(d.names)) { d.names = v.names; news = true; }
+        // a move of ours may have been sent while this read was out
+        if (!d.pending.length && v.since === d.log.length && v.entries.length) {
+          d.log.push(...v.entries);
+          news = true;
+        }
+        if (news) { this.lastNews = this.now(); this.save(); this.env.onNews?.(); }
+      } catch (e) {
+        this.netFail(e);
+      } finally {
+        this.polling = null;
       }
-    } catch (e) {
-      console.error(`failed to replay action ${action.i}:`, e);
-      throw e;
-    }
+    })();
+    return this.polling;
   }
 
-  return game;
-}
-
-/** Send an action to the room (append to the log). Returns true if successful, false if conflict. */
-export async function sendAction(
-  info: RoomInfo,
-  actionIndex: number,
-  actionType: "base" | "flick",
-  actionData: unknown,
-): Promise<boolean> {
-  if (info.seat === null || info.secret === null) {
-    throw new Error("cannot send action as spectator");
+  /** Send our moves, oldest first. A lost reply is fine: the retry finds it already there. */
+  flush(): Promise<void> {
+    if (this.flushing) return this.flushing;
+    this.flushing = (async () => {
+      const d = this.data;
+      try {
+        while (d.pending.length && d.seat !== null && d.secret) {
+          const a = d.pending[0];
+          const i = d.log.length;
+          const r = await this.env.api.act({ code: d.code, seat: d.seat, secret: d.secret, i, a });
+          if (r.ok) {
+            d.log.push({ seat: d.seat, a, at: this.now() });
+            d.applied++;
+            d.pending.shift();
+          } else {
+            const v = await this.env.api.read(d.code, i);
+            if (v.entries[0] && same(v.entries[0], d.seat, a)) {
+              // it had landed; the reply hadn't
+              d.log.push(v.entries[0]);
+              d.applied++;
+              d.pending.shift();
+            } else {
+              // the page moved on without our move(s): drop them, take the server's
+              d.pending = [];
+              if (v.since === d.log.length) d.log.push(...v.entries);
+              this.save();
+              this.env.onDiverged?.();
+              break;
+            }
+          }
+          this.save();
+        }
+        if (this.offline) { this.offline = false; this.env.onNews?.(); }
+        this.retry = 0;
+      } catch (e) {
+        this.netFail(e);
+        this.retry = Math.min(4, this.retry + 1);
+      } finally {
+        this.flushing = null;
+        this.schedule();
+      }
+    })();
+    return this.flushing;
   }
 
-  const res = await fetch(`${API_BASE}/${info.code}/action`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      seat: info.seat,
-      secret: info.secret,
-      actionIndex,
-      actionType,
-      actionData,
-    }),
-  });
-
-  if (!res.ok) {
-    const error = await res.json();
-    if (res.status === 409) {
-      // Conflict: another player moved first
-      console.log("action conflict, expected index", error.expectedIndex);
-      return false;
-    }
-    throw new Error(`failed to send action: ${res.statusText}`);
+  private netFail(e: unknown) {
+    const was = this.offline;
+    this.offline = true;
+    if (!(e instanceof TypeError)) console.warn("room:", e);
+    if (!was) this.env.onNews?.();
   }
-
-  return true;
-}
-
-/** Fetch the latest room state. */
-export async function fetchRoomState(code: string): Promise<RoomState> {
-  const res = await fetch(`${API_BASE}/${code}`);
-  if (!res.ok) throw new Error(`room not found: ${code}`);
-  return res.json();
-}
-
-/** Get the opponent name from the room state. */
-export function getOpponentInfo(roomState: RoomState, mySeat: 0 | 1 | null): { name: string; seat: 0 | 1 | null } {
-  for (const p of roomState.meta.players) {
-    if (p.seat !== mySeat) return { name: p.name, seat: p.seat };
-  }
-  return { name: "", seat: null };
 }
