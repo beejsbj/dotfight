@@ -43,4 +43,4 @@ npm run dev      # http://localhost:5173
 npm test
 ```
 
-Working on the code, or an agent working on it? Start with [AGENTS.md](AGENTS.md).
+Working on the code, or an agent working on it? Start with [AGENTS.md](AGENTS.md). On bjslab, tests and browser scripts run through the `t3-test-run` guard; AGENTS.md explains.

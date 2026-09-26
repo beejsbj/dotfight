@@ -1,3 +1,6 @@
+import { guardBrowserJob } from "./lib/guarded-browser.mjs";
+await guardBrowserJob();
+
 // Renders the share card (og.jpg) and app icons from the game itself.
 // Needs the dev server running and a Chrome/Chromium binary:
 //   npm run dev -- --port 5173 &
@@ -8,6 +11,7 @@ import { chromium } from "playwright-core";
 const url = process.argv[2] ?? "http://localhost:5173/";
 const b = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
 
+try {
 // --- share card: a real frame from a war in progress, the camera sitting
 // behind a soldier with the pen stood on his dot, and the book's label.
 {
@@ -112,4 +116,6 @@ const b = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bi
   await ctx.close();
 }
 console.log("wrote public/og.jpg, icon-512.png, icon-192.png, apple-touch-icon.png");
-await b.close();
+} finally {
+  await b.close();
+}

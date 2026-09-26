@@ -1,3 +1,6 @@
+import { guardBrowserJob } from "./lib/guarded-browser.mjs";
+await guardBrowserJob();
+
 // Screenshots of both rulebooks (/rules and /rules/advanced) and their share cards.
 // Needs the dev server running and a Chrome/Chromium binary:
 //   npm run dev -- --port 5173 &
@@ -12,6 +15,7 @@ const out = "docs/shots/rules-page";
 mkdirSync(out, { recursive: true });
 const b = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
 const errors = [];
+try {
 
 async function open(viewport, dpr, motion = "no-preference", hash = "", path = "/rules") {
   const ctx = await b.newContext({ viewport, deviceScaleFactor: dpr, reducedMotion: motion, hasTouch: viewport.width < 700, isMobile: viewport.width < 700 });
@@ -64,6 +68,8 @@ if (og) {
   }
 }
 
-await b.close();
+} finally {
+  await b.close();
+}
 if (errors.length) { console.error(errors.join("\n")); process.exit(1); }
 console.log(`shots in ${out}/${og ? ", public/og-rules.jpg, public/og-rules-advanced.jpg" : ""}`);
