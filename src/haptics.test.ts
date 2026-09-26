@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  createHaptics, detect, DETENTS, Gate, IOS_TICK_GAP, length, MIN_GAP, pattern, Ratchet, STORAGE_KEY,
+  createHaptics, detect, DETENTS, Gate, IOS_TICK_GAP, iosMode, length, MIN_GAP, pattern, Ratchet, STORAGE_KEY,
   type Backend, type BackendKind, type HapticEvent, type Pattern,
 } from "./haptics";
 
@@ -153,6 +153,25 @@ describe("detect", () => {
     expect(detect({ maxTouchPoints: 5, hasSwitch: false })).toBe("none");
     expect(detect({ vibrate: "nope", maxTouchPoints: 5 })).toBe("none");
     expect(detect({})).toBe("none");
+  });
+});
+
+describe("iosMode", () => {
+  const safari = (os: string, v: string) => `Mozilla/5.0 (iPhone; CPU iPhone OS ${os} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/${v} Mobile/15E148 Safari/604.1`;
+  const app = (os: string) => `Mozilla/5.0 (iPhone; CPU iPhone OS ${os} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148`;
+  it("lets script tick up to iOS 26.4", () => {
+    expect(iosMode(safari("18_0", "18.0"))).toBe("script");
+    expect(iosMode(safari("18_6", "26.0"))).toBe("script");
+    expect(iosMode(safari("18_6", "26.4.1"))).toBe("script");
+  });
+  it("needs real taps from iOS 26.5 on", () => {
+    expect(iosMode(safari("18_6", "26.5"))).toBe("tap");
+    expect(iosMode(safari("18_6", "27.0"))).toBe("tap");
+  });
+  it("reads the OS where there's no Safari version (home-screen app, other browsers), and plays safe on the frozen 18_6", () => {
+    expect(iosMode(app("18_3"))).toBe("script");
+    expect(iosMode(app("18_6"))).toBe("tap");
+    expect(iosMode("")).toBe("tap");
   });
 });
 

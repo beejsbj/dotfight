@@ -2,9 +2,18 @@
 // (pick up, ratchet, flick, settle, cross-out...) played on whatever the phone
 // offers:
 //   - Android (Chrome, Samsung Internet...): navigator.vibrate with real durations.
-//   - iPhone (Safari 18+): no vibrate. Toggling an <input type=checkbox switch>
-//     plays the system's one "selection" tick, so a hidden switch is clicked.
-//     The tick has one intensity: "stronger" is spelt as a short rhythm of ticks.
+//   - iPhone (iOS 18+): no vibrate. Toggling an <input type=checkbox switch>
+//     plays the system's one light tick, and nothing else on the web can. The
+//     tick has one intensity: "stronger" is spelt as a short rhythm of ticks.
+//     How much of the vocabulary reaches the thumb depends on the iOS version:
+//       "script" (iOS 18.0 to 26.4): clicking a hidden switch's label from code
+//         ticks, within about a second of a real touch (WebKit forwards the
+//         gesture through timers and animation frames for 1s since 18.4).
+//       "tap" (iOS 26.5 on): WebKit only ticks when a real tap lands on the
+//         switch's label (bug 309082). So hidden labels lie over the buttons and
+//         round the canvas; a tap on a button ticks, and a tap on the page ticks
+//         only if it picked someone up or drew a camp. A flick is a drag, and
+//         drags never click: the ratchet, the flick and the crosses go unfelt.
 //   - anything else: silent.
 // Fewer, well-timed haptics beat buzzing: every event passes one global gate.
 
@@ -130,6 +139,7 @@ export class Ratchet {
 // --- backends -----------------------------------------------------------------
 
 export type BackendKind = "vibrate" | "switch" | "none";
+export type IosMode = "script" | "tap";
 
 export interface Env {
   vibrate?: unknown;
@@ -141,17 +151,34 @@ export interface Env {
 /** Pick a backend by capability. Pure. */
 export function detect(env: Env): BackendKind {
   if (typeof env.vibrate === "function") return "vibrate";
-  // Safari on a touch screen with switch controls: an iPhone or iPad on iOS 18+.
-  // (Desktop Safari knows `switch` too, but there's nothing to feel on a Mac.)
+  // Safari on a touch screen with switch controls: an iPhone or iPad.
+  // (Desktop Safari knows `switch` too, but a Mac has nothing to feel.)
   if (env.hasSwitch && (env.maxTouchPoints ?? 0) > 0) return "switch";
   return "none";
 }
 
+/**
+ * Can script still tick the switch on this iOS? Pure. Safari says its version
+ * (= iOS) as `Version/26.4`; a home-screen app or another iOS browser only has
+ * `iPhone OS 18_3`, frozen at 18_6 from iOS 26 on, so 18_6 could be anything
+ * and gets the mode that works everywhere.
+ */
+export function iosMode(ua: string): IosMode {
+  const v = /Version\/(\d+)(?:\.(\d+))?/.exec(ua);
+  if (v) { const [maj, min] = [+v[1], +(v[2] ?? 0)]; return maj < 26 || (maj === 26 && min < 5) ? "script" : "tap"; }
+  const os = /OS (\d+)_(\d+)/.exec(ua);
+  if (os && +os[1] === 18 && +os[2] < 6) return "script";
+  return "tap";
+}
+
 export interface Backend {
   kind: BackendKind;
-  play(p: Pattern): void;
+  mode?: IosMode;
+  play(p: Pattern, ev: HapticEvent): void;
   /** stop whatever is still to come */
   cancel(): void;
+  /** set up anything that needs the page (tap mode: labels to land on) */
+  install?(canvas: HTMLElement, on: () => boolean): void;
 }
 
 export function browserEnv(): Env {
@@ -171,34 +198,41 @@ function vibrateBackend(): Backend {
   };
 }
 
-// A switch the thumb never sees. Clicking its label toggles it, and iOS plays
-// the switch's tick. It stays in the page (display:none would stop it) but out
-// of sight, out of the tab order, out of the accessibility tree, and can't take
-// a real touch.
-function switchBackend(): Backend {
+// A switch, and a label that toggles it. aria-hidden, and never given a
+// tabindex: WebKit would then focus the switch on every click.
+function switchIn(label: HTMLLabelElement) {
+  label.setAttribute("aria-hidden", "true");
+  label.dataset.haptic = "";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.setAttribute("switch", "");
+  input.style.cssText = "position:absolute;width:1px;height:1px;margin:0;visibility:hidden;pointer-events:none";
+  // the label forwards its click to the switch; that copy is ours alone
+  input.addEventListener("click", (e) => e.stopPropagation());
+  label.appendChild(input);
+  return label;
+}
+
+// iOS 18.0 to 26.4: click a hidden label from code and the switch ticks.
+function scriptSwitch(): Backend {
   let label: HTMLLabelElement | null = null;
   const timers: number[] = [];
   const tick = () => {
     if (!label) {
-      label = document.createElement("label");
-      label.setAttribute("aria-hidden", "true");
-      label.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;clip-path:inset(50%)";
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.setAttribute("switch", "");
-      input.tabIndex = -1;
-      label.appendChild(input);
+      label = switchIn(document.createElement("label"));
+      label.style.display = "none";
       document.body.appendChild(label);
     }
     label.click();
   };
   const cancel = () => { while (timers.length) clearTimeout(timers.pop()); };
   return {
-    kind: "switch",
+    kind: "switch", mode: "script",
     play: (p) => {
       cancel();
       for (const at of p.ios) {
-        // the first tick inside the gesture that caused it; the rest on a timer
+        // the first tick inside the gesture that caused it; the rest on timers,
+        // which WebKit lets carry the gesture for a second
         if (at <= 0) tick();
         else timers.push(window.setTimeout(tick, at));
       }
@@ -207,15 +241,55 @@ function switchBackend(): Backend {
   };
 }
 
+// iOS 26.5 on: only a real tap on a label ticks, so put labels where taps land.
+// What a tap on the page can deliver (the rest come from drags or timers).
+const TAPPED: HapticEvent[] = ["pickup", "settle"];
+function tapSwitch(): Backend {
+  let owed = -Infinity; // when the game last felt something a tap could deliver
+  const overlay = (b: HTMLElement) => {
+    if (b.querySelector(":scope > label[data-haptic]")) return;
+    if (getComputedStyle(b).position === "static") b.style.position = "relative";
+    const l = switchIn(document.createElement("label"));
+    l.style.cssText = "position:absolute;inset:0;z-index:1;touch-action:manipulation;-webkit-tap-highlight-color:transparent";
+    b.appendChild(l);
+  };
+  return {
+    kind: "switch", mode: "tap",
+    play: (_p, ev) => { if (TAPPED.includes(ev)) owed = performance.now(); },
+    cancel: () => { owed = -Infinity; },
+    install(canvas, on) {
+      // every button, now and later, wears a label: tapping it ticks
+      const dress = () => document.querySelectorAll<HTMLElement>("button").forEach(overlay);
+      dress();
+      new MutationObserver(dress).observe(document.body, { childList: true, subtree: true });
+      // the page: wrapped in a label that takes no room. Its taps still reach
+      // the canvas; the label ticks only if that tap did something to feel.
+      const wrap = switchIn(document.createElement("label"));
+      wrap.style.display = "contents";
+      canvas.replaceWith(wrap);
+      wrap.prepend(canvas);
+      // last word, after the button's own handler (a settings toggle may just
+      // have switched haptics off): no tick unless it's on and was earned
+      document.addEventListener("click", (e) => {
+        const l = (e.target as Element | null)?.closest?.("label[data-haptic]");
+        if (!l) return;
+        const earned = l !== wrap || performance.now() - owed < 800;
+        if (!on() || !earned) e.preventDefault();
+        if (l === wrap) owed = -Infinity;
+      });
+    },
+  };
+}
+
 const silent: Backend = { kind: "none", play: () => {}, cancel: () => {} };
 
-export function makeBackend(kind: BackendKind): Backend {
-  return kind === "vibrate" ? vibrateBackend() : kind === "switch" ? switchBackend() : silent;
+export function makeBackend(kind: BackendKind, mode: IosMode = "tap"): Backend {
+  return kind === "vibrate" ? vibrateBackend() : kind === "switch" ? (mode === "script" ? scriptSwitch() : tapSwitch()) : silent;
 }
 
 // --- the player -------------------------------------------------------------
 
-export interface Felt { ev: HapticEvent; arg?: number; t: number; backend: BackendKind; android: number[]; ios: number[] }
+export interface Felt { ev: HapticEvent; arg?: number; t: number; backend: BackendKind; mode?: IosMode; android: number[]; ios: number[] }
 
 export interface HapticsOptions {
   backend: Backend;
@@ -233,6 +307,8 @@ export function createHaptics({ backend, now = () => performance.now(), storage,
   let enabled = storage?.getItem(STORAGE_KEY) !== "0"; // on unless switched off
   return {
     get backend() { return backend.kind; },
+    /** iOS: whether script can tick ("script") or only real taps ("tap") */
+    get mode() { return backend.mode; },
     /** is there anything to feel on this device? */
     get supported() { return backend.kind !== "none"; },
     get enabled() { return enabled; },
@@ -247,13 +323,15 @@ export function createHaptics({ backend, now = () => performance.now(), storage,
       const p = pattern(ev, arg);
       const t = now();
       if (!gate.allow(p.priority, t, length(p, backend.kind))) return false;
-      backend.play(p);
+      backend.play(p, ev);
       if (log) {
-        felt.push({ ev, arg, t: Math.round(t), backend: backend.kind, android: p.android, ios: p.ios });
+        felt.push({ ev, arg, t: Math.round(t), backend: backend.kind, mode: backend.mode, android: p.android, ios: p.ios });
         if (felt.length > 500) felt.shift();
       }
       return true;
     },
+    /** Once, at boot: lets tap-mode iOS put its labels over the buttons and round the page. */
+    install(canvas: HTMLElement) { backend.install?.(canvas, () => enabled); },
     /** what was felt, oldest first (only kept when `log` is on) */
     felt,
   };
@@ -262,8 +340,13 @@ export function createHaptics({ backend, now = () => performance.now(), storage,
 export type Haptics = ReturnType<typeof createHaptics>;
 
 const store = typeof localStorage === "undefined" ? undefined : localStorage;
+// dev: ?haptics=vibrate|script|tap|none forces a backend, so headless Chrome can
+// exercise the iPhone's DOM rigs (it has nothing to feel either way)
+const forced = import.meta.env.DEV && typeof location !== "undefined" ? new URLSearchParams(location.search).get("haptics") : null;
+const kind: BackendKind = forced === "script" || forced === "tap" ? "switch" : forced === "vibrate" || forced === "none" ? forced : detect(browserEnv());
+const mode: IosMode = forced === "script" || forced === "tap" ? forced : iosMode(typeof navigator === "undefined" ? "" : navigator.userAgent);
 export const haptics: Haptics = createHaptics({
-  backend: makeBackend(detect(browserEnv())),
+  backend: makeBackend(kind, mode),
   storage: store,
   log: import.meta.env.DEV,
 });
