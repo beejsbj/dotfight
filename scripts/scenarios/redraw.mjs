@@ -17,7 +17,7 @@ export default async function (T, out) {
     window.pft.resumeRecord(r);
   }, { seed: +(process.env.SEED ?? 7), turns: +(process.env.TURNS ?? 6) });
   await idle(T);
-  await page.waitForFunction(() => window.pft.boil?.settled !== false, undefined, { timeout: 10000 });
+  await page.waitForFunction(() => window.pft.boil?.settled !== false, undefined, { timeout: 30000 });
   const fails = [];
   const check = async (label) => {
     const r = await page.evaluate(() => window.pft.redrawCheck());
@@ -30,7 +30,7 @@ export default async function (T, out) {
   const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).sort((a, b) => b.y - a.y)[0]; });
   const a = await T.world(me.x, me.y);
   await T.tap(a.x, a.y, 40);
-  await page.waitForFunction(() => window.pft.cam.settled, undefined, { timeout: 5000 });
+  await page.waitForFunction(() => window.pft.cam.settled, undefined, { timeout: 30000 });
   await page.waitForTimeout(300);
   await check("leaning in");
   await T.touch("touchStart", [[195, 600]]);

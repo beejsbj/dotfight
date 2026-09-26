@@ -193,21 +193,15 @@ interface Batch { src: CanvasImageSource; n: number }
 interface Sprite { batch: Batch; x: number; y: number }
 
 /**
- * A thing's look at wall time `ms` and boldness `bold` (BOIL.bold): which
- * drawing it shows, as bold * variants + drawing. It changes exactly when the
- * thing must be redrawn; a still thing's never does.
+ * A thing's look at wall time `ms`: which drawing it shows. It changes exactly
+ * when the thing must be redrawn; a still thing's never does.
  */
-export function lookAt(boils: boolean, key: string, ms: number, bold = 0) {
-  return boils ? bold * BOIL.variants + variantAt(boilFrame(ms), key) : -1;
+export function lookAt(boils: boolean, key: string, ms: number) {
+  return boils ? variantAt(boilFrame(ms), key) : 0;
 }
 
-/** A look's drawing and boldness. Drawing 0 is the page's at every boldness. */
-const split = (look: number) => (look < 0 ? { wob: 0, bold: 0 } : { wob: look % BOIL.variants, bold: Math.floor(look / BOIL.variants) });
-/** Where a drawing's sprite is kept. */
-const spriteKey = (t: Thing, look: number) => {
-  const { wob, bold } = split(look);
-  return wob ? `${t.key}|${bold}.${wob}` : `${t.key}|0`;
-};
+/** Where drawing `wob` at boldness `bold` is kept. Drawing 0 is the page's at every boldness. */
+const spriteKey = (t: Thing, wob: number, bold: number) => (wob ? `${t.key}|${bold}.${wob}` : `${t.key}|0`);
 
 /**
  * One boil canvas: page space, covering only what it draws, placed by the same
@@ -231,7 +225,7 @@ class BoilCanvas {
   /** Each drawing's sprite, by spriteKey. Kept across boldness changes: a camera going up and down again reuses them. */
   private sprites = new Map<string, Sprite>();
   /** Drawings still to make, a few each tick. */
-  private later: { t: Thing; look: number }[] = [];
+  private later: { t: Thing; wob: number; bold: number }[] = [];
   /** Every sprite made: the layer's steady state. */
   get settled() { return this.later.length === 0; }
   /** Boxes of things that have left the canvas, still to be cleared. */
@@ -319,8 +313,8 @@ class BoilCanvas {
     const asked = new Set<string>();
     for (let w = 0; w < BOIL.variants; w++) for (const t of this.things) {
       if (!t.boils && w > 0) continue;
-      const look = bold * BOIL.variants + w, k = spriteKey(t, look);
-      if (!this.sprites.has(k) && !asked.has(k)) { asked.add(k); this.later.push({ t, look }); }
+      const k = spriteKey(t, w, bold);
+      if (!this.sprites.has(k) && !asked.has(k)) { asked.add(k); this.later.push({ t, wob: w, bold }); }
     }
   }
 
@@ -331,15 +325,16 @@ class BoilCanvas {
    */
   draw(ms: number, bold: number, seen?: { x0: number; y0: number; x1: number; y1: number }) {
     const grid = boilFrame(ms);
+    // a new boldness is every living thing drawn anew: the whole canvas, once
+    if (bold !== this.bold) { this.bold = bold; this.queue(bold); if (this.boiling) this.shown = null; }
     const news = this.shown?.some((v) => Number.isNaN(v)) || this.gone.length > 0;
-    if (bold !== this.bold) { this.bold = bold; this.queue(bold); }
-    else if (grid === this.grid && this.shown && !news) return false;
+    if (grid === this.grid && this.shown && !news) return false;
     this.grid = grid;
     const all = !this.shown;
     // nothing boiling and already drawn: it holds still
     if (!all && !news && !this.boiling) return false;
     const inView = (t: Thing) => !seen || (t.x1 > seen.x0 && t.x0 < seen.x1 && t.y1 > seen.y0 && t.y0 < seen.y1);
-    const now = this.things.map((t, i) => (all || inView(t) ? lookAt(t.boils, t.key, ms, bold) : this.shown![i]));
+    const now = this.things.map((t, i) => (all || inView(t) ? lookAt(t.boils, t.key, ms) : this.shown![i]));
     const dirty = all ? this.things.map((_, i) => i) : now.flatMap((v, i) => (v !== this.shown![i] ? [i] : []));
     const gone = this.gone;
     this.gone = [];
@@ -388,28 +383,26 @@ class BoilCanvas {
     return true;
   }
 
-  /** The sprite for a look, or the best stand-in made: the same drawing at another boldness, then the page's drawing. */
-  private sprite(t: Thing, look: number) {
-    const own = this.sprites.get(spriteKey(t, look));
+  /** The sprite for drawing `wob`, or the best stand-in made: the same drawing at another boldness, then the page's drawing. */
+  private sprite(t: Thing, wob: number) {
+    const own = this.sprites.get(spriteKey(t, wob, this.bold));
     if (own) return own;
-    const { wob } = split(look);
     for (let b = 0; b < BOIL.bold.length && wob; b++) {
-      const sp = this.sprites.get(spriteKey(t, b * BOIL.variants + wob));
+      const sp = this.sprites.get(spriteKey(t, wob, b));
       if (sp) return sp;
     }
-    return this.sprites.get(spriteKey(t, 0));
+    return this.sprites.get(spriteKey(t, 0, 0));
   }
 
   /** Draw one thing as it looks now. Returns false if it had to be drawn as ink because its sprite isn't made yet. */
-  private paint(t: Thing, look: number, X: number, Y: number) {
+  private paint(t: Thing, wob: number, X: number, Y: number) {
     const g = this.g, S = this.S;
     const { px0, py0, pw, ph } = pixels(t, S);
-    const sp = this.sprite(t, look);
+    const sp = this.sprite(t, wob);
     if (sp) { g.drawImage(sp.batch.src, sp.x, sp.y, pw, ph, px0 - X, py0 - Y, pw, ph); return true; }
     // not made yet, or too big to cache (a whole ink line, when the dead boil)
-    const { wob, bold } = split(look);
     g.setTransform(S, 0, 0, S, -X, -Y);
-    t.paint(g, wob, BOIL.bold[bold].amp);
+    t.paint(g, wob, BOIL.bold[Math.max(0, this.bold)].amp);
     g.setTransform(1, 0, 0, 1, 0, 0);
     return pw > SPRITE_MAX || ph > SPRITE_MAX;
   }
@@ -420,15 +413,15 @@ class BoilCanvas {
    * to make than its ink, and drawing into a canvas that has been copied from
    * makes the browser copy all of it.)
    */
-  private predraw(list: { t: Thing; look: number }[]) {
+  private predraw(list: { t: Thing; wob: number; bold: number }[]) {
     const S = this.S, W = 1024;
-    const todo: { t: Thing; look: number; x: number; y: number; pw: number; ph: number; px0: number; py0: number }[] = [];
+    const todo: { t: Thing; wob: number; bold: number; x: number; y: number; pw: number; ph: number; px0: number; py0: number }[] = [];
     let x = 0, y = 0, row = 0, w = 0;
-    for (const { t, look } of list) {
+    for (const { t, wob, bold } of list) {
       const { px0, py0, pw, ph } = pixels(t, S);
-      if (pw > SPRITE_MAX || ph > SPRITE_MAX || this.sprites.has(spriteKey(t, look))) continue;
+      if (pw > SPRITE_MAX || ph > SPRITE_MAX || this.sprites.has(spriteKey(t, wob, bold))) continue;
       if (x + pw > W) { x = 0; y += row; row = 0; }
-      todo.push({ t, look, x, y, pw, ph, px0, py0 });
+      todo.push({ t, wob, bold, x, y, pw, ph, px0, py0 });
       x += pw + 2;
       w = Math.max(w, x);
       row = Math.max(row, ph + 2);
@@ -442,11 +435,10 @@ class BoilCanvas {
     // each box is padded past its ink, so no clipping is needed
     for (const d of todo) {
       g.setTransform(S, 0, 0, S, d.x - d.px0, d.y - d.py0);
-      const { wob, bold } = split(d.look);
-      d.t.paint(g, wob, BOIL.bold[bold].amp);
+      d.t.paint(g, d.wob, BOIL.bold[d.bold].amp);
     }
     const batch: Batch = { src: off ? (c as OffscreenCanvas).transferToImageBitmap() : (c as HTMLCanvasElement), n: todo.length };
-    for (const d of todo) this.sprites.set(spriteKey(d.t, d.look), { batch, x: d.x, y: d.y });
+    for (const d of todo) this.sprites.set(spriteKey(d.t, d.wob, d.bold), { batch, x: d.x, y: d.y });
   }
 
   /** Let go of drawings whose key matches (a camp emptied, a soldier moved on); a batch goes when all its drawings have. */

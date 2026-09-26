@@ -26,6 +26,7 @@ describe("how it boils", () => {
   it("a living thing changes drawing at the boil rate, and a still thing never", () => {
     const changes = (boils: boolean) => {
       let n = 0, prev = lookAt(boils, "3@1,2", 0);
+      expect(prev).toBeGreaterThanOrEqual(0);
       for (let ms = 1; ms <= 1000; ms++) {
         const v = lookAt(boils, "3@1,2", ms);
         if (v !== prev) n++;
@@ -48,12 +49,6 @@ describe("how it boils", () => {
     }
   });
 
-  it("a boldness is a different look, so a camera going up redraws the living; a still thing is still at any", () => {
-    for (let ms = 0; ms < 1000; ms += 37) {
-      expect(lookAt(true, "b1@5", ms, 0)).not.toBe(lookAt(true, "b1@5", ms, 2));
-      expect(lookAt(false, "b1@5", ms, 0)).toBe(lookAt(false, "b1@5", ms, 2));
-    }
-  });
 });
 
 describe("the boil clock and its drawings", () => {
