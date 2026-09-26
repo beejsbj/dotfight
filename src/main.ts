@@ -13,7 +13,7 @@ import {
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
 import { haptic, haptics, Ratchet } from "./haptics";
-import { inkTime, type Snag } from "./inkclock";
+import { inkTime, wallTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
@@ -24,7 +24,8 @@ import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, t
 import { GAME } from "./name";
 import { RULES } from "./rules";
 import { boldAt } from "./boil";
-import { boil, boilTick, forgetDrawn, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { LIFE, lastStand, planFlick } from "./life";
+import { boil, boilTick, forgetDrawn, life, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { Timeline, reachFraction } from "./timeline";
 
@@ -78,6 +79,8 @@ interface Resolve {
   kills: { i: number; at: number; hit: boolean; last: boolean }[];
   first: number; mover?: number; end: number;
   pen: boolean; cam: boolean; startLean: number; startAngle: number; settled?: boolean;
+  /** Which sides were at their last stand before this flick. */
+  stood: boolean[];
   done: () => void;
 }
 let res: Resolve | null = null;
@@ -236,6 +239,7 @@ function reset() {
   fx.clear();
   inkTL.clear();
   sfx.creak(0);
+  life.clear();
   // a different page is about to be on the desk: draw it even if nothing moves
   dirty = true;
 }
@@ -300,6 +304,7 @@ function next() {
     const f = botFlick(s, (mode as { level: Level }).level);
     const me = s.soldiers[f.soldierId];
     selected = f.soldierId;
+    pickUp(f.soldierId);
     kind = f.kind;
     // you watch the bot from above, the way you'd lean over a friend's flick
     void me;
@@ -371,6 +376,7 @@ const penLean = (power: number) => 0.06 + power * 0.5;
 function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?: boolean; quick?: number } = {}) {
   const who = s.current;
   const first = s.marks.length; // act() appends the stroke, then its crosses
+  const stood = [lastStand(s, 0), lastStand(s, 1)];
   const o = act(s, f);
   save();
   selected = undefined;
@@ -405,12 +411,14 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     }
   }
   snags.sort((a, b) => a.at - b.at);
+  feelFlick(o, f, dur, snags, n);
   const pen = opts.pen ?? true;
   const penTail = pen ? 900 * quick : 0;
   res = {
     f, o, owner: who, power, t0: T, dur, snags, kills, first,
     mover: f.kind === "move" ? f.soldierId : undefined,
     end: Math.max(dur + penTail, dur + 330 * quick) + 60,
+    stood,
     pen, cam: opts.cam ?? true, startLean: lean, startAngle: f.angle,
     done: () => {
       const k = o.killed.length;
@@ -427,6 +435,34 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   sfx.slip(power);
   sfx.scratch(dur / 1000 / speed + 0.05, f.kind === "shoot" ? 0.6 : 0.45);
   hud();
+}
+
+// --- the living feel it (life.ts, voice.ts) --------------------------------------
+
+/** A soldier picked up: he perks up. */
+function pickUp(id: number) {
+  if (LIFE.chosen) life.add(id, { kind: "perk", t0: wall, amp: 1 });
+}
+
+/**
+ * A flick just fired: plan how the page feels it (life.planFlick), on the wall
+ * clock the boil draws by. Ink time is snagged on each kill; `when` turns a
+ * place on the line into the wall ms at which the ink's head gets there.
+ */
+function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) {
+  const when = (i: number) => wallTime(reachFraction(Math.min(n, Math.round(i)), n) * dur, snags) / speed;
+  const arrive = wallTime(dur, snags) / speed;
+  const plan = planFlick(s, o, f.soldierId, f.kind, when, arrive);
+  const on = (k: string) => (k === "recoil" || k === "flinch" || k === "gasp" ? LIFE.line : k === "land" ? LIFE.chosen : LIFE.crowd);
+  for (const { id, r } of plan.acts) if (on(r.kind)) life.add(id, { ...r, t0: wall + r.t0 });
+  if (LIFE.camps) for (const h of plan.hush) life.hold(h.base, wall + h.at, wall + h.at + h.ms);
+}
+
+/** After a flick: a side newly down to its last few gets nervous. */
+function lastStandBegins(r: Resolve) {
+  for (const p of [0, 1] as Player[]) {
+    if (r.stood[p] || !lastStand(s, p)) continue;
+  }
 }
 
 function nearestIndex(pts: Pt[], p: Pt) {
@@ -459,6 +495,7 @@ function stepResolve() {
   }
   if (!r.settled && it >= r.dur) { r.settled = true; if (r.pen && !isBot(r.owner)) haptic("land"); }
   if (it >= r.end) {
+    lastStandBegins(r);
     const done = r.done;
     res = null;
     inkTL.clear();
@@ -849,7 +886,7 @@ function nearestOwn(w: Pt): number | undefined {
 }
 
 function select(id: number) {
-  if (selected !== id) { sfx.pick(); haptic("pickup"); penDrop = T; }
+  if (selected !== id) { sfx.pick(); haptic("pickup"); penDrop = T; pickUp(id); }
   if (!taught("aim") && selected === undefined) fx.add("teach", T, 500, 1100, "linear");
   selected = id;
   sitOn(s.soldiers[id]);
@@ -1071,7 +1108,9 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   frameTimes.push(now - last);
   if (frameTimes.length > 240) frameTimes.shift();
-  const dt = Math.min(50, now - last) * speed;
+  let dt = Math.min(50, now - last) * speed;
+  // dev: time advanced by hand, for frame-exact captures (game and boil clocks together)
+  if (handClock) { dt = handClock.due; handClock.due = 0; }
   last = now;
   T += dt;
   // due callbacks (from this game only)
@@ -1120,6 +1159,7 @@ function frame(now: number) {
 }
 let wall = 0;
 let boilClock: number | undefined; // dev: pin the boil's wall time, to capture its frames in order
+let handClock: { due: number } | null = null; // dev: game time moves only when stepped
 
 function currentFrame(): Frame {
   const v = cam.view();
@@ -1156,7 +1196,8 @@ function currentFrame(): Frame {
     const r = res;
     const p = Math.min(1, it / r.dur);
     const h = headAt(r.o.path, 1 - Math.pow(1 - p, 2));
-    if (r.mover !== undefined && it < r.dur) f.mover = { id: r.mover, at: h };
+    // riding his ink: stretched out along it, most at the start when it's fastest
+    if (r.mover !== undefined && it < r.dur) f.mover = { id: r.mover, at: h, angle: h.angle, stretch: LIFE.chosen ? 1 + 0.6 * (1 - p) : 1 };
     f.pen = resolvePen(r, it);
   } else if (selected !== undefined && screen === "game") {
     const me = s.soldiers[selected];
@@ -1205,8 +1246,23 @@ function differ(a: ImageData | null, b: ImageData | null) {
   return { bad, of: a.width * a.height, box: bad ? [x0, y0, x1, y1] : null };
 }
 
+// What the living see this frame (life.ts): whose go it is, who's in hand, where the pen points.
+let chosenAt = { id: -1, t0: 0 };
+function seeLife(f: Frame) {
+  const sel = f.selected ?? (f.aim ? f.aim.soldierId : undefined);
+  if (sel !== chosenAt.id) chosenAt = { id: sel ?? -1, t0: wall };
+  const r = f.view.rot;
+  life.see({
+    s, up: Math.atan2(-Math.cos(r), -Math.sin(r)),
+    eager: s.phase === "play" && !res && screen === "game" ? s.current : undefined,
+    chosen: sel !== undefined && !res ? { id: sel, t0: chosenAt.t0 } : undefined,
+    aim: f.aim && !res ? { angle: f.aim.angle, power: f.aim.power, reach: f.aim.reach, spread: f.aim.spread } : undefined,
+  }, wall);
+}
+
 function renderNow() {
   const f = currentFrame();
+  seeLife(f);
   const bg = farColour(f.lamp);
   if (document.body.style.backgroundColor !== bg) document.body.style.backgroundColor = bg;
   document.body.style.setProperty("--lamp", f.lamp.on.toFixed(3));
@@ -1256,8 +1312,12 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    stageStats, boil, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
+    stageStats, boil, life, LIFE, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
     set boilClock(ms: number | undefined) { boilClock = ms; },
+    /** Frame-exact captures: `pft.hand(true)`, then `pft.step(ms)` moves the game and the boil on together. */
+    hand: (on: boolean) => { handClock = on ? { due: 0 } : null; if (on) boilClock ??= wall; else boilClock = undefined; },
+    step: (ms: number) => { if (!handClock) return; handClock.due += ms; boilClock = (boilClock ?? wall) + ms; },
+    get wall() { return wall; },
     cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
     get slow() { return slow; }, set slow(v: boolean) { slow = v; cam.quick = v ? 1.8 : 1; probeSlow = v; },
     start, showTitle, replay: () => replay(file(s, mode)), apply: (st: Step) => { apply(s, st); dirty = true; },

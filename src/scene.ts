@@ -14,6 +14,7 @@
 import { BoilLayer, planBoil, type Plan } from "./boil";
 import type { GameState, Pt } from "./game";
 import { INK, handText, pencilArrow, pencilLine, pencilLoop } from "./ink";
+import { Life } from "./life";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
@@ -49,7 +50,7 @@ export interface Frame {
   ghost?: { x: number; y: number; ok: boolean; owner: 0 | 1 };
   /** Setup: the no-go rings round enemy bases, faintly hatched. */
   keepOut?: { x: number; y: number; r: number }[];
-  mover?: { id: number; at: Pt };
+  mover?: { id: number; at: Pt; angle?: number; stretch?: number };
   pen?: PenPose;
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] };
   teach?: { kind: "aim" | "place"; at: Pt; p: number; rot: number };
@@ -62,6 +63,9 @@ export const page = new PageLayer();
 export const pageState = { epoch: 0, S: 1.6 };
 export const stageStats = { live: 0, air: 0, frames: 0, boil: 0 };
 export const boil = new BoilLayer();
+/** What the living are feeling (life.ts): the boil draws each soldier in his pose. */
+export const life = new Life();
+boil.life = life;
 
 export interface Els {
   desk: HTMLCanvasElement;
@@ -209,7 +213,15 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     const jot = `d${x.id}`;
     if (ink.live.has(jot)) { drawDot(g, x, 1, ink.p(jot)); box.add(x.x, x.y, 12); }
   }
-  if (f.mover) { drawDot(g, s.soldiers[f.mover.id], 1, 1, f.mover.at); box.add(f.mover.at.x, f.mover.at.y, 12); }
+  if (f.mover) {
+    const { at, angle = 0, stretch = 1 } = f.mover;
+    g.save();
+    // stretched along his way, thinner across it (keeping his size)
+    g.translate(at.x, at.y); g.rotate(angle); g.scale(stretch, 1 / stretch); g.rotate(-angle); g.translate(-at.x, -at.y);
+    drawDot(g, s.soldiers[f.mover.id], 1, 1, at);
+    g.restore();
+    box.add(at.x, at.y, 12 * stretch);
+  }
   if (f.sig && !page.isSigned && ink.live.has("sign")) {
     drawSignature(g, f.sig, ink.p("sign"));
     box.add(0, RULES.pageH - 110); box.add(RULES.pageW, RULES.pageH);

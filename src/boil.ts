@@ -18,6 +18,7 @@
 import type { GameState, Soldier } from "./game";
 import { inBase } from "./hand";
 import { dotSpots, drawBase, drawDot, drawMark, type Ink, type Spot } from "./page";
+import type { Life } from "./life";
 import { RULES } from "./rules";
 
 type Ctx = CanvasRenderingContext2D;
@@ -458,6 +459,8 @@ class BoilCanvas {
  * multiplies, so which canvas is on top makes no difference.
  */
 export class BoilLayer {
+  /** Soldiers' and camps' moods (life.ts); without it they simply boil. */
+  life: Life | null = null;
   readonly parts = [new BoilCanvas("rings"), new BoilCanvas("rest")];
   /** Recent tick costs (ms), to judge whether the device can afford the boil. */
   private recent: number[] = [];
