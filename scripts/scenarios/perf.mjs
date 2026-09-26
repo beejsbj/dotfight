@@ -3,13 +3,15 @@
 // pulling back, and (pass and play) the page turning. "script" is main-thread
 // time per rendered frame, the budget a phone's CPU pays; "frame" is the
 // interval between frames in this headless (GPU-less) Chrome.
-// THROTTLE=6 node scripts/playtest.mjs perf <url>
+// THROTTLE=6 [THEME=lamplight] node scripts/playtest.mjs perf <url>
 import { idle } from "../lib/phone.mjs";
 
 export default async function (T, out) {
   const { page, cdp } = T;
   await page.waitForTimeout(1200);
   const turns = +(process.env.TURNS ?? 70);
+  // THEME=<id> measures one paper (otherwise it's whichever the load drew)
+  if (process.env.THEME) await page.evaluate((id) => window.pft.theme?.apply(id), process.env.THEME);
   const info = await page.evaluate((turns) => {
     const r = window.pft.fileWar(11, turns);
     r.mode = { kind: "pnp" };
