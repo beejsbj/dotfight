@@ -623,7 +623,9 @@ function showSettings() {
       localStorage.setItem(`pft:${k}`, settings[k] ? "1" : "0");
       applyTilt();
     } else if (b.dataset.a === "back") return closeSheet();
-    showSettings();
+    // re-draw after this click has finished: on iPhone the tick is the tapped
+    // label's own default action, which needs its switch still in the page
+    setTimeout(showSettings);
   };
 }
 

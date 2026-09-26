@@ -151,6 +151,11 @@ export interface Env {
   ua?: string;
 }
 
+/** An iPad, including iPadOS's desktop-class "Macintosh" user agent on a touch screen. Pure. */
+export function isIpad(ua = ""): boolean {
+  return /iPad/.test(ua) || /Macintosh/.test(ua);
+}
+
 /** iOS major version from a user agent (Safari's `Version/` is the iOS version). Pure. */
 export function iosMajor(ua = ""): number | undefined {
   const v = /Version\/(\d+)/.exec(ua) ?? /OS (\d+)_\d+/.exec(ua);
@@ -163,8 +168,9 @@ export function detect(env: Env): BackendKind {
   const touch = (env.maxTouchPoints ?? 0) > 0;
   if (typeof env.vibrate === "function" && touch) return "vibrate";
   // Safari on a touch screen with switch controls: an iPhone or iPad
-  // iOS 17.4-17.x knows `switch` but never ticks it
-  if (env.hasSwitch && touch) return (iosMajor(env.ua) ?? 18) >= 18 ? "switch" : "none";
+  // iOS 17.4-17.x knows `switch` but never ticks it, and an iPad (which
+  // may call itself a Mac) has no Taptic Engine to tick
+  if (env.hasSwitch && touch) return !isIpad(env.ua) && (iosMajor(env.ua) ?? 18) >= 18 ? "switch" : "none";
   return "none";
 }
 

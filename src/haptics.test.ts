@@ -157,6 +157,9 @@ describe("detect", () => {
     // iOS 17.4 knows `switch` but never ticks it
     expect(detect({ maxTouchPoints: 5, hasSwitch: true, ua: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) Version/17.4 Mobile/15E148 Safari/604.1" })).toBe("none");
     expect(detect({ maxTouchPoints: 5, hasSwitch: true, ua: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) Version/18.1 Mobile/15E148 Safari/604.1" })).toBe("switch");
+    // iPads have no Taptic Engine, whether they say iPad or pose as a Mac
+    expect(detect({ maxTouchPoints: 5, hasSwitch: true, ua: "Mozilla/5.0 (iPad; CPU OS 18_1 like Mac OS X) Version/18.1 Mobile/15E148 Safari/604.1" })).toBe("none");
+    expect(detect({ maxTouchPoints: 5, hasSwitch: true, ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Version/18.1 Safari/605.1.15" })).toBe("none");
   });
 });
 
