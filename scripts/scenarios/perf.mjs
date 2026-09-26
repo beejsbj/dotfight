@@ -26,6 +26,8 @@ export default async function (T, out) {
   const pin = process.env.BOIL;
   if (pin) await page.evaluate((on) => { window.pft.slow = false; window.pft.boilOn = on; }, pin === "on");
   // a page just opened makes its boil sprites over the first second or so
+  // (give a pinned boil a frame to take its plan first)
+  await page.waitForTimeout(250);
   await page.waitForFunction(() => window.pft.boil?.settled !== false, undefined, { timeout: 10000 });
   await page.waitForTimeout(300);
   const rate = +(process.env.THROTTLE ?? 1);
