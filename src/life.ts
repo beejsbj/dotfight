@@ -24,9 +24,9 @@ import { RULES } from "./rules";
 export const LIFE = {
   /** Breathing, and eager little hops from the side whose go it is. */
   idle: true,
-  /** The line: dread while a pen points at you, a flinch as ink passes, a gasp before it hits, the shooter's recoil. */
+  /** The line: dread while a pen points at you, the flinch as ink passes (the headline), a gasp before it hits, the shooter's recoil. */
   line: true,
-  /** A camp's feelings: cheering a kill, a beat of stillness for a man crossed out, nerves at a last stand. */
+  /** A camp's feelings: cheering a kill, a beat of stillness for a man crossed out, nerves at a last stand, and a volley on a lunger who lands inside. */
   crowd: true,
   /** The one you pick up: he perks up, his campmates turn to him, he winds up under the pull, rides his ink and lands. */
   chosen: true,

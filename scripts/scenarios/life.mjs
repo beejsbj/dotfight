@@ -132,7 +132,12 @@ export default async function (T, out) {
   // --- Dawood-bot lines up on you ---------------------------------------------------
   if (want("bot-aims")) {
     // against the bot, on your go: flick one off into the margin, then watch its turn
+    // (the bot's aim is random in play: seeded here, so the capture repeats; BOT_SEED picks another)
+    // (Dawood-bot seeds its flicks from the clock: pinned before the war resumes, since it
+    // may be the bot's go first. Seed 7 crosses four of yours out on this page.)
+    await page.evaluate((seed) => { Date.now = () => seed; }, +(process.env.BOT_SEED ?? 7));
     await war(7, 12, "bot");
+    const before = await page.evaluate(() => window.pft.s.soldiers.filter((x) => x.alive).length);
     const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.find((x) => x.alive && x.owner === s.current); });
     // and close on each of your manned camps: one of them is in its sights
     const camps = await page.evaluate(() => { const s = window.pft.s; return s.bases.filter((b) => b.owner === s.current && s.soldiers.some((x) => x.alive && x.owner === b.owner && Math.hypot(x.x - b.x, x.y - b.y) <= b.r)); });
@@ -141,6 +146,7 @@ export default async function (T, out) {
     await seq("bot-aims", 64, 1000 / 12, clips, async (i) => {
       if (i === 0) await page.evaluate((me) => window.pft.act({ soldierId: me.id, kind: "shoot", angle: me.x < 500 ? Math.PI : 0, length: 700, bend: 0 }), me);
     });
+    console.log("bot crossed out:", before - await page.evaluate(() => window.pft.s.soldiers.filter((x) => x.alive).length));
   }
 
   // --- the last few ----------------------------------------------------------------
@@ -262,7 +268,7 @@ export default async function (T, out) {
       fs.writeFileSync(`${out}/voices/${name}.wav`, Buffer.from(r.wav, "base64"));
       console.log(`voice ${name.padEnd(14)} ${r.secs.toFixed(2)}s peak ${r.peak.toFixed(3)}`);
     };
-    for (const what of ["hup", "murmur", "eep", "gasp", "oh", "cheer", "wheee", "land", "uhoh", "look"]) {
+    for (const what of ["hup", "murmur", "eep", "gasp", "oh", "cheer", "wheee", "land", "uhoh", "look", "phew", "jab"]) {
       await wav(what, [0, 1, 2].map((k) => ({ what, id: 3 + k * 11, owner: (k % 2), at: k * 0.9, len: 0.6 })));
     }
     // a whole kill, voiced as the game would: picked up, a campmate mutters; the ink goes;
@@ -276,6 +282,13 @@ export default async function (T, out) {
     ]);
     await wav("a-move", [{ what: "hup", id: 12, owner: 1, at: 0 }, { what: "wheee", id: 12, owner: 1, at: 0.7, len: 0.7, gain: 0.8 }, { what: "land", id: 12, owner: 1, at: 1.45, gain: 0.7 }]);
     await wav("last-stand", [{ what: "uhoh", id: 21, owner: 1, at: 0, gain: 0.8 }]);
+    // a near miss: "eep!" as it passes, "phew" after
+    await wav("a-near-miss", [{ what: "eep", id: 31, owner: 1, at: 0, gain: 0.9 }, { what: "phew", id: 31, owner: 1, at: 0.75, gain: 0.7 }]);
+    // a volley: nine defenders jab in a ripple, the intruder gasps and is cut off, a grim little cheer
+    await wav("a-volley", [
+      ...Array.from({ length: 9 }, (_, i) => ({ what: "jab", id: 40 + i, owner: 0, at: 0.25 + i * 0.055, gain: 0.7 / Math.sqrt(1 + i * 0.3) })),
+      { what: "gasp", id: 3, owner: 1, at: 0.62, gain: 0.8 }, { what: "cheer", id: 40, owner: 0, at: 1.0, gain: 0.5 }, { what: "cheer", id: 41, owner: 0, at: 1.08, gain: 0.5 },
+    ]);
   }
   await page.evaluate(() => window.pft.hand(false));
 }
