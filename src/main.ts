@@ -22,7 +22,7 @@ import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
 import { RULES } from "./rules";
-import { page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { boil, boilTick, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { Timeline, reachFraction } from "./timeline";
 
@@ -83,7 +83,7 @@ let penDrop = -1e9; // when the pen was set down on the selected soldier
 
 const $ = <T extends HTMLElement>(q: string) => document.querySelector(q) as T;
 const els: Els = {
-  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), live: $<HTMLCanvasElement>("#live"),
+  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), live: $<HTMLCanvasElement>("#live"),
   light: $<HTMLCanvasElement>("#light"), haze: $<HTMLCanvasElement>("#haze"),
 };
 const over = $<HTMLCanvasElement>("#over");
@@ -142,6 +142,17 @@ for (const ev of ["touchend", "click", "keydown"]) window.addEventListener(ev, s
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function applyTilt() { cam.tiltScale = settings.tilt && !reduced ? 1 : 0; }
 applyTilt();
+
+// The line boil (boil.ts): the living are drawn over and over. Not with reduced
+// motion, not under the cover, and not on a phone that's struggling: one whose
+// camera moves are slow (the same check that skips the page-turn spin) or whose
+// boil ticks run over budget. Off, everything is simply ink on the page.
+let boilForce: boolean | undefined; // dev: pin it on or off for playtests
+function boilOn() {
+  if (boilForce !== undefined) return boilForce;
+  return !reduced && !slow && !boil.tooDear && screen !== "title";
+}
+let boilWas = false;
 
 // --- hud --------------------------------------------------------------------
 
@@ -1071,14 +1082,26 @@ function frame(now: number) {
     const p = pull(aim);
     sfx.creak(p.power, Math.abs(wobble(aim, T)) * 12);
   }
+  wall = boilClock ?? now;
+  const bo = boilOn();
+  if (bo !== boilWas) { boilWas = bo; dirty = true; }
   if (active || dirty) {
     const t0 = performance.now();
     renderNow();
     scriptTimes.push(performance.now() - t0);
     if (scriptTimes.length > 240) scriptTimes.shift();
     dirty = false;
+  } else if (bo) {
+    // nothing else moving: only the living, redrawn when their frame ticks
+    const t0 = performance.now();
+    if (boilTick(wall)) {
+      scriptTimes.push(performance.now() - t0);
+      if (scriptTimes.length > 240) scriptTimes.shift();
+    }
   }
 }
+let wall = 0;
+let boilClock: number | undefined; // dev: pin the boil's wall time, to capture its frames in order
 
 function currentFrame(): Frame {
   const v = cam.view();
@@ -1092,7 +1115,7 @@ function currentFrame(): Frame {
   }
   const f: Frame = {
     s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
-    selected, ghost, sig: signatureFor(s, mode), lean: leanOf(),
+    selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall },
   };
   const human = screen === "game" && !isBot(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
@@ -1186,7 +1209,9 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    stageStats, cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
+    stageStats, boil, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
+    set boilClock(ms: number | undefined) { boilClock = ms; },
+    cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
     get slow() { return slow; }, set slow(v: boolean) { slow = v; cam.quick = v ? 1.8 : 1; probeSlow = v; },
     start, showTitle, replay: () => replay(file(s, mode)), apply: (st: Step) => { apply(s, st); dirty = true; },
     unfile, file: () => file(s, mode), act: (f: Flick) => fire(f, 0.6, 0.3),

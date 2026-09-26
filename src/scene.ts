@@ -5,10 +5,13 @@
 // screen at any zoom, turn or tilt, and the compositor does the rest. What
 // is still moving (ink being drawn, a soldier riding his line, pencil guides,
 // the pen's shadow) is drawn on a small live layer multiplied over the page.
+// What is alive boils on a small page-space layer of its own (boil.ts), placed
+// the same way and redrawn only when its boil frame ticks.
 // Light and fog are two tiny canvases stretched over the screen. The standing
 // pen lives on the untilted overlay. A camera move therefore costs a few
 // style writes and a couple of hundred pixels of gradient, not a repaint.
 
+import { BoilLayer, boilFrame, planBoil, type Plan } from "./boil";
 import type { GameState, Pt } from "./game";
 import { INK, handText, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
@@ -51,15 +54,19 @@ export interface Frame {
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] };
   teach?: { kind: "aim" | "place"; at: Pt; p: number; rot: number };
   sig?: Signature;
+  /** The line boil: whether the living boil at all, and wall time (ms) for its frame. */
+  boil?: { on: boolean; ms: number };
 }
 
 export const page = new PageLayer();
 export const pageState = { epoch: 0, S: 1.6 };
-export const stageStats = { live: 0, air: 0, frames: 0 };
+export const stageStats = { live: 0, air: 0, frames: 0, boil: 0 };
+export const boil = new BoilLayer();
 
 export interface Els {
   desk: HTMLCanvasElement;
   pageHost: HTMLElement;
+  boilHost: HTMLElement;
   live: HTMLCanvasElement;
   light: HTMLCanvasElement;
   haze: HTMLCanvasElement;
@@ -82,7 +89,7 @@ class Box {
   get empty() { return this.x0 > this.x1; }
 }
 
-let lastCss = { desk: "", page: "", live: "" };
+let lastCss = { desk: "", page: "", live: "", boil: "" };
 let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
 let airKey = "";
 let deskInit = false;
@@ -105,6 +112,16 @@ function place(els: Els, f: Frame) {
   if (c.style.width !== w) { c.style.width = w; c.style.height = h; }
   const pm = cssMatrix(layerMatrix(v, page.S));
   if (pm !== lastCss.page) { c.style.transform = pm; lastCss.page = pm; }
+  const b = boil.c;
+  if (b.parentElement !== els.boilHost) { els.boilHost.replaceChildren(b); lastCss.boil = ""; }
+  const bv = boil.empty ? "hidden" : "";
+  if (b.style.visibility !== bv) b.style.visibility = bv;
+  if (!boil.empty) {
+    const bw = `${b.width}px`, bh = `${b.height}px`;
+    if (b.style.width !== bw || b.style.height !== bh) { b.style.width = bw; b.style.height = bh; }
+    const bm = cssMatrix(layerMatrix(v, page.S, boil.ox, boil.oy));
+    if (bm !== lastCss.boil) { b.style.transform = bm; lastCss.boil = bm; }
+  }
   const lc = stageCss(v);
   const lk = lc.transform + lc.origin;
   if (lk !== lastCss.live) { els.live.style.transform = lc.transform; els.live.style.transformOrigin = lc.origin; lastCss.live = lk; }
@@ -113,11 +130,32 @@ function place(els: Els, f: Frame) {
 export function renderStage(els: Els, f: Frame) {
   const { s, dpr } = f;
   const ink = f.ink ?? SETTLED;
-  page.sync(s, ink, pageState.S, pageState.epoch, f.sig, f.mover?.id);
+  const plan = boilPlan(f, ink);
+  page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold);
+  boil.set(plan, s, pageState.S);
   place(els, f);
+  if (boil.draw(boilFrame(f.boil?.ms ?? 0))) stageStats.boil++;
   renderLive(els.live.getContext("2d")!, els.live, f, ink, dpr);
   renderAir(els, f);
   stageStats.frames++;
+}
+
+// The boil plan only changes when the page or the ink does: most frames reuse it.
+let planMemo: { s: GameState | null; stamp: string; plan: Plan | null } = { s: null, stamp: "", plan: null };
+function boilPlan(f: Frame, ink: Ink): Plan {
+  const { s } = f;
+  const on = !!f.boil?.on && !boil.tooDear;
+  let stamp = `${s.marks.length}|${s.bases.length}|${s.soldiers.length}|${s.turn}|${f.mover?.id}|${on}|`;
+  for (const k of ink.live) stamp += k + (ink.p(k) > 0 ? "+" : "-");
+  if (planMemo.s !== s || planMemo.stamp !== stamp || !planMemo.plan) planMemo = { s, stamp, plan: planBoil(s, ink, { on, moving: f.mover?.id }) };
+  return planMemo.plan!;
+}
+
+/** Between rendered frames: redraw the boil if its frame has ticked. Returns whether it did. */
+export function boilTick(ms: number) {
+  if (boil.empty || !boil.draw(boilFrame(ms))) return false;
+  stageStats.boil++;
+  return true;
 }
 
 // --- the live layer: only what is still being drawn ---------------------------
