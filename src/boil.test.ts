@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { BOIL, BOIL_STYLE, BOILS, boilFrame, lookAt, planBoil, spotKey, variantAt } from "./boil";
+import { BOIL, BOILS, boilFrame, boldAt, lookAt, planBoil, spotKey, variantAt } from "./boil";
 import { act, alive, newGame, placeBase, rng, type GameState } from "./game";
-import { lapPath, redrawn } from "./ink";
+import { redrawn } from "./ink";
 import { SETTLED, type Ink } from "./page";
 
 function setup() {
@@ -23,40 +23,36 @@ describe("which side boils", () => {
 });
 
 describe("how it boils", () => {
-  it("camps and soldiers are both being drawn, by default", () => {
-    expect(BOIL_STYLE).toEqual({ camps: "draw", soldiers: "draw" });
-  });
-
-  it("a thing's look changes at its style's rate, and a still thing's never", () => {
-    const changes = (style: "still" | "swap" | "draw") => {
-      let n = 0, prev = lookAt(style, "3@1,2", 0);
+  it("a living thing changes drawing at the boil rate, and a still thing never", () => {
+    const changes = (boils: boolean) => {
+      let n = 0, prev = lookAt(boils, "3@1,2", 0);
       for (let ms = 1; ms <= 1000; ms++) {
-        const v = lookAt(style, "3@1,2", ms);
+        const v = lookAt(boils, "3@1,2", ms);
         if (v !== prev) n++;
         prev = v;
       }
       return n;
     };
-    expect(changes("draw")).toBe(BOIL.drawFps);
-    expect(changes("swap")).toBe(BOIL.fps);
-    expect(changes("still")).toBe(0);
+    expect(changes(true)).toBe(BOIL.fps);
+    expect(changes(false)).toBe(0);
   });
 
-  it("a pen going round a camp never draws the same circle twice, and never strays into its middle", () => {
-    const r = 62, at = lapPath(500, 500, r, 1234);
-    let most = 0;
-    for (let t = 0; t < 1; t += 0.01) {
-      const [ax, ay] = at(t), [bx, by] = at(t + 1), [cx, cy] = at(t + 7);
-      most = Math.max(most, Math.hypot(ax - bx, ay - by), Math.hypot(ax - cx, ay - cy));
-      for (const [x, y] of [[ax, ay], [bx, by], [cx, cy]]) {
-        const d = Math.hypot(x - 500, y - 500);
-        // the boil layer treats 0.8r as the ring's clear middle: soldiers in there never touch it
-        expect(d).toBeGreaterThan(r * 0.86);
-        expect(d).toBeLessThan(r * 1.12);
-      }
+  it("is boldest standing up and gentlest leaning in, never bolder as the camera comes closer", () => {
+    expect(boldAt(1)).toBe(0); // the whole page
+    expect(BOIL.bold[boldAt(2.3)].amp).toBe(1); // sat down behind a soldier (camera.sit)
+    let prev = Infinity;
+    for (let m = 0.8; m < 6; m += 0.05) {
+      const amp = BOIL.bold[boldAt(m)].amp;
+      expect(amp).toBeLessThanOrEqual(prev);
+      prev = amp;
     }
-    expect(most).toBeGreaterThan(1.5);
-    expect(most).toBeLessThan(r * 0.2);
+  });
+
+  it("a boldness is a different look, so a camera going up redraws the living; a still thing is still at any", () => {
+    for (let ms = 0; ms < 1000; ms += 37) {
+      expect(lookAt(true, "b1@5", ms, 0)).not.toBe(lookAt(true, "b1@5", ms, 2));
+      expect(lookAt(false, "b1@5", ms, 0)).toBe(lookAt(false, "b1@5", ms, 2));
+    }
   });
 });
 

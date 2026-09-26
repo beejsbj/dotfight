@@ -70,9 +70,9 @@ export function drawPaper(g: Ctx, s: GameState) {
   }
 }
 
-// `wob` picks a redrawing for the line boil; 0 is the drawing the page keeps.
-export function drawBase(g: Ctx, b: GameState["bases"][number], p = 1, wob = 0) {
-  inkCircle(g, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.8, 2, p, wob);
+// `wob` picks a redrawing for the line boil (0 is the drawing the page keeps), straying `amp` times the usual.
+export function drawBase(g: Ctx, b: GameState["bases"][number], p = 1, wob = 0, amp = 1) {
+  inkCircle(g, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.8, 2, p, wob, amp);
 }
 
 export function drawMark(g: Ctx, m: Mark, p = 1, wob = 0) {
@@ -86,8 +86,8 @@ export function drawMark(g: Ctx, m: Mark, p = 1, wob = 0) {
   else inkCross(g, m.x, m.y, RULES.soldierRadius * 1.6, pen, m.seed, 2, 1, p, wob);
 }
 
-export function drawDot(g: Ctx, x: Soldier, alpha = 1, grow = 1, at: { x: number; y: number } = x, wob = 0) {
-  inkDot(g, at.x, at.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, alpha, grow, wob);
+export function drawDot(g: Ctx, x: Soldier, alpha = 1, grow = 1, at: { x: number; y: number } = x, wob = 0, amp = 1) {
+  inkDot(g, at.x, at.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, alpha, grow, wob, amp);
 }
 
 export function drawSignature(g: Ctx, sig: Signature, p = 1) {

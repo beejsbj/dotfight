@@ -1,22 +1,22 @@
-// Line boil: what is alive on the page is being drawn, over and over.
+// Line boil: what is alive on the page is drawn over and over.
 //
-// A camp still manned is being drawn right now: a pen goes round it without
-// stopping, fresh ink over the lap before, never quite the same circle twice.
-// A soldier still standing is redrawn a few times a second by the same hand,
-// the way a hand-drawn cartoon's lines crawl between frames: the shape stays,
-// the line that forms it shifts. (BOIL_STYLE picks either way for either.)
-// The dead (crossed-out soldiers, emptied camps, the ink lines) are dry and
-// perfectly still.
+// A soldier still standing and a camp still manned are redrawn a few times a
+// second by the same hand, the way a hand-drawn cartoon's lines crawl between
+// frames: the shape stays, the line that forms it shifts. The dead
+// (crossed-out soldiers, emptied camps, the ink lines) are dry and perfectly
+// still.
 //
 // The page is append-only, so anything that boils is held off it and drawn on
-// a small layer of its own: pre-drawn sprites for swapped drawings, fresh ink
-// for a camp being drawn, redrawn only where something changed. The moment a
-// thing stops boiling it is multiplied onto the page like every other mark and
-// leaves the layer.
+// a small layer of its own, from pre-drawn sprites, redrawn only where
+// something changed. The moment a thing stops boiling it is multiplied onto
+// the page like every other mark and leaves the layer.
+//
+// From bird's-eye a camp is a thumbnail and a soldier a few pixels, so a
+// boil that reads leaning in vanishes there: the redrawings stray further
+// the further away the camera stands (BOIL.bold).
 
 import type { GameState, Soldier } from "./game";
 import { inBase } from "./hand";
-import { INK, LAP_CHANGES, inkLaps, inkScribbledDot, lapPath } from "./ink";
 import { dotSpots, drawBase, drawDot, drawMark, type Ink, type Spot } from "./page";
 import { RULES } from "./rules";
 
@@ -30,29 +30,22 @@ type Ctx = CanvasRenderingContext2D;
  */
 export const BOILS: "living" | "dead" = "living";
 
-/**
- * How a boiling thing boils. "swap": a few drawings of it, swapped at boil
- * rate, like a cartoon's lines crawling. "draw": it is being drawn, now: a pen
- * goes round a camp without stopping, laying fresh ink over the lap before,
- * never quite the same circle twice (for a soldier, a tiny scribble round his
- * dot). Things that don't boil are still either way.
- */
-export const BOIL_STYLE: Record<"camps" | "soldiers", "swap" | "draw"> = { camps: "draw", soldiers: "draw" };
-
 export const BOIL = {
-  /** "swap": new drawings a second, on threes at 24fps. */
+  /** New drawings a second, on threes at 24fps. */
   fps: 8,
-  /** "draw": how many times a second the pen's head moves on, on twos at 24fps. */
-  drawFps: 12,
-  /** "draw": one lap of the pen round a camp (ms). */
-  lapMs: 1700,
-  /** "draw": a soldier's scribble as a loop of pictures at drawFps, going round `dotLaps` times a loop. */
-  dotFrames: 12,
-  dotLaps: 2,
-  /** Scribbles per side, shared among its soldiers. */
-  dotShapes: 6,
   /** Drawings per thing, cycled. Drawing 0 is the one the page keeps. */
   variants: 3,
+  /**
+   * How far the redrawings stray from the page's drawing, by how far away the
+   * camera stands (its zoom as a multiple of the whole-page fit): bolder from
+   * above, where a camp is a thumbnail, gentler leaning in, where the same
+   * stray would be a wobble. The first level whose `m` the zoom is under.
+   */
+  bold: [
+    { m: 1.35, amp: 2.6 }, // standing up: the whole page, and watching the ink
+    { m: 1.9, amp: 1.7 }, // on the way down
+    { m: Infinity, amp: 1 }, // leaning in
+  ],
   /** A boil tick costing more than this (ms, median of recent ticks) and the device can't afford it: stop. */
   budgetMs: 6,
   /**
@@ -67,6 +60,12 @@ export const BOIL = {
    * however few pixels it has.
    */
   predrawSprites: 16,
+};
+
+/** Which of BOIL.bold the camera's zoom `m` (a multiple of the whole-page fit) calls for. */
+export const boldAt = (m: number) => {
+  const i = BOIL.bold.findIndex((b) => m < b.m);
+  return i < 0 ? BOIL.bold.length - 1 : i;
 };
 
 /** Which boil frame it is at wall time `ms`. */
@@ -173,35 +172,17 @@ export function planBoil(s: GameState, ink: Ink, o: { on: boolean; side?: "livin
 
 // --- the layer ------------------------------------------------------------------
 
-type Style = "still" | "swap" | "draw";
-
 interface Thing {
   key: string;
   boils: boolean;
-  style: Style;
   /** Page-space box. */
   x0: number; y0: number; x1: number; y1: number;
-  /** How many pictures it cycles through (1: it holds still), which one shows at look `look`, and how to draw picture `i`. */
-  frames: number;
-  frameAt: (look: number) => number;
-  paint: (g: Ctx, i: number) => void;
-  /** Whose pictures it uses, if not its own: soldiers share a few scribbles a side. */
-  sprite: string;
-  /** A camp being drawn: fresh ink every tick instead of pictures, its pen `u` turns in. */
-  drawn?: {
-    lapMs: number; phase: number;
-    paint: (g: Ctx, u: number, near?: [number, number]) => void;
-    /** Its pen's path, so only the stretch round the head need be redrawn. */
-    path: (t: number) => [number, number];
-  };
-  /** A camp's ring has nothing inside this circle: soldiers in there don't touch it. */
-  hole?: { x: number; y: number; r: number };
+  /** How to draw its drawing `wob`, straying `amp` times the usual from the page's. */
+  paint: (g: Ctx, wob: number, amp: number) => void;
 }
 
 // Things bigger than this (page px, either side) are drawn as vectors each tick, not cached.
 const SPRITE_MAX = 400;
-/** The layer looks at the clock this often: fine enough for both 8 fps swaps and 12 fps drawing. */
-const GRID_FPS = 24;
 
 function pixels(t: Thing, S: number) {
   const px0 = Math.floor(t.x0 * S), py0 = Math.floor(t.y0 * S);
@@ -211,31 +192,28 @@ function pixels(t: Thing, S: number) {
 interface Batch { src: CanvasImageSource; n: number }
 interface Sprite { batch: Batch; x: number; y: number }
 
-/** Pictures for a still or swapping thing: its settled drawing, or its drawings cycled at boil rate. */
-function drawings(style: Style) {
-  return style === "swap" ? { frames: BOIL.variants, frameAt: (look: number) => look } : { frames: 1, frameAt: () => 0 };
-}
-
-/** Where a camp's pen is, in turns, at look (drawing frame) `look`: it moves on only on drawing frames. */
-const headAt = (d: NonNullable<Thing["drawn"]>, look: number) => (look * 1000) / BOIL.drawFps / d.lapMs + d.phase;
-
 /**
- * A thing's look at wall time `ms`: which drawing it shows ("swap"), or which
- * step round the pen has reached ("draw"). It changes exactly when the thing
- * must be redrawn; a still thing never does.
+ * A thing's look at wall time `ms` and boldness `bold` (BOIL.bold): which
+ * drawing it shows, as bold * variants + drawing. It changes exactly when the
+ * thing must be redrawn; a still thing's never does.
  */
-export function lookAt(style: "still" | "swap" | "draw", key: string, ms: number) {
-  if (style === "swap") return variantAt(boilFrame(ms), key);
-  if (style === "draw") return boilFrame(ms, BOIL.drawFps);
-  return -1;
+export function lookAt(boils: boolean, key: string, ms: number, bold = 0) {
+  return boils ? bold * BOIL.variants + variantAt(boilFrame(ms), key) : -1;
 }
+
+/** A look's drawing and boldness. Drawing 0 is the page's at every boldness. */
+const split = (look: number) => (look < 0 ? { wob: 0, bold: 0 } : { wob: look % BOIL.variants, bold: Math.floor(look / BOIL.variants) });
+/** Where a drawing's sprite is kept. */
+const spriteKey = (t: Thing, look: number) => {
+  const { wob, bold } = split(look);
+  return wob ? `${t.key}|${bold}.${wob}` : `${t.key}|0`;
+};
 
 /**
  * One boil canvas: page space, covering only what it draws, placed by the same
  * CSS matrix as the page, so the camera never redraws it. A thing is redrawn
- * only when its look changes (a swap, or the pen moving on), and only inside
- * its own box (for a ring, the box round its pen's head): what overlaps that
- * box is redrawn clipped to it.
+ * only when its drawing changes, and only inside its own box: what overlaps
+ * that box is redrawn clipped to it.
  */
 class BoilCanvas {
   readonly c: HTMLCanvasElement;
@@ -246,13 +224,14 @@ class BoilCanvas {
   oy = 0;
   private things: Thing[] = [];
   private sig = "";
-  /** The clock grid step last looked at, and each thing's look when last drawn (null: draw everything). */
+  /** The clock grid step and boldness last looked at, and each thing's look when last drawn (null: draw everything). */
   private grid = -1;
+  private bold = -1;
   private shown: number[] | null = null;
-  /** Where each thing's drawings sit: `${key}|${drawing}`. */
+  /** Each drawing's sprite, by spriteKey. Kept across boldness changes: a camera going up and down again reuses them. */
   private sprites = new Map<string, Sprite>();
   /** Drawings still to make, a few each tick. */
-  private later: { t: Thing; wob: number }[] = [];
+  private later: { t: Thing; look: number }[] = [];
   /** Every sprite made: the layer's steady state. */
   get settled() { return this.later.length === 0; }
   /** Boxes of things that have left the canvas, still to be cleared. */
@@ -274,52 +253,26 @@ class BoilCanvas {
 
   /** Take this frame's plan (cheap when it hasn't changed). */
   set(plan: Plan, s: GameState, S: number) {
-    const sig = `${plan.sig}|${BOIL_STYLE.camps}${BOIL_STYLE.soldiers}`;
+    const sig = plan.sig;
     const rings = this.part === "rings";
     if (sig === this.sig && S === this.S) return;
-    const was = S === this.S && this.shown ? new Map(this.things.map((t, i) => [`${t.key}|${t.style}`, { t, look: this.shown![i] }])) : null;
+    const was = S === this.S && this.shown ? new Map(this.things.map((t, i) => [`${t.key}|${+t.boils}`, { t, look: this.shown![i] }])) : null;
     const geometry = [this.ox, this.oy, this.c.width, this.c.height].join();
     if (S !== this.S) this.forget(() => true);
     this.sig = sig;
     this.S = S;
     const pad = 3;
     const R = RULES.soldierRadius * 1.4 + pad;
-    const style = (boils: boolean, s: "swap" | "draw"): Style => (boils ? s : "still");
     const things: Thing[] = [];
     for (const { spot, boils } of rings ? [] : plan.dots) {
       const x = s.soldiers[spot.id];
-      const st = style(boils, BOIL_STYLE.soldiers);
-      const box = { x0: spot.x - R, y0: spot.y - R, x1: spot.x + R, y1: spot.y + R };
-      if (st === "draw") {
-        // a scribble going round: a short loop of pictures, each dot starting at its own place in it
-        // One dot is as good as another, so each side has a handful of scribbles,
-        // shared, each dot at its own place in its own one: the pictures don't
-        // grow with the army, and a man who moves needs no new ones. (A shared
-        // picture sits up to half a pixel off a dot's exact place.)
-        const F = BOIL.dotFrames, h = hash(spot.key), start = h % F, shape = (h >>> 8) % BOIL.dotShapes;
-        things.push({
-          key: spot.key, boils, style: st, ...box, frames: F, frameAt: (look) => (look + start) % F, sprite: `dot${x.owner}.${shape}`,
-          paint: (g, i) => inkScribbledDot(g, spot.x, spot.y, RULES.soldierRadius, INK.pens[x.owner], 7777 + x.owner * 97 + shape * 13, (i / F) * BOIL.dotLaps, BOIL.dotLaps),
-        });
-      } else {
-        things.push({ key: spot.key, boils, style: st, ...box, ...drawings(st), sprite: spot.key, paint: (g, w) => drawDot(g, x, 1, 1, spot, w) });
-      }
+      things.push({ key: spot.key, boils, x0: spot.x - R, y0: spot.y - R, x1: spot.x + R, y1: spot.y + R, paint: (g, w, amp) => drawDot(g, x, 1, 1, spot, w, amp) });
     }
     for (const { id, boils } of rings ? plan.bases : []) {
       const b = s.bases[id];
-      const r = b.r * 1.12 + 4 + pad;
-      const key = `b${id}@${b.seed}`, h = hash(key);
-      const path = lapPath(b.x, b.y, b.r, b.seed);
-      const st = style(boils, BOIL_STYLE.camps);
-      things.push({
-        key, boils, style: st, x0: b.x - r, y0: b.y - r, x1: b.x + r, y1: b.y + r, sprite: key,
-        ...(st === "draw" ? { frames: 0, frameAt: () => 0 } : drawings(st)),
-        paint: (g, w) => drawBase(g, b, 1, w),
-        // every camp's pen at its own place round, and its own pace
-        drawn: st === "draw" ? { lapMs: BOIL.lapMs * (0.9 + (h % 100) / 500), phase: (h >>> 8) / 2 ** 24, path, paint: (g, u, near) => inkLaps(g, path, u, INK.pens[b.owner], 2.8, near) } : undefined,
-        // inside the ring's narrowest reach (drift, wave, squash, the pen's ball), with room to spare
-        hole: { x: b.x, y: b.y, r: b.r * 0.8 },
-      });
+      // room for the boldest redrawing's stray
+      const r = b.r * 1.16 + 4 + pad;
+      things.push({ key: `b${id}@${b.seed}`, boils, x0: b.x - r, y0: b.y - r, x1: b.x + r, y1: b.y + r, paint: (g, w, amp) => drawBase(g, b, 1, w, amp) });
     }
     for (const { i, boils } of rings ? [] : plan.marks) {
       const m = s.marks[i];
@@ -331,22 +284,12 @@ class BoilCanvas {
         const r = RULES.soldierRadius * 3.2 + pad;
         x0 = m.x - r; y0 = m.y - r; x1 = m.x + r; y1 = m.y + r;
       }
-      const key = `m${i}@${m.seed}`, st = style(boils, "swap");
-      things.push({ key, boils, style: st, x0, y0, x1, y1, ...drawings(st), sprite: key, paint: (g, w) => drawMark(g, m, 1, w) });
+      things.push({ key: `m${i}@${m.seed}`, boils, x0, y0, x1, y1, paint: (g, w) => drawMark(g, m, 1, w) });
     }
     this.things = things;
-    const keep = new Set(things.map((t) => t.sprite));
+    const keep = new Set(things.map((t) => t.key));
     this.forget((k) => !keep.has(k.slice(0, k.lastIndexOf("|"))));
-    // sprites for what's new are made a few a tick, first pictures first; until
-    // then a thing is drawn as ink straight onto the layer. A camp being drawn
-    // needs none: it is ink every time.
-    this.later = [];
-    const most = Math.max(0, ...things.map((t) => t.frames));
-    const asked = new Set<string>();
-    for (let i = 0; i < most; i++) for (const t of things) {
-      const k = `${t.sprite}|${i}`;
-      if (i < t.frames && !this.sprites.has(k) && !asked.has(k)) { asked.add(k); this.later.push({ t, wob: i }); }
-    }
+    this.queue(Math.max(0, this.bold));
     // the canvas covers what it draws, snapped to whole pixels on the page's grid
     if (things.length) {
       const px0 = Math.floor(Math.min(...things.map((t) => t.x0)) * S), py0 = Math.floor(Math.min(...things.map((t) => t.y0)) * S);
@@ -357,8 +300,8 @@ class BoilCanvas {
     if (was && geometry === [this.ox, this.oy, this.c.width, this.c.height].join()) {
       // the canvas stays: what carries on keeps its look, what's new is drawn,
       // and what's gone (a man killed, a camp emptied) is cleared
-      this.shown = things.map((t) => was.get(`${t.key}|${t.style}`)?.look ?? NaN);
-      const kept = new Set(things.map((t) => `${t.key}|${t.style}`));
+      this.shown = things.map((t) => was.get(`${t.key}|${+t.boils}`)?.look ?? NaN);
+      const kept = new Set(things.map((t) => `${t.key}|${+t.boils}`));
       for (const [k, { t }] of was) if (!kept.has(k)) this.gone.push([t.x0, t.y0, t.x1, t.y1]);
     } else {
       this.shown = null; // draw everything on the next tick
@@ -367,20 +310,36 @@ class BoilCanvas {
   }
 
   /**
-   * Bring the canvas up to wall time `ms`. `seen` is the part of the page on
-   * screen: what's outside it isn't redrawn until it comes into view.
-   * Returns whether anything was drawn.
+   * Queue the sprites still missing at boldness `bold`, made a few a tick,
+   * first drawings first; until one is made its thing is drawn from a stand-in
+   * (the same drawing at another boldness, or the page's drawing).
    */
-  draw(ms: number, seen?: { x0: number; y0: number; x1: number; y1: number }) {
-    const grid = boilFrame(ms, GRID_FPS);
+  private queue(bold: number) {
+    this.later = [];
+    const asked = new Set<string>();
+    for (let w = 0; w < BOIL.variants; w++) for (const t of this.things) {
+      if (!t.boils && w > 0) continue;
+      const look = bold * BOIL.variants + w, k = spriteKey(t, look);
+      if (!this.sprites.has(k) && !asked.has(k)) { asked.add(k); this.later.push({ t, look }); }
+    }
+  }
+
+  /**
+   * Bring the canvas up to wall time `ms`, at boldness `bold`. `seen` is the
+   * part of the page on screen: what's outside it isn't redrawn until it
+   * comes into view. Returns whether anything was drawn.
+   */
+  draw(ms: number, bold: number, seen?: { x0: number; y0: number; x1: number; y1: number }) {
+    const grid = boilFrame(ms);
     const news = this.shown?.some((v) => Number.isNaN(v)) || this.gone.length > 0;
-    if (grid === this.grid && this.shown && !news) return false;
+    if (bold !== this.bold) { this.bold = bold; this.queue(bold); }
+    else if (grid === this.grid && this.shown && !news) return false;
     this.grid = grid;
     const all = !this.shown;
     // nothing boiling and already drawn: it holds still
     if (!all && !news && !this.boiling) return false;
     const inView = (t: Thing) => !seen || (t.x1 > seen.x0 && t.x0 < seen.x1 && t.y1 > seen.y0 && t.y0 < seen.y1);
-    const now = this.things.map((t, i) => (all || inView(t) ? lookAt(t.style, t.key, ms) : this.shown![i]));
+    const now = this.things.map((t, i) => (all || inView(t) ? lookAt(t.boils, t.key, ms, bold) : this.shown![i]));
     const dirty = all ? this.things.map((_, i) => i) : now.flatMap((v, i) => (v !== this.shown![i] ? [i] : []));
     const gone = this.gone;
     this.gone = [];
@@ -399,35 +358,16 @@ class BoilCanvas {
       }
       this.predraw(this.later.splice(0, k));
     }
-    // the dirty boxes, in layer pixels; everything touching one is redrawn inside it.
-    // A camp being drawn only changes round its pen's head: just that box.
+    // the dirty boxes, in layer pixels; everything touching one is redrawn inside it
     const px = ([x0, y0, x1, y1]: number[]) => [Math.floor(x0 * S) - X - 1, Math.floor(y0 * S) - Y - 1, Math.ceil(x1 * S) - Math.floor(x0 * S) + 2, Math.ceil(y1 * S) - Math.floor(y0 * S) + 2];
-    const near: ([number, number] | undefined)[] = [];
     const rects: number[][] = gone.map(px);
-    for (const i of dirty) {
-      const t = this.things[i];
-      const win = all ? undefined : this.headWindow(t, this.shown![i], now[i]);
-      near[i] = win?.near;
-      rects.push(px(win?.box ?? [t.x0, t.y0, t.x1, t.y1]));
-    }
+    for (const i of dirty) { const t = this.things[i]; rects.push(px([t.x0, t.y0, t.x1, t.y1])); }
     const touches = (t: Thing, [x, y, w, h]: number[]) => {
       const [a, b, c, d] = px([t.x0, t.y0, t.x1, t.y1]);
-      if (!(x < a + c && a < x + w && y < b + d && b < y + h)) return false;
-      if (!t.hole) return true;
-      // a box wholly inside the ring's hole doesn't touch the ring
-      const o = t.hole, cx = o.x * S - X, cy = o.y * S - Y, R = o.r * S;
-      return ![[x, y], [x + w, y], [x, y + h], [x + w, y + h]].every(([p, q]) => Math.hypot(p - cx, q - cy) < R);
+      return x < a + c && a < x + w && y < b + d && b < y + h;
     };
-    const whole = all || (!gone.length && dirty.length === this.things.length && dirty.every((i) => !near[i]));
-    const redraw: number[] = [];
-    this.things.forEach((t, i) => {
-      if (whole) return void redraw.push(i);
-      const hits = rects.filter((r) => touches(t, r));
-      if (!hits.length) return;
-      // traced near its head only if nothing but its own head box needs it
-      if (near[i] && hits.length > 1) near[i] = undefined;
-      redraw.push(i);
-    });
+    const whole = all || (!gone.length && dirty.length === this.things.length);
+    const redraw = whole ? this.things.map((_, i) => i) : this.things.flatMap((t, i) => (rects.some((r) => touches(t, r)) ? [i] : []));
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalCompositeOperation = "source-over";
     if (all) g.clearRect(0, 0, this.c.width, this.c.height);
@@ -440,7 +380,7 @@ class BoilCanvas {
     }
     // ink multiplies, on this layer as on the page, so overlaps darken the same way
     g.globalCompositeOperation = "multiply";
-    for (const i of redraw) if (!this.paint(this.things[i], now[i], X, Y, near[i])) steady = false;
+    for (const i of redraw) if (!this.paint(this.things[i], now[i], X, Y)) steady = false;
     g.restore();
     g.globalCompositeOperation = "source-over";
     this.shown = now;
@@ -448,47 +388,30 @@ class BoilCanvas {
     return true;
   }
 
-  /** Draw one thing as it looks now. Returns false if it had to be drawn as ink because its sprite isn't made yet. */
-  private paint(t: Thing, state: number, X: number, Y: number, near?: [number, number]) {
-    const g = this.g, S = this.S;
-    const { px0, py0, pw, ph } = pixels(t, S);
-    const ink = (f: () => void) => { g.setTransform(S, 0, 0, S, -X, -Y); f(); g.setTransform(1, 0, 0, 1, 0, 0); };
-    if (t.drawn) {
-      const d = t.drawn;
-      ink(() => d.paint(g, headAt(d, state), near));
-      return true;
+  /** The sprite for a look, or the best stand-in made: the same drawing at another boldness, then the page's drawing. */
+  private sprite(t: Thing, look: number) {
+    const own = this.sprites.get(spriteKey(t, look));
+    if (own) return own;
+    const { wob } = split(look);
+    for (let b = 0; b < BOIL.bold.length && wob; b++) {
+      const sp = this.sprites.get(spriteKey(t, b * BOIL.variants + wob));
+      if (sp) return sp;
     }
-    const i = t.frameAt(state);
-    // a picture not made yet: its first picture stands in, while there is one
-    const sp = this.sprites.get(`${t.sprite}|${i}`) ?? this.sprites.get(`${t.sprite}|0`);
-    if (sp) { g.drawImage(sp.batch.src, sp.x, sp.y, pw, ph, px0 - X, py0 - Y, pw, ph); return true; }
-    // not made yet, or too big to cache (a whole ink line, when the dead boil)
-    ink(() => t.paint(g, i));
-    return pw > SPRITE_MAX || ph > SPRITE_MAX;
+    return this.sprites.get(spriteKey(t, 0));
   }
 
-  /**
-   * A camp whose pen moved from look `was` to `now`: the page box round the
-   * head that covers everything that changed, and how far round to trace (a
-   * little past the box, so no stroke ends inside it). Undefined: redraw it all.
-   */
-  private headWindow(t: Thing, was: number, now: number) {
-    const d = t.drawn;
-    if (!d || !(was >= 0)) return undefined;
-    const u = headAt(d, now), step = u - headAt(d, was);
-    if (step <= 0 || step > 0.3) return undefined;
-    const behind = LAP_CHANGES.behind + step + 0.02, ahead = LAP_CHANGES.ahead + 0.02;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (let k = 0; k <= 6; k++) {
-      const tt = u - behind + ((behind + ahead) * k) / 6;
-      for (const lap of [0, 1, 2]) {
-        const [x, y] = d.path(tt - lap);
-        x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
-      }
-    }
-    const pad = 5;
-    // traced a little past the box's ends (a fifth of a lap is well clear of a box this size)
-    return { box: [x0 - pad, y0 - pad, x1 + pad, y1 + pad], near: [behind + 0.06, ahead + 0.06] as [number, number] };
+  /** Draw one thing as it looks now. Returns false if it had to be drawn as ink because its sprite isn't made yet. */
+  private paint(t: Thing, look: number, X: number, Y: number) {
+    const g = this.g, S = this.S;
+    const { px0, py0, pw, ph } = pixels(t, S);
+    const sp = this.sprite(t, look);
+    if (sp) { g.drawImage(sp.batch.src, sp.x, sp.y, pw, ph, px0 - X, py0 - Y, pw, ph); return true; }
+    // not made yet, or too big to cache (a whole ink line, when the dead boil)
+    const { wob, bold } = split(look);
+    g.setTransform(S, 0, 0, S, -X, -Y);
+    t.paint(g, wob, BOIL.bold[bold].amp);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    return pw > SPRITE_MAX || ph > SPRITE_MAX;
   }
 
   /**
@@ -497,15 +420,15 @@ class BoilCanvas {
    * to make than its ink, and drawing into a canvas that has been copied from
    * makes the browser copy all of it.)
    */
-  private predraw(list: { t: Thing; wob: number }[]) {
+  private predraw(list: { t: Thing; look: number }[]) {
     const S = this.S, W = 1024;
-    const todo: { t: Thing; wob: number; x: number; y: number; pw: number; ph: number; px0: number; py0: number }[] = [];
+    const todo: { t: Thing; look: number; x: number; y: number; pw: number; ph: number; px0: number; py0: number }[] = [];
     let x = 0, y = 0, row = 0, w = 0;
-    for (const { t, wob } of list) {
+    for (const { t, look } of list) {
       const { px0, py0, pw, ph } = pixels(t, S);
-      if (pw > SPRITE_MAX || ph > SPRITE_MAX || this.sprites.has(`${t.sprite}|${wob}`)) continue;
+      if (pw > SPRITE_MAX || ph > SPRITE_MAX || this.sprites.has(spriteKey(t, look))) continue;
       if (x + pw > W) { x = 0; y += row; row = 0; }
-      todo.push({ t, wob, x, y, pw, ph, px0, py0 });
+      todo.push({ t, look, x, y, pw, ph, px0, py0 });
       x += pw + 2;
       w = Math.max(w, x);
       row = Math.max(row, ph + 2);
@@ -519,10 +442,11 @@ class BoilCanvas {
     // each box is padded past its ink, so no clipping is needed
     for (const d of todo) {
       g.setTransform(S, 0, 0, S, d.x - d.px0, d.y - d.py0);
-      d.t.paint(g, d.wob);
+      const { wob, bold } = split(d.look);
+      d.t.paint(g, wob, BOIL.bold[bold].amp);
     }
     const batch: Batch = { src: off ? (c as OffscreenCanvas).transferToImageBitmap() : (c as HTMLCanvasElement), n: todo.length };
-    for (const d of todo) this.sprites.set(`${d.t.sprite}|${d.wob}`, { batch, x: d.x, y: d.y });
+    for (const d of todo) this.sprites.set(spriteKey(d.t, d.look), { batch, x: d.x, y: d.y });
   }
 
   /** Let go of drawings whose key matches (a camp emptied, a soldier moved on); a batch goes when all its drawings have. */
@@ -537,8 +461,8 @@ class BoilCanvas {
 
 /**
  * The boil layer: two page-space canvases, the camps' rings and everything
- * else, so a soldier swapping his drawing never makes a ring be traced again
- * and a pen moving round a ring never re-copies the soldiers inside it. Ink
+ * else, so a soldier swapping his drawing never re-copies the ring round him
+ * and a ring swapping never re-copies the soldiers inside it. Ink
  * multiplies, so which canvas is on top makes no difference.
  */
 export class BoilLayer {
@@ -559,17 +483,17 @@ export class BoilLayer {
   private turn = 0;
 
   /**
-   * Bring the layer up to wall time `ms`. One canvas a frame at most, taking
+   * Bring the layer up to wall time `ms`, at boldness `bold` (boldAt). One canvas a frame at most, taking
    * turns: when both are due (a slow phone's frames are far apart) the other
    * catches up next frame, so no frame pays for both. Returns whether anything
    * was drawn.
    */
-  draw(ms: number, seen?: { x0: number; y0: number; x1: number; y1: number }) {
+  draw(ms: number, bold: number, seen?: { x0: number; y0: number; x1: number; y1: number }) {
     const t0 = performance.now();
     let drew = false, steady = true;
     for (let k = 0; k < this.parts.length && !drew; k++) {
       const i = (this.turn + k) % this.parts.length, p = this.parts[i];
-      if (p.draw(ms, seen)) { drew = true; steady = p.steady; this.turn = i + 1; }
+      if (p.draw(ms, bold, seen)) { drew = true; steady = p.steady; this.turn = i + 1; }
     }
     if (!drew) return false;
     this.redraws++;

@@ -54,8 +54,8 @@ export interface Frame {
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] };
   teach?: { kind: "aim" | "place"; at: Pt; p: number; rot: number };
   sig?: Signature;
-  /** The line boil: whether the living boil at all, and wall time (ms) for its frame. */
-  boil?: { on: boolean; ms: number };
+  /** The line boil: whether the living boil at all, wall time (ms) for its frame, and how bold (boil.ts boldAt). */
+  boil?: { on: boolean; ms: number; bold: number };
 }
 
 export const page = new PageLayer();
@@ -137,7 +137,8 @@ export function renderStage(els: Els, f: Frame) {
   boil.set(plan, s, pageState.S);
   place(els, f);
   seen = onScreen(f);
-  if (boil.draw(f.boil?.ms ?? 0, seen)) stageStats.boil++;
+  bold = f.boil?.bold ?? 0;
+  if (boil.draw(f.boil?.ms ?? 0, bold, seen)) stageStats.boil++;
   renderLive(els.live.getContext("2d")!, els.live, f, ink, dpr);
   renderAir(els, f);
   stageStats.frames++;
@@ -157,6 +158,8 @@ function boilPlan(f: Frame, ink: Ink): Plan {
 // The part of the page on screen (page units, padded), so the boil leaves
 // what you can't see alone. None if the view reaches the horizon.
 let seen: { x0: number; y0: number; x1: number; y1: number } | undefined;
+/** How bold the boil is drawn, by how far away the camera stands (boil.ts boldAt), as of the last render. */
+let bold = 0;
 function onScreen(f: Frame) {
   const pts = [[0, 0], [f.sw, 0], [0, f.ch], [f.sw, f.ch]].map(([x, y]) => unproject(f.view, x, y));
   if (pts.some((p) => !p)) return undefined;
@@ -176,7 +179,7 @@ export function forgetDrawn() {
 
 /** Between rendered frames: redraw the boil if its frame has ticked. Returns whether it did. */
 export function boilTick(ms: number) {
-  if (boil.empty || !boil.draw(ms, seen)) return false;
+  if (boil.empty || !boil.draw(ms, bold, seen)) return false;
   stageStats.boil++;
   return true;
 }
