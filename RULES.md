@@ -89,6 +89,16 @@ From 2,000 bot-vs-bot games each, with a human-like shaky hand:
 | Wet ink | 26.5 | 50% | 1.58 | 10% | 10.7 | 3.0 |
 | Siege | 22.3 | 46% | 1.70 | 18% | 3.6 | 3.4 |
 
+## Round 2 (Burooj's new direction, 2026-09-25)
+
+The full write-up, with data, is [docs/rules-lab/round-2.md](docs/rules-lab/round-2.md). Three new sets are in the picker, above the round-1 sets:
+
+- **Lunge & snipe** (recommended). The classic page. The move is a **lunge** (Burooj): it crosses out whatever it passes. A lunge kill earns another lunge by the same soldier, with a tremor that grows each link. Lunging into a manned enemy base kills him at the wall; off the page too. A **snipe** earns another flick only by crossing out two or more with one line (Burooj). **Sends** are free, once a turn, and walk the page, where any line can cross a walker out (Burooj). Emptied bases stay as **rings** you can man again (Burooj). Soldiers are **arranged** before the first flick, in or just outside their base (Burooj). Added by the lab: each further snipe in a turn needs one more kill, the lunge tremor, and round 1's last stand.
+- **Pen physics**: Lunge & snipe, plus a line crossing ink steeply jolts the hand (once per line), grooves pull a slow pen along a line it meets nearly parallel (yours carry you further, theirs cut you short), and base walls jolt a line a little (Burooj). Kept light: every ink effect lengthens games.
+- **Billiards**: Lunge & snipe on 2 camps (circles, 12, soft walls), a prism (triangle, 6: any of your shots passing out through it splits) and 2 cushions (hexagons, 8: anyone's line glancing off a wall banks by its angle of incidence, yours too; straight in goes through). Squares and spirals are gone (Burooj).
+
+Scribble cover, taper, crumbling rings, Dawood's friendly-boost/enemy-slow ink, capture of enemy rings and costly sends are all options (below) but in no set, for reasons in the report.
+
 ## Every option
 
 The engine's options, grouped. Each is a field on `RuleSet` with a comment in [src/rules.ts](src/rules.ts).

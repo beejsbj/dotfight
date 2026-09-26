@@ -16,9 +16,12 @@ npm run share-art -- http://localhost:5173/   # regenerate og.jpg + icons from a
 npm run lab -- --games 2000                    # rules lab: bot-vs-bot games for every named rule set, no browser
 npm run lab -- --games 400 --sets classic,classic-once --out docs/rules-lab/data/x.json
 npm run playtest -- http://localhost:5173/     # every rule set by touch at phone sizes (needs the dev server and Chrome)
+node --import ./scripts/ts-resolve.mjs scripts/round2-scenes.ts .tmp/scenes.json   # round-2 mechanic scenes (engine only)
+node scripts/round2-shots.mjs http://localhost:5173/ .tmp/scenes.json docs/rules-lab/shots/round-2   # ...rendered at 390x844
+node scripts/round2-table.mjs docs/rules-lab/data/round-2/finals.json   # report tables from a lab run
 ```
 
-Pick the rule set on the title card (**rules: …**, then **read** for its card).
+Pick the rule set on the title card (**rules: …**, then **read** for its card). Round 2's sets (Lunge & snipe, Pen physics, Billiards) are first; the round-1 sets follow, for comparison. See [docs/rules-lab/round-2.md](docs/rules-lab/round-2.md).
 
 On your turn, touch one of your soldiers or anywhere in one of your bases (the camera closes in), pull back from anywhere, and let go. Pick **move** or **shoot** at the bottom. Pinch to zoom; tap **page** to see the whole sheet. Pass & play shows a hand-off sheet between turns; Dawood-bot plays red. A finished page can be saved as a PNG.
 
