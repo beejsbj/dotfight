@@ -4,11 +4,12 @@
 import { rng, type Pt } from "./game";
 
 export const INK = {
-  paper: "#f5f0e3",
-  rule: "rgba(92, 140, 196, 0.38)",
-  margin: "rgba(206, 70, 70, 0.55)",
-  pencil: "rgba(70, 68, 66, 0.55)",
-  pens: ["#1f3a9e", "#c2252f"] as const, // blue ballpoint, red ballpoint
+  paper: "#f3efe4",
+  grid: "rgba(84, 128, 168, 0.30)", // squared maths paper
+  gridBold: "rgba(84, 128, 168, 0.42)",
+  margin: "rgba(200, 64, 64, 0.5)",
+  pencil: "rgba(58, 56, 54, 0.62)",
+  pens: ["#1b3899", "#c01e2a"] as const, // blue ballpoint, red ballpoint
   names: ["Blue", "Red"] as const,
 };
 
@@ -286,64 +287,6 @@ export function handText(
   ctx.fillText(text, x0, 0);
   ctx.restore();
   return w;
-}
-
-// A ballpoint pen lying on the page, tip at (x,y), pointing along `angle`.
-// `pull` (0..1) slides it back as the flick charges. `lift` (0..1) takes it
-// off the page: the shadow drops away and the pen fades.
-export function drawPen(ctx: Ctx, x: number, y: number, angle: number, pull: number, cap: string, scale: number, lift = 0) {
-  if (lift >= 1) return;
-  const A = 1 - lift * lift;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle + Math.PI); // body extends behind the tip
-  const back = pull * 26 * scale;
-  ctx.translate(back, 0);
-  const L = 150 * scale, R = 6.5 * scale;
-  // shadow: further from the pen, and softer, the higher it is lifted
-  ctx.globalAlpha = 0.18 * A;
-  ctx.fillStyle = "#000";
-  ctx.beginPath();
-  ctx.ellipse(L * 0.55 + (4 + lift * 10) * scale, (7 + lift * 18) * scale, L * 0.5, R * (0.9 + lift * 0.8), 0, 0, Math.PI * 2);
-  ctx.fill();
-  const up = 1 + lift * 0.07;
-  ctx.scale(up, up);
-  ctx.globalAlpha = A;
-  // tip cone
-  ctx.fillStyle = "#c9c2b0";
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(18 * scale, -R * 0.8);
-  ctx.lineTo(18 * scale, R * 0.8);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "#222";
-  ctx.beginPath();
-  ctx.arc(1.2 * scale, 0, 1.3 * scale, 0, Math.PI * 2);
-  ctx.fill();
-  // translucent hex barrel
-  ctx.fillStyle = "rgba(235, 238, 240, 0.85)";
-  ctx.strokeStyle = "rgba(60, 60, 60, 0.5)";
-  ctx.lineWidth = 1 * scale;
-  ctx.beginPath();
-  ctx.rect(18 * scale, -R, L - 18 * scale, R * 2);
-  ctx.fill();
-  ctx.stroke();
-  // ink refill inside the barrel
-  ctx.fillStyle = cap;
-  ctx.globalAlpha = 0.7 * A;
-  ctx.fillRect(22 * scale, -1.3 * scale, L * 0.8, 2.6 * scale);
-  ctx.globalAlpha = A;
-  // highlight
-  ctx.fillStyle = "rgba(255,255,255,0.7)";
-  ctx.fillRect(20 * scale, -R * 0.65, L - 24 * scale, 1.4 * scale);
-  // end cap + clip
-  ctx.fillStyle = cap;
-  ctx.beginPath();
-  ctx.roundRect(L - 4 * scale, -R * 1.05, 16 * scale, R * 2.1, 3 * scale);
-  ctx.fill();
-  ctx.fillRect(L - 30 * scale, -R * 1.25 - 3 * scale, 34 * scale, 3 * scale);
-  ctx.restore();
 }
 
 // Grain for the paper, rendered once.

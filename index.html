@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#2b2825" />
+    <meta name="theme-color" content="#0b0706" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Pen Flick Tactics</title>
-    <meta name="description" content="Dawood's pen-and-paper flick war, on a notebook page. Draw your bases, flick your pen, cross them out." />
+    <meta name="description" content="Dawood's pen-and-paper flick war, fought on the back page of a maths copy under a desk lamp. Draw your camps, flick your pen, cross them out." />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -16,7 +16,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://pen-flick-tactics.vercel.app/" />
     <meta property="og:title" content="Pen Flick Tactics" />
-    <meta property="og:description" content="Dawood's pen-and-paper flick war, on a notebook page. Draw your bases, flick your pen, cross them out." />
+    <meta property="og:description" content="Dawood's pen-and-paper flick war, fought on the back page of a maths copy under a desk lamp." />
     <meta property="og:image" content="https://pen-flick-tactics.vercel.app/og.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -24,25 +24,42 @@
     <meta name="twitter:image" content="https://pen-flick-tactics.vercel.app/og.jpg" />
   </head>
   <body>
-    <canvas id="page"></canvas>
+    <div id="world" aria-hidden="true">
+      <canvas id="desk"></canvas>
+      <div id="page-host"></div>
+      <canvas id="live"></canvas>
+      <canvas id="light"></canvas>
+      <canvas id="haze"></canvas>
+    </div>
+    <canvas id="over" aria-label="The page. Touch one of your soldiers, pull back, let go."></canvas>
 
     <header id="top">
-      <div class="slip side" data-p="0"><span class="name">Blue</span><svg class="tally"></svg></div>
-      <button id="menu-btn" class="slip" aria-label="Menu">≡</button>
-      <div class="slip side" data-p="1"><span class="name">Red</span><svg class="tally"></svg></div>
+      <button id="menu-btn" class="tab" aria-label="Menu"><span>≡</span></button>
+      <div class="tag" data-p="0"><span class="name">Blue</span><span class="count"></span></div>
+      <div class="tag" data-p="1"><span class="name">Red</span><span class="count"></span></div>
+      <button id="page-btn" class="tab" aria-label="Stand up and see the whole page"><span>page</span></button>
     </header>
 
     <footer id="bottom">
-      <p id="status"></p>
-      <div class="slip strip">
-        <button id="fit-btn" aria-label="See whole page">page</button>
-        <div id="kind">
-          <button data-kind="move">move</button>
-          <button data-kind="shoot">shoot</button>
-        </div>
-        <span id="turn-no"></span>
+      <p id="status" aria-live="polite"></p>
+      <div id="kind" role="radiogroup" aria-label="What the soldier does">
+        <button data-kind="move" role="radio"><b>move</b><i>he goes where the ink stops</i></button>
+        <button data-kind="shoot" role="radio"><b>shoot</b><i>the ink runs off the page</i></button>
       </div>
     </footer>
+
+    <section id="cover" hidden>
+      <div class="book">
+        <div class="label">
+          <p class="school">EXERCISE BOOK · SQUARED</p>
+          <h1>Pen Flick <em>Tactics</em></h1>
+          <p class="field"><span>Name</span><b class="hand blue">Dawood</b></p>
+          <p class="field"><span>Subject</span><b class="hand blue">War</b></p>
+          <p class="field"><span>Class</span><b class="hand blue">after lights out</b></p>
+        </div>
+        <nav class="menu"></nav>
+      </div>
+    </section>
 
     <div id="sheet" hidden><div class="card"></div></div>
 

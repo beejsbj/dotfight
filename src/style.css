@@ -1,111 +1,274 @@
 :root {
-  --paper: #f5f0e3;
-  --desk: #2b2825;
-  --blue: #1f3a9e;
-  --red: #c2252f;
-  --pencil: #4a4744;
-  --rule: rgba(92, 140, 196, 0.38);
+  --paper: #f3efe4;
+  --blue: #1b3899;
+  --red: #c01e2a;
+  --pencil: #3f3c39;
+  --grid: rgba(84, 128, 168, 0.28);
+  --tape: #e6d6ad;
+  --kraft: #9a6f45;
   --hand: "Caveat", "Patrick Hand", cursive;
   --print: "Patrick Hand", "Caveat", sans-serif;
+  --type: "Special Elite", "Courier New", monospace;
+  --lamp: 0;
+  --dawn: 0;
+  --lit: calc(0.32 + 0.68 * var(--lamp));
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body {
-  margin: 0; height: 100%; overflow: hidden; background: var(--desk);
+  margin: 0; height: 100%; overflow: hidden; background: #0b0706;
   overscroll-behavior: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   font-family: var(--print); color: var(--pencil);
 }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; touch-action: manipulation; }
-canvas#page { position: fixed; inset: 0; width: 100vw; height: 100dvh; touch-action: none; display: block; }
 
-.slip {
-  background: var(--paper);
-  box-shadow: 0 2px 0 rgba(0,0,0,.12), 0 6px 14px rgba(0,0,0,.35);
-  border-radius: 2px;
-}
+/* the desk: page-space layers the compositor moves (never repainted for the camera) */
+#world, #world > * { pointer-events: none; }
+#desk, #page-host > canvas { position: fixed; left: 0; top: 0; transform-origin: 0 0; display: block; will-change: transform; }
+#live { position: fixed; display: block; mix-blend-mode: multiply; will-change: transform; }
+#light, #haze { position: fixed; inset: 0; width: 100vw; height: 100dvh; display: block; }
+#light { mix-blend-mode: multiply; }
+#over { position: fixed; inset: 0; width: 100vw; height: 100dvh; touch-action: none; display: block; }
+
+/* --- the HUD: things lying on the desk at its near edge ------------------------ */
+
+#top, #bottom { transition: opacity .5s; }
+body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events: none; }
 
 #top {
-  position: fixed; top: 0; left: 0; right: 0;
-  padding: calc(env(safe-area-inset-top) + 8px) max(10px, env(safe-area-inset-right)) 6px max(10px, env(safe-area-inset-left));
-  display: flex; align-items: stretch; gap: 8px; pointer-events: none;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 2;
+  padding: calc(env(safe-area-inset-top) + 8px) max(8px, env(safe-area-inset-right)) 4px max(8px, env(safe-area-inset-left));
+  display: flex; align-items: center; gap: 6px; pointer-events: none;
 }
 #top > * { pointer-events: auto; }
-.side { flex: 1; display: flex; align-items: center; gap: 6px; padding: 4px 8px; min-width: 0; transition: transform .25s, opacity .25s; }
-.side[data-p="0"] { transform: rotate(-1.2deg); color: var(--blue); }
-.side[data-p="1"] { transform: rotate(1deg); color: var(--red); flex-direction: row-reverse; }
-.side:not(.on) { opacity: .6; }
-.side.on[data-p="0"] { transform: rotate(-1.2deg) translateY(2px) scale(1.03); }
-.side.on[data-p="1"] { transform: rotate(1deg) translateY(2px) scale(1.03); }
-.side .name { font-family: var(--hand); font-weight: 700; font-size: 24px; line-height: 1; }
-.side.on .name { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
-.tally { height: 22px; flex: 1; min-width: 0; }
-#menu-btn { width: 42px; font-size: 26px; line-height: 1; transform: rotate(2deg); }
+
+/* masking tape with a name on it, stuck to the desk's near edge */
+.tag {
+  flex: 1; min-width: 0; position: relative; padding: 6px 12px 7px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,.07) 0 2px, transparent 2px 5px),
+    linear-gradient(180deg, rgba(255,255,255,.25), rgba(120,90,40,.08)),
+    var(--tape);
+  clip-path: polygon(0 8%, 3% 0, 97% 4%, 100% 0, 98% 50%, 100% 100%, 96% 94%, 3% 100%, 0 92%, 2% 50%);
+  filter: brightness(calc(.55 + .45 * var(--lamp)));
+  opacity: .5;
+  transition: opacity .35s, transform .35s;
+  display: flex; flex-direction: column; line-height: 1;
+}
+.tag[data-p="0"] { transform: rotate(-1.6deg); color: var(--blue); }
+.tag[data-p="1"] { transform: rotate(1.3deg); color: var(--red); text-align: right; }
+.tag.on, .tag.won { opacity: 1; }
+.tag.on[data-p="0"], .tag.won[data-p="0"] { transform: rotate(-1.6deg) translateY(2px) scale(1.04); }
+.tag.on[data-p="1"], .tag.won[data-p="1"] { transform: rotate(1.3deg) translateY(2px) scale(1.04); }
+.tag .name { font-family: var(--hand); font-weight: 700; font-size: clamp(18px, 5.6vw, 25px); padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag .count { font-family: var(--hand); font-size: 17px; color: #5a534b; margin-top: 1px; white-space: nowrap; }
+/* the ink left in that player's pen */
+.tag::after {
+  content: ""; position: absolute; bottom: 4px; height: 2px; border-radius: 2px;
+  width: calc((100% - 24px) * var(--ink-left, 1)); background: currentColor; opacity: .5;
+}
+.tag[data-p="0"]::after { left: 12px; }
+.tag[data-p="1"]::after { right: 12px; }
+
+.tab {
+  flex: none; width: 46px; height: 46px; display: grid; place-items: center;
+  font-family: var(--hand); font-weight: 700; font-size: 19px; color: rgba(243, 239, 228, .82);
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, rgba(255,240,215,.12), rgba(0,0,0,.25));
+  box-shadow: inset 0 0 0 1.5px rgba(243, 239, 228, .22);
+}
+#menu-btn span { font-size: 28px; line-height: 1; transform: translateY(-2px); }
+.tab:active { transform: scale(.94); }
 
 #bottom {
-  position: fixed; left: 0; right: 0; bottom: 0;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 2;
   padding: 0 max(10px, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 10px) max(10px, env(safe-area-inset-left));
   pointer-events: none;
 }
 #bottom > * { pointer-events: auto; }
 #status {
-  margin: 0 auto 6px; width: fit-content; max-width: 100%;
-  font-family: var(--hand); font-size: clamp(17px, 5.4vw, 22px); line-height: 1.1; color: var(--paper);
-  text-align: center; text-shadow: 0 1px 2px rgba(0,0,0,.6); pointer-events: none; min-height: 1.1em;
+  margin: 0 auto 8px; width: fit-content; max-width: 100%; min-height: 1.15em;
+  font-family: var(--hand); font-size: clamp(18px, 5.4vw, 23px); line-height: 1.15;
+  color: rgba(243, 236, 220, calc(.35 + .6 * var(--lamp))); text-align: center; pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0,0,0,.8);
 }
-.strip { display: flex; align-items: center; justify-content: space-between; padding: 4px 12px; transform: rotate(-.4deg); height: 60px; }
-#fit-btn, #turn-no { font-family: var(--hand); font-size: 20px; width: 56px; color: var(--pencil); }
-#turn-no { text-align: right; }
-#kind { display: flex; gap: 22px; }
-#kind button { position: relative; font-family: var(--hand); font-weight: 700; font-size: 34px; padding: 2px 14px; color: #8a8580; transition: color .15s; }
-#kind button.on { color: var(--ink, var(--blue)); }
-#kind button svg { position: absolute; inset: -6px -4px; width: calc(100% + 8px); height: calc(100% + 12px); pointer-events: none; overflow: visible; }
-#kind.off { opacity: .35; pointer-events: none; }
+
+/* move / shoot: two index cards; the one in hand is lifted into the light
+   and its word circled in your ink */
+#kind { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; transition: opacity .25s; }
+#kind button {
+  position: relative; height: 66px; padding: 7px 12px 8px 14px; text-align: left;
+  display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 2px;
+  background:
+    linear-gradient(transparent 13px, rgba(84, 128, 168, .45) 13px 14.5px, transparent 14.5px),
+    radial-gradient(ellipse at 30% 20%, rgba(255,250,240,.6), transparent 70%),
+    var(--paper);
+  border-radius: 2px;
+  box-shadow: 0 1px 0 rgba(0,0,0,.25), 0 6px 14px rgba(0,0,0,.45);
+  filter: brightness(calc(.5 + .5 * var(--lamp)));
+  opacity: .62;
+  transform: translateY(7px) rotate(-.8deg);
+  transition: transform .22s cubic-bezier(.2,.9,.3,1.3), opacity .2s;
+}
+#kind button:nth-child(2) { transform: translateY(7px) rotate(.9deg); }
+#kind button b { position: relative; font-family: var(--hand); font-weight: 700; font-size: 32px; line-height: .95; color: #807a73; padding: 0 4px; transition: color .2s; }
+#kind button i { font-family: var(--hand); font-style: normal; font-size: 15px; color: #6d6863; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+#kind button.on { opacity: 1; transform: translateY(-3px) rotate(-1.4deg); }
+#kind button.on:nth-child(2) { transform: translateY(-3px) rotate(1.2deg); }
+#kind button.on b { color: var(--ink, var(--blue)); }
+#kind button.on b::after {
+  content: ""; position: absolute; left: -7px; right: -9px; top: -4px; bottom: -3px;
+  border: 2.4px solid var(--ink, var(--blue)); border-radius: 50% 46% 52% 44% / 55% 50% 48% 52%;
+  transform: rotate(-4deg); opacity: .85;
+}
+#kind.off { opacity: .3; pointer-events: none; }
+#bottom.view #kind button { opacity: 1; }
+#bottom.view #kind button b { color: var(--pencil); }
+
+/* --- the cover: a brown-paper exercise book ------------------------------------ */
+
+#cover {
+  position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 16px;
+  perspective: 1400px;
+}
+#cover[hidden] { display: none; }
+.book {
+  position: relative; width: min(370px, 100%); max-height: calc(100dvh - 32px); overflow: auto;
+  padding: 26px 20px 20px 30px; transform-origin: left center;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(255, 230, 190, .16), transparent 60%),
+    repeating-linear-gradient(92deg, rgba(60, 35, 15, .05) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(-3deg, rgba(255, 240, 210, .04) 0 2px, transparent 2px 7px),
+    var(--kraft);
+  border-radius: 3px 8px 8px 3px;
+  box-shadow: inset 10px 0 12px -8px rgba(0,0,0,.45), 0 18px 40px rgba(0,0,0,.6), 0 2px 0 rgba(0,0,0,.4);
+  transform: rotate(-2.2deg);
+  animation: bookIn .7s cubic-bezier(.2,.8,.2,1) both;
+  scrollbar-width: none;
+}
+.book::before { /* the stitched spine */
+  content: ""; position: absolute; left: 12px; top: 10px; bottom: 10px;
+  border-left: 2px dashed rgba(40, 22, 10, .35);
+}
+/* the room is dark until the lamp comes on */
+.book::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(ellipse at 22% 0%, transparent 20%, rgba(10, 5, 2, .5) 95%);
+  opacity: calc(1.25 - var(--lamp));
+}
+#cover.open .book { animation: bookOpen .7s cubic-bezier(.5,0,.6,1) both; }
+
+.label {
+  position: relative; background: #fbf8f0; padding: 14px 16px 10px; border-radius: 10px;
+  box-shadow: inset 0 0 0 3px #fbf8f0, inset 0 0 0 4.5px #3a5fa8, inset 0 0 0 7px #fbf8f0, inset 0 0 0 8px #3a5fa8, 0 2px 3px rgba(0,0,0,.25);
+  transform: rotate(1deg);
+}
+.label .school { margin: 0; font-family: var(--type); font-size: 11px; letter-spacing: .12em; color: #3a5fa8; text-align: center; }
+.label h1 { margin: 2px 0 8px; font-family: var(--hand); font-weight: 700; font-size: 46px; line-height: .95; color: var(--blue); text-align: center; transform: rotate(-2deg); }
+.label h1 em { font-style: normal; color: var(--red); }
+.label .field { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 2px 0 0; border-bottom: 1.5px solid rgba(58, 95, 168, .5); font-family: var(--type); font-size: 13px; color: #3a5fa8; }
+.label .field span { width: 64px; flex: none; }
+.label .field b { font-family: var(--hand); font-weight: 700; font-size: 25px; line-height: 1.05; }
+.hand.blue { color: var(--blue); }
+
+/* the menu: a torn-out slip of squared paper tucked into the cover */
+.menu {
+  position: relative; margin: 18px -4px 2px 8px; padding: 14px 14px 12px 16px;
+  background:
+    linear-gradient(90deg, transparent 22px, rgba(200, 64, 64, .45) 22px 23.5px, transparent 23.5px),
+    repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 16px),
+    repeating-linear-gradient(var(--grid) 0 1px, transparent 1px 16px),
+    var(--paper);
+  transform: rotate(1.6deg);
+  box-shadow: 0 6px 14px rgba(0,0,0,.35), 0 1px 0 rgba(0,0,0,.2);
+  clip-path: polygon(0 1%, 8% 0, 16% 1.2%, 25% 0, 33% .8%, 42% 0, 51% 1%, 60% 0, 69% 1.1%, 78% 0, 87% .9%, 100% 0, 100% 100%, 0 100%);
+}
+.menu button { display: block; text-align: left; }
+.menu .ink { font-family: var(--hand); font-weight: 700; font-size: 31px; line-height: 1.05; padding: 3px 0 3px 18px; }
+.menu .ink small { display: block; font-size: 17px; font-weight: 400; color: var(--pencil); margin-top: -1px; }
+.menu .ink.blue { color: var(--blue); }
+.menu .ink.red { color: var(--red); }
+.menu .ink:active { transform: translateX(3px); }
+.menu .levels { display: flex; gap: 4px; margin: -2px 0 8px 18px; }
+.menu .levels button { font-family: var(--hand); font-size: 21px; padding: 2px 8px; color: #6d6863; border-radius: 50%; }
+.menu .levels button.on { color: var(--red); box-shadow: inset 0 0 0 2px var(--red); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
+.menu .row { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 8px 0 0 18px; }
+.menu .pencil { font-family: var(--hand); font-size: 22px; color: var(--pencil); text-decoration: underline; text-decoration-color: rgba(63,60,57,.35); text-underline-offset: 3px; }
+
+/* --- cards: a page torn from the same book ------------------------------------ */
 
 #sheet {
-  position: fixed; inset: 0; display: grid; place-items: center; padding: 20px;
-  background: rgba(20, 18, 16, .55); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
-  z-index: 10; animation: fade .2s ease-out;
+  position: fixed; inset: 0; z-index: 6; display: grid; place-items: center; padding: 18px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(10, 6, 4, .35), rgba(10, 6, 4, .75));
+  animation: fade .25s ease-out;
 }
 #sheet[hidden] { display: none; }
 .card {
-  width: min(380px, 100%); max-height: 100%; overflow: auto;
-  background: var(--paper) repeating-linear-gradient(transparent 0 33px, var(--rule) 33px 34px);
-  background-position: 0 14px;
-  padding: 22px 22px 22px 46px; position: relative;
-  box-shadow: 0 10px 30px rgba(0,0,0,.5); transform: rotate(-.8deg);
-  animation: drop .28s cubic-bezier(.2,.9,.3,1.2);
+  width: min(380px, 100%); max-height: 100%; overflow: auto; position: relative;
+  background:
+    linear-gradient(90deg, transparent 30px, rgba(200, 64, 64, .45) 30px 31.5px, transparent 31.5px),
+    repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 18px),
+    repeating-linear-gradient(var(--grid) 0 1px, transparent 1px 18px),
+    var(--paper);
+  padding: 22px 20px 20px 44px;
+  box-shadow: 0 14px 36px rgba(0,0,0,.6);
+  transform: rotate(-.8deg);
+  animation: drop .35s cubic-bezier(.2,.9,.3,1.2);
+  scrollbar-width: none;
 }
-.card::before { content: ""; position: absolute; top: 0; bottom: 0; left: 30px; border-left: 3px double rgba(206, 70, 70, .55); }
-.card h1, .card h2 { font-family: var(--hand); font-weight: 700; margin: 0 0 4px; line-height: 1; }
-.card h1 { font-size: 50px; color: var(--blue); transform: rotate(-2deg); }
-.card h1 em { font-style: normal; color: var(--red); }
-.card h2 { font-size: 40px; }
-.card p, .card li { font-size: 18px; line-height: 34px; margin: 0; }
-.card ol { padding-left: 20px; margin: 0 0 8px; }
-.card .sub { font-family: var(--hand); font-size: 22px; color: var(--pencil); margin-bottom: 10px; }
-.card .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
-.card .act {
-  display: block; font-family: var(--hand); font-weight: 700; font-size: 30px; line-height: 34px;
-  color: var(--blue); padding: 0; text-align: left;
-}
+.card h2 { font-family: var(--hand); font-weight: 700; font-size: 40px; line-height: 1; margin: 0 0 8px; color: var(--blue); }
+.card p, .card li { font-size: 17px; line-height: 1.45; margin: 0; }
+.card ol { padding-left: 18px; margin: 0 0 10px; }
+.card li { margin-bottom: 6px; }
+.card .sub { font-family: var(--hand); font-size: 23px; color: var(--pencil); margin-bottom: 6px; }
+.card .stats { font-family: var(--hand); font-size: 20px; margin-bottom: 12px; }
+.card .fine { font-size: 14px; color: #77726c; margin-top: 10px; }
+.card .act { display: block; font-family: var(--hand); font-weight: 700; font-size: 29px; line-height: 1.25; color: var(--blue); text-align: left; padding: 2px 0; }
+.card .act::before { content: "→ "; font-weight: 400; opacity: .6; }
 .card .act.red { color: var(--red); }
-.card .act.small { font-size: 24px; display: inline; color: var(--pencil); }
-.card .act.small.on { color: var(--blue); text-decoration: underline; }
 .card .act:active { transform: translateX(3px); }
-.card .fine { font-size: 15px; line-height: 34px; color: #8a8580; }
-.card.handoff { text-align: center; padding: 34px 22px 34px 46px; }
+.card .toggle { display: block; width: 100%; text-align: left; padding: 8px 0 8px 34px; position: relative; }
+.card .toggle b { display: block; font-family: var(--hand); font-size: 27px; line-height: 1; color: var(--pencil); }
+.card .toggle i { font-style: normal; font-size: 14px; color: #77726c; }
+.card .toggle::before { content: ""; position: absolute; left: 2px; top: 11px; width: 20px; height: 20px; border: 2px solid var(--pencil); border-radius: 3px 5px 3px 4px; }
+.card .toggle.on b { color: var(--blue); }
+.card .toggle.on::after { content: "✓"; position: absolute; left: 3px; top: 0; font-family: var(--hand); font-weight: 700; font-size: 34px; color: var(--blue); }
+.card.handoff { text-align: center; padding: 34px 20px 34px 44px; }
+.card.over h2 { font-size: 44px; }
+.card.drawer .pages { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; margin: 10px 0 12px; }
+.card.drawer .page { text-align: left; }
+.card.drawer .page canvas { width: 100%; height: auto; display: block; box-shadow: 0 3px 8px rgba(0,0,0,.35); transform: rotate(-1deg); }
+.card.drawer .page:nth-child(2n) canvas { transform: rotate(1.2deg); }
+.card.drawer .page span { display: block; font-family: var(--hand); font-size: 16px; line-height: 1.1; margin-top: 5px; color: var(--pencil); }
+
+/* wide windows: the HUD stays a phone's width, centred on the near edge */
+@media (min-width: 700px) {
+  #top, #bottom { max-width: 640px; margin: 0 auto; }
+}
 
 /* short landscape phones: the page is portrait, so keep the chrome thin */
 @media (orientation: landscape) and (max-height: 500px) {
-  #top { padding-top: calc(env(safe-area-inset-top) + 4px); }
-  .side .name { font-size: 20px; }
-  .tally { height: 16px; }
-  #status { font-size: 17px; margin-bottom: 2px; }
-  #status::after { content: " · best played upright"; opacity: .6; }
-  .strip { height: 40px; }
-  #kind button { font-size: 24px; }
-  #fit-btn, #turn-no { font-size: 17px; }
+  #top { justify-content: center; }
+  .tag { flex: 0 1 240px; }
+  .tag .name { font-size: 20px; }
+  .tag .count { display: none; }
+  .tab { width: 38px; height: 38px; }
+  #status { font-size: 17px; margin-bottom: 4px; }
+  #status:not(:empty)::after { content: " · best played upright"; opacity: .6; }
+  #kind { width: min(420px, 100%); margin: 0 auto; }
+  #kind button { height: 44px; }
+  #kind button b { font-size: 24px; }
+  #kind button i { display: none; }
+  /* the cover opens out: label on the left, the slip beside it */
+  .book { width: min(680px, 100%); display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; padding: 18px 16px 16px 28px; }
+  .label h1 { font-size: 36px; }
+  .menu { margin: 0; }
+  .menu .ink { font-size: 26px; }
 }
 
 @keyframes fade { from { opacity: 0; } }
-@keyframes drop { from { transform: translateY(-14px) rotate(-3deg); opacity: 0; } }
+@keyframes drop { from { transform: translateY(-16px) rotate(-3deg); opacity: 0; } }
+@keyframes bookIn { from { transform: translateY(24px) rotate(-5deg); opacity: 0; } }
+@keyframes bookOpen {
+  to { transform: rotateY(-150deg) rotate(-2.2deg); opacity: 0; }
+}
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

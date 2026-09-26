@@ -41,5 +41,5 @@ The source is Burooj's description of Dawood's pen-and-paper game (ChatGPT, 2026
 ## Not in the paper game, added for the screen
 
 - A slight hidden angle error on release and a visible tremble if you hold a hard flick. These stand in for the physical unreliability of a real flick.
-- Close-up aim: the camera zooms onto your soldier while you aim, so you can't see the whole page. This is the "limited perspective" idea from the seed.
+- Sitting down to aim: the camera drops low behind your soldier and the desk tilts away under a lamp, so you can't see the whole page while you commit to a flick. This is the "limited perspective" idea from the seed. Nothing that decides a flick depends on what is lit or in view.
 - Dawood-bot, a computer opponent.
