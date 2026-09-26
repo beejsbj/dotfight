@@ -74,12 +74,11 @@ describe("a soldier's pose", () => {
     for (let ms = 0; ms < 20000; ms += FRAME) expect(a.pose(3, ms)).toEqual(b.pose(3, ms));
   });
 
-  it("breathes when nothing's happening, and a hop takes him up the screen", () => {
+  it("stands still when nothing's happening (his scribble is his breath), and a hop takes him up the screen", () => {
     const s = setup();
     const life = new Life();
     life.see(scene(s, { up: Math.PI / 2 }), 0);
-    const ks = Array.from({ length: 60 }, (_, i) => life.pose(5, i * FRAME).k);
-    expect(Math.max(...ks) - Math.min(...ks)).toBeGreaterThan(0.04);
+    for (let i = 0; i < 60; i++) expect(life.pose(5, i * FRAME)).toEqual({ ox: 0, oy: 0, k: 1, st: 1, ax: 0, rate: 1 });
     life.add(5, { kind: "hop", t0: 0, amp: 1 });
     const apex = life.pose(5, 2 * FRAME + 1);
     expect(apex.oy).toBeCloseTo(AMP.hop, 0); // up the screen is +y on the page here (the sheet is turned round)
@@ -152,7 +151,7 @@ describe("the pen round a camp", () => {
     const calm = (life.see(scene(s), 0), life.pace(0, 0));
     life.see(scene(s, { chosen: { id: me.id, t0: 0 }, aim: { angle: Math.atan2(1200 - me.y, 300 - me.x), power: 0.8, reach: 1800, spread: 0.05 } }), 0);
     expect(life.dreading.length).toBeGreaterThan(0);
-    expect(life.pace(0, 0)).toBeGreaterThan(calm * 1.5);
+    expect(life.pace(0, 0)).toBeGreaterThan(calm * 1.4);
   });
 });
 

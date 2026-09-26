@@ -22,7 +22,7 @@ import { RULES } from "./rules";
  * (Dev: `pft.LIFE.voices = false`, live.)
  */
 export const LIFE = {
-  /** Breathing, and eager little hops from the side whose go it is. */
+  /** Eager little hops from the side whose go it is. (His breathing is his scribble.) */
   idle: true,
   /** The line: dread while a pen points at you, the flinch as ink passes (the headline), a gasp before it hits, the shooter's recoil. */
   line: true,
@@ -63,7 +63,7 @@ export interface Pose {
   /** How fast he's being scribbled: 1 calm, 0 holding his breath, 2+ racing. */
   rate: number;
 }
-export const REST: Readonly<Pose> = { ox: 0, oy: 0, k: 1, st: 1, ax: 0, rate: 1 };
+export const REST: Readonly<Pose> = Object.freeze({ ox: 0, oy: 0, k: 1, st: 1, ax: 0, rate: 1 });
 
 // --- small seeded helpers ---------------------------------------------------------
 
@@ -327,6 +327,19 @@ export function passes(soldiers: readonly Soldier[], path: Pt[], shooter: number
   return out.sort((p, q) => p.index - q.index);
 }
 
+/**
+ * Now and then, on his side's go, a man hops, ready: the key of his hop at
+ * `ms`, or null. Each has his own period and his own moment in it, and skips
+ * about half of them. Pure.
+ */
+function hopKey(id: number, h: number, ms: number) {
+  const P = 5200 + ((h >>> 8) % 4200), w = Math.floor((ms + (h % P)) / P);
+  if (unit(id, w, 3) >= 0.55) return null;
+  const at = w * P - (h % P) + unit(id, w, 5) * (P - KEYS.hop.length * FRAME);
+  const f = Math.floor((ms - at) / FRAME);
+  return f >= 0 && f < KEYS.hop.length ? KEYS.hop[f] : null;
+}
+
 // --- the life of the page --------------------------------------------------------
 
 /**
@@ -396,31 +409,24 @@ export class Life {
     if (!sc || !x) return { ...REST };
     const dead = this.stilled.get(id);
     if (dead !== undefined && ms >= dead) return { ...REST, rate: 0 };
-    const a = new Acc();
     const h = hash(id, 77);
     const up = sc.up;
+    const chosen = sc.chosen;
+    // most men, most ticks, are simply standing: say so without the arithmetic
+    const acts = this.acts.get(id);
+    const me = chosen && sc.s.soldiers[chosen.id];
+    const mate = !!me && chosen!.id !== id && me.owner === x.owner && Math.hypot(me.x - x.x, me.y - x.y) < RULES.baseRadius * 2.4;
+    const hop = LIFE.idle && sc.eager === x.owner && chosen?.id !== id ? hopKey(id, h, ms) : null;
+    const busy = !!acts?.length || chosen?.id === id || mate || hop || this.dread.has(id) || this.stand[x.owner];
+    if (!busy) return REST;
+    const a = new Acc();
     // legibility: from bird's-eye a dot is a few pixels, so a hop is drawn taller there
     const tall = Math.max(1, Math.min(1.6, 1.8 / (sc.zoom ?? 1.8)));
-    if (LIFE.idle) {
-      // breathing: a slow swell, each at his own pace. Only close enough to see it:
-      // from bird's-eye it's a tenth of a pixel, and a man at rest is drawn cheaper
-      const T = 2300 + (h % 900), close = Math.max(0, Math.min(1, ((sc.zoom ?? 2.3) - 1.3) / 0.8));
-      if (close > 0) a.k *= 1 + 0.045 * close * Math.sin((ms / T) * Math.PI * 2 + (h % 628) / 100);
-      // on his side's go, now and then a little hop: ready
-      if (sc.eager === x.owner && sc.chosen?.id !== id) {
-        const P = 5200 + ((h >>> 8) % 4200), w = Math.floor((ms + (h % P)) / P);
-        if (unit(id, w, 3) < 0.55) {
-          const at = w * P - (h % P) + unit(id, w, 5) * (P - KEYS.hop.length * FRAME);
-          const f = Math.floor((ms - at) / FRAME);
-          const key = f >= 0 && f < KEYS.hop.length ? KEYS.hop[f] : null;
-          if (key) a.push(up, (key.d ?? 0) * AMP.hop * 0.6 * tall, 1 + ((key.s ?? 1) - 1) * 0.7, key.k ?? 1);
-        }
-      }
-    }
-    const acts = this.acts.get(id) ?? [];
-    for (const r of acts) {
+    // on his side's go, now and then a little hop: ready
+    if (hop) a.push(up, (hop.d ?? 0) * AMP.hop * 0.6 * tall, 1 + ((hop.s ?? 1) - 1) * 0.7, hop.k ?? 1);
+    for (const r of acts ?? []) {
       // of each kind, only the latest to have started
-      if (acts.some((o) => o !== r && o.kind === r.kind && o.t0 > r.t0 && o.t0 <= ms)) continue;
+      if (acts!.some((o) => o !== r && o.kind === r.kind && o.t0 > r.t0 && o.t0 <= ms)) continue;
       const key = keyAt(r, ms);
       if (!key) continue;
       const dir = r.dir ?? up;
@@ -431,7 +437,6 @@ export class Life {
       if (key.side) a.push(dir + Math.PI / 2, key.side * AMP[r.kind] * r.amp * big);
       a.rate *= key.r ?? 1;
     }
-    const chosen = sc.chosen;
     if (LIFE.chosen && chosen) {
       if (chosen.id === id) {
         a.rate *= 1.7;
@@ -443,11 +448,10 @@ export class Life {
           a.rate *= 1 + p;
           if (p > 0.97) a.push(unit(id, Math.floor(ms / FRAME)) * 6.283, 0.7);
         }
-      } else if (x.owner === sc.s.soldiers[chosen.id]?.owner) {
+      } else if (mate && me) {
         // his campmates turn to him: a lean and a stretch his way, rippling out
-        const me = sc.s.soldiers[chosen.id];
         const dist = Math.hypot(me.x - x.x, me.y - x.y);
-        if (dist < RULES.baseRadius * 2.4) {
+        {
           const on = Math.max(0, Math.min(1, (ms - chosen.t0 - dist * 1.6) / (FRAME * 3)));
           const toward = Math.atan2(me.y - x.y, me.x - x.x);
           a.push(toward, 2.4 * on, 1 + 0.14 * on);
@@ -536,7 +540,7 @@ export class Life {
     // tired round an emptying camp; a full one goes briskly
     let p = 0.45 + 0.55 * Math.min(1, men.length / RULES.soldiersPerBase);
     // hurried while its men are in the line of fire
-    if (men.some((x) => this.dread.has(x.id))) p *= 1.9;
+    if (men.some((x) => this.dread.has(x.id))) p *= 1.5;
     return p;
   }
 }
