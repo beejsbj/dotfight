@@ -154,6 +154,23 @@ export default async function (T, out) {
       await seq("last-stand", 24, 1000 / 12, { "last-stand": await box({ x: cx, y: cy }, 140) });
     } else console.log("no last stand on this page");
   }
+  // --- the unit cam ---------------------------------------------------------------
+  if (want("unit-cam")) {
+    await war(7, 12);
+    const home = await fullest("mine");
+    const men = await menIn(home);
+    const me = men.sort((a, b) => Math.hypot(a.x - home.x, a.y - home.y) - Math.hypot(b.x - home.x, b.y - home.y))[0];
+    await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
+    await step(0, 100);
+    let a = await T.world(me.x, me.y);
+    await T.tap(a.x, a.y, 30); // pick him up: lean in
+    for (let i = 0; i < 14; i++) await step(1000 / 12, 30);
+    a = await T.world(me.x, me.y);
+    await T.tap(a.x, a.y, 30); // and again: down to his level
+    await seq("unit-cam", 36, 1000 / 12);
+    console.log("unit cam over:", await page.evaluate(() => window.pft.unit === null));
+  }
+
   // --- voices, rendered offline to WAV (to listen to: headless Chrome has no ears) ---
   if (want("voices")) {
     const fs = await import("node:fs");

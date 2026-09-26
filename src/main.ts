@@ -5,7 +5,7 @@ import "@fontsource/special-elite/400.css";
 import "./style.css";
 
 import { botBase, botFlick, LEVELS, type Level } from "./bot";
-import { Camera } from "./camera";
+import { Camera, type Pose } from "./camera";
 import { pull, reach, release, sigma, wobble, type Aim as Pull } from "./flick";
 import {
   act, alive, basesLeft, canAct, canPlaceBase, newGame, pathLen, placeBase,
@@ -26,6 +26,7 @@ import { RULES } from "./rules";
 import { boldAt } from "./boil";
 import { comrades, LIFE, lastStand, planFlick } from "./life";
 import * as voice from "./voice";
+import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
 import { boil, boilTick, forgetDrawn, life, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { Timeline, reachFraction } from "./timeline";
@@ -86,6 +87,10 @@ interface Resolve {
 }
 let res: Resolve | null = null;
 let penDrop = -1e9; // when the pen was set down on the selected soldier
+/** The unit cam (unitcam.ts): down at his level for a beat. `back`: where the camera was. */
+let unit: { id: number; t0: number; back: Pose; skip?: number; greeted?: boolean; rising?: boolean } | null = null;
+/** The last pull on a man that wasn't let go (he looks down it in the unit cam). */
+let lastPull: { id: number; angle: number } | null = null;
 
 const $ = <T extends HTMLElement>(q: string) => document.querySelector(q) as T;
 const els: Els = {
@@ -209,7 +214,8 @@ function status(msg?: string) {
     else if (res) t = "";
     else if (isBot(s.current)) t = `${who} is lining up…`;
     else if (aim) t = pull(aim).live ? `let go to ${kind}` : "pull back further…";
-    else if (selected !== undefined) t = `pull back from anywhere, let go`;
+    else if (unit) t = "";
+    else if (selected !== undefined) t = LIFE.unitCam && !taught("unitcam") && taught("aim") ? "pull back and let go, or tap him again" : `pull back from anywhere, let go`;
     else t = lastNote ? `${lastNote}` : `${who}: pick up a soldier`;
   }
   $("#status").textContent = t;
@@ -241,6 +247,8 @@ function reset() {
   inkTL.clear();
   sfx.creak(0);
   life.clear();
+  unit = null;
+  lastPull = null;
   // a different page is about to be on the desk: draw it even if nothing moves
   dirty = true;
 }
@@ -451,6 +459,48 @@ function pickUp(id: number) {
   const mate = comrades(s, x.owner, x, RULES.baseRadius * 1.6, id)[0];
   if (mate) voice.say("murmur", mate.id, x.owner, 0.32, 0.8);
 }
+
+/** Tap your man again while leaning in: the camera drops to his eye level, looking where he looks. */
+function startUnitCam(id: number) {
+  if (!LIFE.unitCam || unit || aim || res) return;
+  const me = s.soldiers[id];
+  learn("unitcam");
+  const face = facing(s, id, lastPull?.id === id ? lastPull.angle : undefined);
+  unit = { id, t0: T, back: { ...cam.tgt } };
+  const rot = rotFacing(face, cam.cur.rot);
+  if (cam.tiltScale > 0) cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.m, tilt: UNIT_CAM.tilt, fy: UNIT_CAM.fy, rot };
+  else cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.flatM, tilt: 0, fy: 0.55, rot };
+  if (reduced) cam.snap(); // no swoop: just his view
+  if (LIFE.chosen) life.add(id, { kind: "perk", t0: wall, amp: 1 });
+  if (heard()) voice.say("look", id, me.owner, 0.05);
+  status("");
+  dirty = true;
+}
+
+/** Per frame while the unit cam runs: greet at the bottom, stand back up when it's time. */
+function stepUnitCam() {
+  const u = unit!;
+  const p = phaseAt(T - u.t0, u.skip);
+  if (p.phase === "hold" && !u.greeted) {
+    u.greeted = true;
+    const me = s.soldiers[u.id];
+    if (LIFE.chosen) life.add(u.id, { kind: "hop", t0: wall, amp: 0.8 });
+    if (heard()) voice.say("hup", u.id, me.owner, 0.08);
+  }
+  if ((p.phase === "rise" || p.phase === "done") && !u.rising) {
+    u.rising = true;
+    // back to where you were; or, if the touch that cut it short picked another man or stood you up, there
+    if (selected === u.id) cam.tgt = { ...u.back };
+    else if (selected === undefined) cam.overview(u.back.rot);
+    else cam.tgt = { ...cam.tgt, rot: u.back.rot };
+    if (reduced) cam.snap();
+    penDrop = T; // the pen comes back down onto him
+    status();
+  }
+  if (p.phase === "done") unit = null;
+}
+/** Any touch cuts the unit cam short. */
+function skipUnitCam() { if (unit && !unit.rising) unit.skip = T - unit.t0; }
 
 /**
  * A flick just fired: plan how the page feels it (life.planFlick), on the wall
@@ -889,7 +939,7 @@ function signatureFor(st: GameState, m: Mode) {
 // --- input ------------------------------------------------------------------
 
 type Gesture =
-  | { t: "aim"; id: number; sx: number; sy: number; tapOn?: number }
+  | { t: "aim"; id: number; sx: number; sy: number; tapOn?: number; again?: boolean }
   | { t: "pan"; id: number; lx: number; ly: number; sx: number; sy: number }
   | { t: "place"; id: number; off: number }
   | { t: "pinch"; d0: number; m0: number }
@@ -932,6 +982,8 @@ const humanTurn = () => screen === "game" && !isBot(s.current) && !busy && $("#s
 
 over.addEventListener("pointerdown", (e) => {
   sfx.unlock();
+  const cut = !!unit && !unit.rising;
+  skipUnitCam();
   over.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 2) {
@@ -959,8 +1011,10 @@ over.addEventListener("pointerdown", (e) => {
   if (humanTurn() && s.phase === "play" && w) {
     const near = nearestOwn(w);
     if (near !== undefined || selected !== undefined) {
+      // a second tap on the man already in hand: the unit cam, on lift
+      const again = !cut && near !== undefined && near === selected;
       if (near !== undefined && near !== selected) select(near);
-      g = { t: "aim", id: e.pointerId, sx: e.clientX, sy: e.clientY, tapOn: near };
+      g = { t: "aim", id: e.pointerId, sx: e.clientX, sy: e.clientY, tapOn: near, again };
       return;
     }
   }
@@ -1054,9 +1108,11 @@ function up(e: PointerEvent) {
       aim = null;
       sfx.creak(0);
       if (f && canAct(s, f.soldierId)) { learn("aim"); haptic("flick", pw); fire(f, pw, lean); }
-      else status("too soft: pull back further");
+      else { status("too soft: pull back further"); if (selected !== undefined) lastPull = { id: selected, angle: aimAngle }; }
     } else if (tapped && g.tapOn === undefined) {
       standUp(); // tap on empty paper puts the pen down
+    } else if (tapped && g.again && selected !== undefined) {
+      startUnitCam(selected);
     }
     aim = null;
     sfx.creak(0);
@@ -1096,6 +1152,7 @@ function bindKind() {
 bindKind();
 $("#page-btn").onclick = () => {
   sfx.tap();
+  if (unit) { unit = null; }
   if (selected !== undefined && !busy) standUp();
   else cam.overview();
   dirty = true;
@@ -1111,7 +1168,7 @@ document.addEventListener("click", (e) => { if (e.isTrusted && (e.target as Elem
 window.addEventListener("keydown", (e) => {
   if (e.key === "m") $<HTMLButtonElement>('#kind [data-kind="move"]')?.click();
   if (e.key === "s") $<HTMLButtonElement>('#kind [data-kind="shoot"]')?.click();
-  if (e.key === "Escape") { aim = null; sfx.creak(0); if (!busy) standUp(); }
+  if (e.key === "Escape") { if (unit) { skipUnitCam(); return; } aim = null; sfx.creak(0); if (!busy) standUp(); }
 });
 
 // --- frame ------------------------------------------------------------------
@@ -1152,6 +1209,7 @@ function frame(now: number) {
     }
   }
   if (res) { stepResolve(); active = true; }
+  if (unit) { stepUnitCam(); active = true; }
   const live = fx.end(T) > T || inkTL.end(0) > 0;
   if (live || wasLive || aim || botAim || lampOn.moving || dawn.moving || T - penDrop < 260) active = true;
   wasLive = live;
@@ -1221,7 +1279,7 @@ function currentFrame(): Frame {
     // riding his ink: stretched out along it, most at the start when it's fastest
     if (r.mover !== undefined && it < r.dur) f.mover = { id: r.mover, at: h, angle: h.angle, stretch: LIFE.chosen ? 1 + 0.6 * (1 - p) : 1 };
     f.pen = resolvePen(r, it);
-  } else if (selected !== undefined && screen === "game") {
+  } else if (selected !== undefined && screen === "game" && !(unit && !unit.rising)) {
     const me = s.soldiers[selected];
     const owner = me.owner;
     const ink = inkLeft(owner);
@@ -1306,7 +1364,7 @@ showBoot();
 if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
-    get selected() { return selected; }, get res() { return res; }, haptics,
+    get selected() { return selected; }, get res() { return res; }, haptics, get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id),
     set speed(v: number) { speed = v; }, get speed() { return speed; },
     poke: () => { dirty = true; },
     /**
