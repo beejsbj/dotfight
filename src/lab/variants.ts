@@ -189,6 +189,10 @@ export const LAB2D: RuleSet[] = [
   // the full gentle combo still choked (105 turns): leaner pen physics
   v(F, "g-t05-pen2", { earn: { ...EARN, rise: 1, tremor: 0.05 }, ink: { wobble: 0.04, joltMax: 2, ...GROOVE }, shapes: { circle: { wobble: 0.03 } } }),
   v(F, "g-t05-pen3", { earn: { ...EARN, rise: 1, tremor: 0.05 }, ink: { wobble: 0.04, joltMax: 2, ...GROOVE, scribble: 6, scribbleSpan: 24 }, shapes: { circle: { wobble: 0.03 } } }),
+  v(F, "h-pen2", { earn: { ...EARN, rise: 1, tremor: 0.05 }, position: { reach: 20 }, ink: { wobble: 0.04, joltMax: 2, ...GROOVE }, shapes: { circle: { wobble: 0.03 } } }),
+  v(F, "h-pen4", { earn: { ...EARN, rise: 1, tremor: 0.05 }, position: { reach: 20 }, ink: { wobble: 0.03, joltMax: 1, groove: 0.12, grooveReach: 12, groovePull: 0.02, grooveOwn: 0.7, grooveEnemy: 1.4 }, shapes: { circle: { wobble: 0.03 } } }),
+  v(F, "h-pen5", { earn: { ...EARN, rise: 1, tremor: 0.05 }, position: { reach: 20 }, ink: { wobble: 0.04, joltMax: 1, ...GROOVE }, shapes: { circle: { wobble: 0.02 } } }),
+  v(F, "h-bil", { earn: { ...EARN, rise: 1, tremor: 0.05 }, position: { reach: 20 }, kit: KIT2, shapes: SHAPES2, soldiersPerBase: 12 }),
 ];
 
 export const EXPERIMENTS: RuleSet[] = [...ROUND1, ...ROUND2, ...ROUND3, ...ROUND4, ...LAB2.filter((r) => r !== LAST_STAND), ...LAB2B, ...LAB2C, ...LAB2D];

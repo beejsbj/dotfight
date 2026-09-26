@@ -43,7 +43,9 @@ export function round2Card(R: RuleSet, feel?: string): Card {
   if (R.position) rules.push(`Before the first flick, drag your soldiers where you want them: in their base or just outside it.`);
   rules.push("On your go, flick one soldier: <b>snipe</b> (he stays put) or <b>lunge</b> (he goes where the ink stops). Both lines are as long, and cross out every enemy they touch.");
   if (R.earn) {
-    if (R.earn.shoot) rules.push(`Snipe <b>${n(R.earn.shoot)} with one line</b>? Flick again${R.chainCap ? "" : ", for as long as you keep doing it"}.`);
+    if (R.earn.shoot) rules.push(R.earn.rise
+      ? `Snipe <b>${n(R.earn.shoot)} with one line</b>? Flick again. The next snipe needs ${n(R.earn.shoot + R.earn.rise)} to go again, then ${n(R.earn.shoot + 2 * R.earn.rise)}, and so on.`
+      : `Snipe <b>${n(R.earn.shoot)} with one line</b>? Flick again${R.chainCap ? "" : ", for as long as you keep doing it"}.`);
     if (R.earn.move) rules.push(`Lunge through someone? ${R.earn.sameMover ? "He" : "You"} can lunge again, with a shakier hand each time. Or stop.`);
   }
   if (R.chainCap) rules.push(`No more than ${n(R.chainCap)} extra flicks a turn.`);

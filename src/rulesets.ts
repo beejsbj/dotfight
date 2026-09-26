@@ -79,11 +79,19 @@ export const ROUND2_BASE: RuleSet = variant(CLASSIC, {
   empty: "ring",
 });
 
-/** Lunge and snipe on the classic page. */
+/**
+ * Lunge and snipe on the classic page, with what the lab added to keep it
+ * fair and short (docs/rules-lab/round-2.md): each further snipe in a turn
+ * needs one more kill, each lunge link adds a tremor however soft the
+ * flick, round 1's last stand, and soldiers arranged before the first flick.
+ */
 export const LUNGE_SNIPE: RuleSet = variant(ROUND2_BASE, {
   id: "lunge-snipe",
   name: "Lunge & snipe",
   motto: "Lunge through them and go again, shakier. Snipe two with one line and go again.",
+  earn: { shoot: 2, move: 1, sameMover: true, shake: 0.35, rise: 1, tremor: 0.05 },
+  lastStand: { at: 4, hits: 1, steady: 0.6, shots: 2, grow: 1 },
+  position: { reach: 20 },
 });
 
 /** Ink as a real pen on paper: jolts, grooves, scribbles, tapering lines. */
@@ -91,8 +99,11 @@ export const PEN_PHYSICS: RuleSet = variant(LUNGE_SNIPE, {
   id: "pen-physics",
   name: "Pen physics",
   motto: "Crossing ink jolts your hand; running along it pulls you into its groove.",
-  ink: { wobble: 0.06, groove: 0.3, grooveReach: 24, groovePull: 0.03, grooveOwn: 0.6, grooveEnemy: 1.6, scribble: 3, scribbleSpan: 40, taperHit: 0.25, taperWall: 0.15 },
-  shapes: { circle: { wobble: 0.05 } },
+  // the lightest of each that still reads on the page: every ink effect makes games
+  // longer (ink piles up in front of the targets), so scribble cover and taper are
+  // left out and a line jolts at most once (docs/rules-lab/round-2.md)
+  ink: { wobble: 0.03, joltMax: 1, groove: 0.12, grooveReach: 12, groovePull: 0.02, grooveOwn: 0.7, grooveEnemy: 1.4 },
+  shapes: { circle: { wobble: 0.03 } },
 });
 
 /** Camps, a prism and cushions: bank shots and split lines. */
