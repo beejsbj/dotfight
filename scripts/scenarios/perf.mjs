@@ -3,7 +3,9 @@
 // pulling back, and (pass and play) the page turning. "script" is main-thread
 // time per rendered frame, the budget a phone's CPU pays; "frame" is the
 // interval between frames in this headless (GPU-less) Chrome.
-// "idle" is a page with nothing moving: only the line boil ticking (8 fps).
+// "idle" is a page with nothing moving: only the line boil ticking (12 fps),
+// and with soldier life, the men breathing and hopping on their side's go.
+// "a kill" fires a shot into the fullest enemy camp and times what follows.
 // BOIL=on pins the boil on and stops the slow-device probe (headless Chrome
 // has no GPU and always looks slow, which would switch the boil off);
 // BOIL=off pins it off with the probe stopped too, for a like-for-like baseline.
@@ -54,6 +56,16 @@ export default async function (T, out) {
   await measure("flick + pull back", 1500);
   await measure("page turn (pnp)", 1800);
   await T.shot(`${out}/perf-after.png`);
+  // a shot into the fullest enemy camp: (with soldier life) flinches, gasps,
+  // a camp holding still, the shooter's camp cheering
+  await idle(T, 60000);
+  await measure("a kill, camps reacting", 2200, () => page.evaluate(() => {
+    const s = window.pft.s;
+    const me = s.soldiers.find((x) => x.alive && x.owner === s.current);
+    const foes = s.soldiers.filter((x) => x.alive && x.owner !== s.current);
+    const t = foes.reduce((a, b) => (foes.filter((x) => Math.hypot(x.x - b.x, x.y - b.y) < 70).length > foes.filter((x) => Math.hypot(x.x - a.x, x.y - a.y) < 70).length ? b : a));
+    window.pft.act({ soldierId: me.id, kind: "shoot", angle: Math.atan2(t.y - me.y, t.x - me.x), length: 1800, bend: 0 });
+  }));
   const slow = await page.evaluate(() => window.pft.slow);
   const boil = await page.evaluate(() => ({ on: window.pft.boilOn, ticks: window.pft.stageStats.boil, tooDear: window.pft.boil?.tooDear, living: window.pft.s.soldiers.filter((x) => x.alive).length }));
   if (rate > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });

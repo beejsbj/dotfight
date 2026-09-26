@@ -1356,7 +1356,7 @@ function seeLife(f: Frame) {
   if (sel !== chosenAt.id) chosenAt = { id: sel ?? -1, t0: wall };
   const r = f.view.rot;
   life.see({
-    s, up: Math.atan2(-Math.cos(r), -Math.sin(r)),
+    s, up: Math.atan2(-Math.cos(r), -Math.sin(r)), zoom: cam.cur.m,
     eager: s.phase === "play" && !res && screen === "game" ? s.current : undefined,
     chosen: sel !== undefined && !res ? { id: sel, t0: chosenAt.t0 } : undefined,
     aim: f.aim && !res ? { angle: f.aim.angle, power: f.aim.power, reach: f.aim.reach, spread: f.aim.spread } : undefined,

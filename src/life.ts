@@ -218,6 +218,8 @@ export interface Scene {
   s: GameState;
   /** The page direction of "up" on screen, for hops. */
   up: number;
+  /** The camera's zoom (1: the whole page). Standing back, hops are drawn bigger so they still read. */
+  zoom?: number;
   /** Whose go it is and they're free to act: their men are eager. */
   eager?: Player;
   /** The man in hand, since when (wall ms). */
@@ -360,6 +362,8 @@ export class Life {
     const a = new Acc();
     const h = hash(id, 77);
     const up = sc.up;
+    // legibility: from bird's-eye a dot is a few pixels, so a hop is drawn taller there
+    const tall = Math.max(1, Math.min(1.6, 1.8 / (sc.zoom ?? 1.8)));
     if (LIFE.idle) {
       // breathing: a slow swell, each at his own pace
       const T = 2300 + (h % 900);
@@ -371,7 +375,7 @@ export class Life {
           const at = w * P - (h % P) + unit(id, w, 5) * (P - KEYS.hop.length * FRAME);
           const f = Math.floor((ms - at) / FRAME);
           const key = f >= 0 && f < KEYS.hop.length ? KEYS.hop[f] : null;
-          if (key) a.push(up, (key.d ?? 0) * AMP.hop * 0.45, 1 + ((key.s ?? 1) - 1) * 0.6, key.k ?? 1);
+          if (key) a.push(up, (key.d ?? 0) * AMP.hop * 0.45 * tall, 1 + ((key.s ?? 1) - 1) * 0.6, key.k ?? 1);
         }
       }
     }
@@ -379,7 +383,7 @@ export class Life {
       const key = keyAt(r, ms);
       if (!key) continue;
       const dir = r.dir ?? up;
-      const d = (key.d ?? 0) * AMP[r.kind] * r.amp;
+      const d = (key.d ?? 0) * AMP[r.kind] * r.amp * (r.dir === undefined ? tall : 1);
       a.push(dir, d, key.s ?? 1, key.k ?? 1);
       a.rate *= key.r ?? 1;
     }

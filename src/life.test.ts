@@ -55,7 +55,7 @@ describe("a soldier's pose", () => {
     const other = s.soldiers.find((x) => x.alive && x.owner === 1 && x.id !== id)!.id;
     const kinds: Reaction["kind"][] = ["hop", "flinch", "gasp", "recoil", "perk", "land", "cheer", "mourn"];
     kinds.forEach((kind, i) => life.add(id, { kind, t0: i * 7, dir: i, amp: 1.5, n: 3 }));
-    life.see(scene(s, { eager: 1, chosen: { id: other, t0: 0 }, aim: { angle: 0, power: 1, reach: 2000, spread: 0.5 } }), 0);
+    life.see(scene(s, { zoom: 1, eager: 1, chosen: { id: other, t0: 0 }, aim: { angle: 0, power: 1, reach: 2000, spread: 0.5 } }), 0);
     for (let ms = 0; ms < 3000; ms += FRAME) {
       const q = life.pose(id, ms);
       expect(Math.hypot(q.ox, q.oy)).toBeLessThanOrEqual(REACH.offset + 1e-9);
