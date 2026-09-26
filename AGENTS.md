@@ -1,11 +1,11 @@
 # AGENTS.md
 
-Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book under a desk lamp ("Lamplight"). Vite + TypeScript + Canvas 2D, no framework. The owner is Burooj; the game's inventor is his friend **Dawood** (always spelled Dawood; the bot is Dawood-bot). Live at https://dotfight.vercel.app, repo `beejsbj/dotfight` (private). The local folder is still named `pen-flick-tactics`.
+Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book under a desk lamp ("Lamplight"). Vite + TypeScript + Canvas 2D, no framework. The owner is Burooj; the game's inventor is his friend **Dawood** (always spelled Dawood; the bot is Dawood-bot). Live at https://dotfight.vercel.app, repo `beejsbj/dotfight` (private), local checkout `/mnt/server-ssd/BJsWorkspace/Projects/dotfight` (the old `pen-flick-tactics` path is a symlink to it).
 
 ## Ground rules
 
 - **Commit as beejsbj.** Set the repo-local identity (`git config user.name beejsbj; git config user.email burooj.bj@gmail.com`) in every new worktree before committing. Vercel silently blocks deploys authored by any other identity (the global bjslab identity is Otto, and it gets blocked).
-- **Work in a worktree** under `.claude/worktrees/<name>` on its own branch, and open a PR against `main`. Stack on another PR's branch only when you build on its unmerged work. Run `npm ci` in the worktree: a symlinked `node_modules` misses packages (fonts) and breaks the build.
+- **Work in a worktree** under `/mnt/server-ssd/BJsWorkspace/Projects/Worktrees/dotfight/<name>` (the workspace convention) on its own branch, and open a PR against `main`. Stack on another PR's branch only when you build on its unmerged work. Run `npm ci` in the worktree: a symlinked `node_modules` misses packages (fonts) and breaks the build.
 - **Merging and anything outward-facing** (renames, domains, publishing) need Burooj's go-ahead.
 - **Stop servers by PID.** `pkill -f` / `pgrep -f` match your own shell's command line and kill it. Find the PID with `ss -ltnp | grep :<port>`.
 - **The name lives in `src/name.ts`.** HTML gets it through `%GAME_NAME%` / `%GAME_NAME_HTML%`, and a test checks the manifest against it. Storage keys (`pft:*`) and the dev hook (`window.pft`) keep the old "pft" prefix on purpose, so players keep their saves.
@@ -48,7 +48,7 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 
 ## Coordination
 
-- Linear (team BJS, project "pen-flick-tactics") holds status and decisions. Use the `cockpit linear` CLI with the app actor. On bjslab, source `/home/admin/.config/cockpit/env` only inside the subprocess that runs cockpit, and check `cockpit linear linear-doctor` reports `app actor: OK` before writing.
+- Linear (team BJS, project "dotfight") holds status and decisions. Use the `cockpit linear` CLI with the app actor. On bjslab, source `/home/admin/.config/cockpit/env` only inside the subprocess that runs cockpit, and check `cockpit linear linear-doctor` reports `app actor: OK` before writing.
 - Key issues:
   - BJS-128: rules with Dawood
   - BJS-457: room link / online play
