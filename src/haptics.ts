@@ -54,33 +54,33 @@ const clamp01 = (x: number) => Math.min(1, Math.max(0, x || 0));
 /** What each event feels like. Pure. */
 export function pattern(ev: HapticEvent, arg = 0): Pattern {
   switch (ev) {
-    case "tap": return { android: [8], ios: [0], priority: 1 };
-    case "pickup": return { android: [12], ios: [0], priority: 2 };
+    case "tap": return { android: [18], ios: [0], priority: 1 };
+    case "pickup": return { android: [28], ios: [0], priority: 2 };
     case "notch": {
       const p = clamp01(arg);
       // full power is its own detent: a firmer click, and a second tick on iOS
-      if (p >= 1) return { android: [22], ios: [0, IOS_TICK_GAP], priority: 2 };
-      return { android: [Math.round(5 + 8 * p)], ios: [0], priority: 1 };
+      if (p >= 1) return { android: [40], ios: [0, IOS_TICK_GAP], priority: 2 };
+      return { android: [Math.round(12 + 14 * p)], ios: [0], priority: 1 };
     }
     // a tremor: uneven, fading in
-    case "wobble": return { android: [5, 40, 7, 60, 9, 40, 6], ios: [0, 70, 170], priority: 2 };
-    case "flick": return { android: [Math.round(14 + 14 * clamp01(arg))], ios: [0], priority: 3 };
-    case "settle": return { android: [7], ios: [0], priority: 1 };
+    case "wobble": return { android: [12, 40, 16, 60, 20, 40, 14], ios: [0, 70, 170], priority: 2 };
+    case "flick": return { android: [Math.round(32 + 30 * clamp01(arg))], ios: [0], priority: 3 };
+    case "settle": return { android: [16], ios: [0], priority: 1 };
     case "kill": {
       const n = Math.max(1, Math.round(arg) || 1);
       // one firm tap for a cross; every further cross on the same line lands
       // as a double knock, a little harder each time
-      if (n === 1) return { android: [26], ios: [0], priority: 4 };
-      return { android: [18, 50, Math.min(44, 28 + 6 * (n - 2))], ios: [0, 75], priority: 4 };
+      if (n === 1) return { android: [50], ios: [0], priority: 4 };
+      return { android: [36, 50, Math.min(80, 55 + 8 * (n - 2))], ios: [0, 75], priority: 4 };
     }
     // heavy: one long hit and its rebound; iOS can only pile ticks up
-    case "thud": return { android: [60, 40, 20], ios: [0, IOS_TICK_GAP, IOS_TICK_GAP * 2], priority: 5 };
+    case "thud": return { android: [110, 40, 45], ios: [0, IOS_TICK_GAP, IOS_TICK_GAP * 2], priority: 5 };
     // a paper riffle, quickening
-    case "turn": return { android: [6, 45, 6, 35, 6, 25, 10], ios: [0, 90, 160], priority: 2 };
+    case "turn": return { android: [14, 45, 14, 35, 14, 25, 22], ios: [0, 90, 160], priority: 2 };
     // two slow heartbeats
-    case "stand": return { android: [35, 130, 35, 160, 60], ios: [0, 160, 340], priority: 5 };
+    case "stand": return { android: [65, 90, 65, 110, 90], ios: [0, 160, 340], priority: 5 };
     // the final cross, and the page settling under it
-    case "over": return { android: [40, 70, 40, 120, 110], ios: [0, 100, 200, 420], priority: 6 };
+    case "over": return { android: [70, 60, 70, 90, 130], ios: [0, 100, 200, 420], priority: 6 };
   }
 }
 
