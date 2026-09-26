@@ -1254,6 +1254,7 @@ function frame(now: number) {
 let wall = 0;
 let boilClock: number | undefined; // dev: pin the boil's wall time, to capture its frames in order
 let handClock: { due: number } | null = null; // dev: game time moves only when stepped
+let hidePen = false; // dev: captures of the man the pen stands on
 
 function currentFrame(): Frame {
   const v = cam.view();
@@ -1319,6 +1320,7 @@ function currentFrame(): Frame {
       f.pen.alpha = k;
     }
   }
+  if (hidePen) f.pen = undefined; // dev: to see the man under it
   // lifted off the man you put down: up and away, not gone in a blink
   if (!f.pen && penLift && screen === "game") {
     const l = lift(T - penLift.t0);
@@ -1387,7 +1389,7 @@ showBoot();
 if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
-    get selected() { return selected; }, get res() { return res; }, haptics, get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; },
+    get selected() { return selected; }, get res() { return res; }, haptics, get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; }, set hidePen(v: boolean) { hidePen = v; },
     set speed(v: number) { speed = v; }, get speed() { return speed; },
     poke: () => { dirty = true; },
     /**

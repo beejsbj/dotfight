@@ -375,7 +375,7 @@ export class Life {
           const at = w * P - (h % P) + unit(id, w, 5) * (P - KEYS.hop.length * FRAME);
           const f = Math.floor((ms - at) / FRAME);
           const key = f >= 0 && f < KEYS.hop.length ? KEYS.hop[f] : null;
-          if (key) a.push(up, (key.d ?? 0) * AMP.hop * 0.45 * tall, 1 + ((key.s ?? 1) - 1) * 0.6, key.k ?? 1);
+          if (key) a.push(up, (key.d ?? 0) * AMP.hop * 0.6 * tall, 1 + ((key.s ?? 1) - 1) * 0.7, key.k ?? 1);
         }
       }
     }

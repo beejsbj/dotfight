@@ -91,9 +91,10 @@ export default async function (T, out) {
     await seq("pickup", 30, 1000 / 12);
     // and flat and close, to see the campmates turn
     await flat(me, 3.4);
-    await page.evaluate(() => window.pft.life.clear());
+    await page.evaluate(() => { window.pft.life.clear(); window.pft.hidePen = true; });
     await page.evaluate((id) => { window.pft.life.add(id, { kind: "perk", t0: window.pft.wall + 100, amp: 1 }); }, me.id);
     await seq("pickup-close", 20, 1000 / 12, { "pickup-close": await box(me, 110) });
+    await page.evaluate(() => { window.pft.hidePen = false; });
     await page.evaluate(() => document.querySelector("#page-btn").click());
   }
 
@@ -133,7 +134,11 @@ export default async function (T, out) {
     // against the bot, on your go: flick one off into the margin, then watch its turn
     await war(7, 12, "bot");
     const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.find((x) => x.alive && x.owner === s.current); });
-    await seq("bot-aims", 64, 1000 / 12, undefined, async (i) => {
+    // and close on each of your manned camps: one of them is in its sights
+    const camps = await page.evaluate(() => { const s = window.pft.s; return s.bases.filter((b) => b.owner === s.current && s.soldiers.some((x) => x.alive && x.owner === b.owner && Math.hypot(x.x - b.x, x.y - b.y) <= b.r)); });
+    const clips = { "bot-aims": undefined };
+    for (const [k, b] of camps.entries()) clips[`bot-aims-camp${k}`] = await box(b, 80);
+    await seq("bot-aims", 64, 1000 / 12, clips, async (i) => {
       if (i === 0) await page.evaluate((me) => window.pft.act({ soldierId: me.id, kind: "shoot", angle: me.x < 500 ? Math.PI : 0, length: 700, bend: 0 }), me);
     });
   }
@@ -147,11 +152,11 @@ export default async function (T, out) {
       return [];
     });
     if (few.length) {
-      const cx = few.reduce((a, x) => a + x.x, 0) / few.length, cy = few.reduce((a, x) => a + x.y, 0) / few.length;
-      const spread = Math.max(...few.map((x) => Math.hypot(x.x - cx, x.y - cy)));
-      const m = Math.max(1.2, Math.min(3.4, 200 / (spread + 40)));
-      await flat({ x: cx, y: cy }, m);
-      await seq("last-stand", 24, 1000 / 12, { "last-stand": await box({ x: cx, y: cy }, 140) });
+      // the one with a comrade nearest him, close: huddled toward him, trembling
+      const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+      const pick = few.length > 1 ? few.reduce((a, b) => (Math.min(...few.filter((x) => x !== b).map((x) => d(x, b))) < Math.min(...few.filter((x) => x !== a).map((x) => d(x, a))) ? b : a)) : few[0];
+      await flat(pick, 3.4);
+      await seq("last-stand", 24, 1000 / 12, { "last-stand": await box(pick, 90) });
     } else console.log("no last stand on this page");
   }
   // --- the unit cam ---------------------------------------------------------------
