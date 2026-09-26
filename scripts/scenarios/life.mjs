@@ -171,6 +171,27 @@ export default async function (T, out) {
     console.log("unit cam over:", await page.evaluate(() => window.pft.unit === null));
   }
 
+  // --- the pen ------------------------------------------------------------------
+  if (want("pen")) {
+    await war(7, 12);
+    const home = await fullest("mine");
+    const me = (await menIn(home))[0];
+    await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
+    await step(0, 100);
+    const a = await T.world(me.x, me.y);
+    await T.tap(a.x, a.y, 30);
+    for (let i = 0; i < 12; i++) await step(1000 / 24, 30); // the camera leans in
+    // put down again on him, to watch it land and rock
+    await page.evaluate(() => window.pft.redrop?.());
+    await seq("pen", 64, 1000 / 24, undefined, async (i) => {
+      // then a full pull, held, shivering; then put down (stand up) and it lifts away
+      if (i === 24) await T.touch("touchStart", [[195, 560]]);
+      if (i > 24 && i < 34) await T.touch("touchMove", [[195 + (i - 24), 560 + (i - 24) * 22]]);
+      if (i === 52) await T.touch("touchCancel", []);
+      if (i === 54) await page.evaluate(() => document.querySelector("#page-btn").click());
+    });
+  }
+
   // --- voices, rendered offline to WAV (to listen to: headless Chrome has no ears) ---
   if (want("voices")) {
     const fs = await import("node:fs");

@@ -18,7 +18,7 @@ import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
 import { drawYellow, PageLayer, SETTLED, type Ink } from "./page";
-import { leaning, PEN, type PenPose } from "./pen";
+import { LIFT_MS, SETTLE_MS, leaning, lift, PEN, settle, shiver, type PenPose } from "./pen";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
@@ -87,6 +87,7 @@ interface Resolve {
 }
 let res: Resolve | null = null;
 let penDrop = -1e9; // when the pen was set down on the selected soldier
+let penLift: { t0: number; x: number; y: number; owner: Player } | null = null; // and when it was picked up off him
 /** The unit cam (unitcam.ts): down at his level for a beat. `back`: where the camera was. */
 let unit: { id: number; t0: number; back: Pose; skip?: number; greeted?: boolean; rising?: boolean } | null = null;
 /** The last pull on a man that wasn't let go (he looks down it in the unit cam). */
@@ -248,6 +249,7 @@ function reset() {
   sfx.creak(0);
   life.clear();
   unit = null;
+  penLift = null;
   lastPull = null;
   // a different page is about to be on the desk: draw it even if nothing moves
   dirty = true;
@@ -967,6 +969,7 @@ function select(id: number) {
 }
 
 function standUp() {
+  if (selected !== undefined && LIFE.pen && screen === "game") { const me = s.soldiers[selected]; penLift = { t0: T, x: me.x, y: me.y, owner: me.owner }; }
   selected = undefined;
   cam.overview();
   dirty = true;
@@ -1211,7 +1214,7 @@ function frame(now: number) {
   if (res) { stepResolve(); active = true; }
   if (unit) { stepUnitCam(); active = true; }
   const live = fx.end(T) > T || inkTL.end(0) > 0;
-  if (live || wasLive || aim || botAim || lampOn.moving || dawn.moving || T - penDrop < 260) active = true;
+  if (live || wasLive || aim || botAim || lampOn.moving || dawn.moving || T - penDrop < (LIFE.pen ? SETTLE_MS + 240 : 260) || (penLift && T - penLift.t0 < LIFT_MS)) active = true;
   wasLive = live;
   if (aim) {
     const p = pull(aim);
@@ -1287,7 +1290,9 @@ function currentFrame(): Frame {
       const pl = pull(aim);
       const ang = aimAngle + wobble(aim, T);
       f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: sigma(pl.power) * 2, reach: reach(kind, pl.power), kind };
-      f.pen = leaning(me.x, me.y, ang, pl.live ? penLean(pl.power) : 0.04, owner, ink);
+      // at full pull it shivers under the finger (the pen only: the aim is the hand's)
+      const sh = LIFE.pen && pl.live ? shiver(T, pl.power) : 0;
+      f.pen = leaning(me.x, me.y, ang + sh * 3, pl.live ? penLean(pl.power) + sh : 0.04, owner, ink);
     } else if (botAim) {
       const k = Math.min(1, (T - botAim.t0) / 700);
       const pw = botAim.power * (1 - Math.pow(1 - k, 2));
@@ -1295,12 +1300,19 @@ function currentFrame(): Frame {
       f.aim = { soldierId: selected, angle: botAim.angle + tremble, power: pw, spread: sigma(pw) * 2, reach: reach(kind, pw), kind };
       f.pen = leaning(me.x, me.y, botAim.angle + tremble, penLean(pw), owner, ink);
     } else {
-      // set down on the dot: drops in, then stands
+      // set down on the dot: drops in, then rocks a few times finding its balance
       const k = Math.min(1, (T - penDrop) / 240);
-      f.pen = leaning(me.x, me.y, 0, 0.03, owner, ink);
+      const rock = LIFE.pen ? settle(T - penDrop - 240) : 0;
+      f.pen = leaning(me.x, me.y, (me.id * 2.39) % 6.283, 0.03 + rock, owner, ink);
       f.pen.h = 70 * (1 - k) * (1 - k);
       f.pen.alpha = k;
     }
+  }
+  // lifted off the man you put down: up and away, not gone in a blink
+  if (!f.pen && penLift && screen === "game") {
+    const l = lift(T - penLift.t0);
+    if (l) { f.pen = leaning(penLift.x, penLift.y, 0, 0.05, penLift.owner, inkLeft(penLift.owner)); f.pen.h = l.h; f.pen.alpha = l.alpha; }
+    else penLift = null;
   }
   return f;
 }
@@ -1364,7 +1376,7 @@ showBoot();
 if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
-    get selected() { return selected; }, get res() { return res; }, haptics, get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id),
+    get selected() { return selected; }, get res() { return res; }, haptics, get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; },
     set speed(v: number) { speed = v; }, get speed() { return speed; },
     poke: () => { dirty = true; },
     /**
