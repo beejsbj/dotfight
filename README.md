@@ -1,6 +1,6 @@
 # Pen Flick Tactics
 
-A digital version of Dawood's pen-and-paper flick tactics game, fought on the back page of a maths copy under a desk lamp. The imprecise pen flick and the page as a permanent record are the core constraints. The canonical rules still need Dawood's review; see [RULES.md](RULES.md) for what the prototype assumes and what to ask him. The redesign's concept and rejected directions are in [docs/redesign/concept.md](docs/redesign/concept.md); rules ideas for Dawood are in [docs/redesign/ideas.md](docs/redesign/ideas.md).
+A digital version of Dawood's pen-and-paper flick tactics game, fought on the back page of a maths copy under a desk lamp. The imprecise pen flick and the page as a permanent record are the core constraints. The rules are in [RULES.md](RULES.md), and drawn out by hand at [/rules](https://pen-flick-tactics.vercel.app/rules) ([rules.html](rules.html)); the game itself still plays the first, simpler rules. The name is a working title, kept in [src/name.ts](src/name.ts). The redesign's concept and rejected directions are in [docs/redesign/concept.md](docs/redesign/concept.md); rules ideas for Dawood are in [docs/redesign/ideas.md](docs/redesign/ideas.md).
 
 The Linear board is canonical for status, decisions, and work history.
 
@@ -13,6 +13,7 @@ npm run phone    # serves on bjslab's Tailscale address, for testing on a phone 
 npm test         # engine, projection, replay and timeline tests
 npm run build    # static bundle in dist/
 npm run share-art -- http://localhost:5173/   # regenerate og.jpg + icons (needs the dev server and Chrome)
+npm run rules-art -- http://localhost:5173/ --og   # /rules screenshots into docs/shots/rules-page/, and og-rules.jpg
 node scripts/playtest.mjs <scenario> http://localhost:5173/ /tmp/out   # scripted phone playtests
 ```
 
@@ -37,6 +38,7 @@ Open the exercise book and pick an opponent. Take turns drawing camps. On your t
 - `src/timeline.ts`, `src/hand.ts`: draw-on timing, which soldier a tap means (pure, tested)
 - `src/sound.ts`: synthesised pen, paper, lamp switch, clatter, dawn birds; haptics
 - `src/main.ts`: turn flow, input, HUD, the cover, cards, drawer and replay
+- `rules.html`, `src/rulebook/`: the /rules page; `figures.ts` draws each mechanic with the game's ink
 
 In dev builds, `window.pft` exposes the game state, camera, timelines, a speed knob (`pft.speed`), a frame-time probe (`pft.frames()`), `renderNow`, `pageCanvas`, and helpers that file, resume and replay seeded bot-v-bot wars. `scripts/scenarios/` has the playtests used to build this: `first`, `pnp` (a whole war to the drawer), `tour` (first-time notes, bot turn; run with `TAUGHT=0`), `sizes` (set `W`, `H`, `DPR`), `fog` (the lean-in), `perf` (main-thread cost per frame on a late-war page; `THROTTLE=6`).
 
