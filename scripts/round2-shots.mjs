@@ -35,7 +35,7 @@ for (const sc of scenes) {
   if (sc.flick) {
     await p.evaluate((f) => window.pft.fire(f, 0.6), sc.flick);
     await p.waitForTimeout(260);
-    await p.screenshot({ path: `${out}/${sc.name}-drawing.png` });
+    await p.screenshot({ path: `${out}/${sc.name}-drawing.jpg`, type: "jpeg", quality: 78 });
     await idle();
     if (sc.focus) await zoom(sc.focus);
   } else if (sc.send) {
@@ -43,10 +43,10 @@ for (const sc of scenes) {
     await idle();
   }
   await p.waitForTimeout(150);
-  await p.screenshot({ path: `${out}/${sc.name}.png` });
+  await p.screenshot({ path: `${out}/${sc.name}.jpg`, type: "jpeg", quality: 78 });
   await fit();
   await p.waitForTimeout(200);
-  await p.screenshot({ path: `${out}/${sc.name}-page.png` });
+  await p.screenshot({ path: `${out}/${sc.name}-page.jpg`, type: "jpeg", quality: 78 });
   console.log(`${sc.name}: ${sc.note}`);
 }
 console.log(errors.length ? `page errors: ${errors.join(" | ")}` : "no page errors");
