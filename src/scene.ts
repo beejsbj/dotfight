@@ -139,6 +139,8 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     if (page.has(k) || !ink.live.has(k)) return;
     drawMark(g, m, ink.p(k));
     if (m.t === "stroke") for (const p of m.pts) box.add(p.x, p.y, 8);
+    else if (m.t === "walk") { box.add(m.a.x, m.a.y, 10); box.add(m.b.x, m.b.y, 10); }
+    else if (m.t === "stand") for (const p of m.at) box.add(p.x, p.y, 24);
     else box.add(m.x, m.y, 20);
   });
   for (const x of s.soldiers) {

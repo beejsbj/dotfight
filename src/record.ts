@@ -1,24 +1,59 @@
-// A war on file. A page is fully described by its seed, where the bases went,
-// and the flicks: replaying those through the engine redraws every mark
-// exactly. That keeps the drawer of past pages tiny, gives the time-lapse
-// replay for free, and lets old saves load unchanged. Pure: no DOM.
+// A war on file. A core-rules game is fully described by its record: seed,
+// size, rule numbers and the ordered actions. Replaying those through the
+// engine redraws every mark exactly. That keeps the drawer of past pages
+// tiny, gives the time-lapse replay for free, and is what a room link sends.
+//
+// Pages from the June prototype (v1: seed, bases and flicks) still load and
+// replay through src/legacy.ts. Pure: no DOM.
 
-import { act, newGame, placeBase, type Flick, type GameState, type Player } from "./game";
+import { act, newGame, type Action, type GameState, type Player } from "./game";
+import * as legacy from "./legacy";
+import type { LegacyFlick, LegacyState } from "./legacy";
+import { CORE, SIZES, type CoreRules, type Size } from "./rules";
 
 export type Mode = { kind: "pnp" } | { kind: "bot"; level: 0 | 1 | 2 };
 
-/** The live save, as stored under `pft:save`. Old saves are `{ s, mode }` only. */
+/** Any game the desk can hold: the core rules (v2), or a prototype page (v1). */
+export type AnyState = GameState | LegacyState;
+export const isLegacy = (s: AnyState): s is LegacyState => s.v === 1;
+
+/**
+ * Everything needed to replay a core-rules game, and nothing else. Plain JSON.
+ * `v` versions this format; `rules.version` versions the rules' logic.
+ */
+export interface GameRecord {
+  v: 2;
+  seed: number;
+  size: Size;
+  rules: CoreRules;
+  actions: Action[];
+  page?: GameState["page"];
+}
+
+export function toRecord(s: GameState): GameRecord {
+  return { v: 2, seed: s.seed, size: { ...s.size }, rules: structuredClone(s.rules), actions: structuredClone(s.actions), ...(s.page && { page: s.page }) };
+}
+
+/** Replay a record from a blank page. */
+export function fromRecord(r: GameRecord, upTo = r.actions.length): GameState {
+  const s = newGame(r.size, r.seed, r.page, { ...CORE, ...r.rules });
+  for (const a of r.actions.slice(0, upTo)) act(s, a);
+  return s;
+}
+
+/** The live save, as stored under `pft:save`. Old saves hold a v1 state. */
 export interface Save {
-  s: GameState;
+  s: AnyState;
   mode: Mode;
 }
 
-export interface Filed {
+/** A prototype page in the drawer. */
+export interface FiledV1 {
   v: 1;
   seed: number;
   page?: GameState["page"];
   bases: [number, number][];
-  flicks: Flick[];
+  flicks: LegacyFlick[];
   mode: Mode;
   winner?: Player;
   turns: number;
@@ -26,50 +61,77 @@ export interface Filed {
   at: number;
 }
 
-export type Step = { t: "base"; x: number; y: number } | { t: "flick"; f: Flick };
-
-/** Every action that made this page, in order. */
-export function steps(s: Pick<GameState, "bases" | "flicks">): Step[] {
-  return [
-    ...s.bases.map((b): Step => ({ t: "base", x: b.x, y: b.y })),
-    ...s.flicks.map((f): Step => ({ t: "flick", f })),
-  ];
+/** A core-rules page in the drawer: its record, plus what the drawer shows. */
+export interface FiledV2 extends GameRecord {
+  mode: Mode;
+  winner?: Player;
+  turns: number;
+  at: number;
 }
 
-/** A fresh game with the same seed and page stamp: the blank sheet a replay starts from. */
-export function blank(s: Pick<GameState, "seed" | "page">): GameState {
-  return newGame(s.seed, s.page);
-}
+export type Filed = FiledV1 | FiledV2;
 
-/** Apply one step. */
-export function apply(s: GameState, st: Step) {
-  if (st.t === "base") placeBase(s, st.x, st.y);
-  else act(s, st.f);
-}
-
-export function file(s: GameState, mode: Mode, at = Date.now()): Filed {
-  return {
-    v: 1, seed: s.seed, page: s.page, mode, winner: s.winner, turns: s.turn, at,
-    bases: s.bases.map((b) => [b.x, b.y]),
-    flicks: s.flicks.map((f) => ({ ...f })),
-  };
+export function file(s: AnyState, mode: Mode, at = Date.now()): Filed {
+  if (isLegacy(s)) {
+    return {
+      v: 1, seed: s.seed, page: s.page, mode, winner: s.winner, turns: s.turn, at,
+      bases: s.bases.map((b) => [b.x, b.y]),
+      flicks: s.flicks.map((f) => ({ ...f })),
+    };
+  }
+  return { ...toRecord(s), mode, winner: s.winner, turns: s.turn, at };
 }
 
 /** Rebuild the whole page from its record. */
-export function unfile(r: Filed): GameState {
-  const s = blank(r);
-  for (const [x, y] of r.bases) placeBase(s, x, y);
-  for (const f of r.flicks) act(s, f);
+export function unfile(r: Filed): AnyState {
+  if (r.v === 2) return fromRecord(r);
+  const s = legacy.newGame(r.seed, r.page);
+  for (const [x, y] of r.bases) legacy.placeBase(s, x, y);
+  for (const f of r.flicks) legacy.act(s, f);
   return s;
 }
+
+/** A replay's steps, in order. */
+export type Step =
+  | { t: "legacy-base"; x: number; y: number }
+  | { t: "legacy-flick"; f: LegacyFlick }
+  | Action;
+
+export function steps(r: Filed): Step[] {
+  if (r.v === 2) return structuredClone(r.actions);
+  return [
+    ...r.bases.map(([x, y]): Step => ({ t: "legacy-base", x, y })),
+    ...r.flicks.map((f): Step => ({ t: "legacy-flick", f })),
+  ];
+}
+
+/** The blank sheet a replay starts from. */
+export function blank(r: Filed): AnyState {
+  return r.v === 2 ? newGame(r.size, r.seed, r.page, { ...CORE, ...r.rules }) : legacy.newGame(r.seed, r.page);
+}
+
+/** Apply one step. */
+export function apply(s: AnyState, st: Step) {
+  if (isLegacy(s)) {
+    if (st.t === "legacy-base") return void legacy.placeBase(s, st.x, st.y);
+    if (st.t === "legacy-flick") return void legacy.act(s, st.f);
+    throw new Error("a core-rules step on a prototype page");
+  }
+  if (st.t === "legacy-base" || st.t === "legacy-flick") throw new Error("a prototype step on a core-rules page");
+  act(s, st);
+}
+
+const MODE = (v: { kind?: string; level?: number } | undefined): Mode =>
+  v?.kind === "bot" ? { kind: "bot", level: ([0, 1, 2].includes(v.level!) ? v.level : 1) as 0 | 1 | 2 } : { kind: "pnp" };
 
 /** Read `pft:save`. Anything unreadable or from a future format is ignored. */
 export function readSave(raw: string | null): Save | null {
   try {
     const v = JSON.parse(raw || "null");
-    if (v?.s?.v !== 1 || !Array.isArray(v.s.marks)) return null;
-    const mode: Mode = v.mode?.kind === "bot" ? { kind: "bot", level: ([0, 1, 2].includes(v.mode.level) ? v.mode.level : 1) } : { kind: "pnp" };
-    return { s: v.s, mode };
+    if (!Array.isArray(v?.s?.marks)) return null;
+    if (v.s.v === 1) return { s: v.s, mode: MODE(v.mode) };
+    if (v.s.v === 2 && Array.isArray(v.s.actions) && v.s.size && v.s.rules) return { s: { ...v.s, rules: { ...CORE, ...v.s.rules } }, mode: MODE(v.mode) };
+    return null;
   } catch {
     return null;
   }
@@ -84,8 +146,17 @@ export function addToDrawer(drawer: Filed[], r: Filed, cap = 40): Filed[] {
 export function readDrawer(raw: string | null): Filed[] {
   try {
     const v = JSON.parse(raw || "[]");
-    return Array.isArray(v) ? v.filter((r) => r?.v === 1 && Array.isArray(r.bases) && Array.isArray(r.flicks)) : [];
+    if (!Array.isArray(v)) return [];
+    return v.filter((r) =>
+      (r?.v === 1 && Array.isArray(r.bases) && Array.isArray(r.flicks)) ||
+      (r?.v === 2 && Array.isArray(r.actions) && r.size && r.rules));
   } catch {
     return [];
   }
+}
+
+/** The size a new game gets from the picker. */
+export function sizeFor(name: Size["name"], custom?: { bases: number; soldiers: number }): Size {
+  if (name === "custom" && custom) return { name, bases: custom.bases, soldiers: custom.soldiers };
+  return { ...(name === "quick" ? SIZES.quick : SIZES.classic) };
 }

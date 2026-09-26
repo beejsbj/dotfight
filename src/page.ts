@@ -6,7 +6,8 @@
 // they settle gives the same pixels as drawing the page from scratch. The
 // camera can then swoop and chase the ink for the cost of one image draw.
 
-import { rng, type GameState, type Mark, type Soldier } from "./game";
+import { rng, type Mark, type Pt } from "./game";
+import type { AnyState as GameState } from "./record";
 import { INK, handText, inkCircle, inkCross, inkDot, inkFlick, paperGrain } from "./ink";
 import { RULES } from "./rules";
 
@@ -69,6 +70,8 @@ export function drawPaper(g: Ctx, s: GameState) {
   }
 }
 
+type Dotted = { id: number; owner: 0 | 1 };
+
 export function drawBase(g: Ctx, b: GameState["bases"][number], p = 1) {
   inkCircle(g, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.8, 2, p);
 }
@@ -76,7 +79,11 @@ export function drawBase(g: Ctx, b: GameState["bases"][number], p = 1) {
 export function drawMark(g: Ctx, m: Mark, p = 1) {
   const pen = INK.pens[m.owner];
   if (m.t === "stroke") inkFlick(g, m.pts, pen, m.seed, RULES.inkWidth, p);
-  else if (m.kind === "moved") {
+  else if (m.t === "walk") drawWalk(g, m.a, m.b, pen, m.seed, p);
+  else if (m.t === "stand") {
+    // the last few, ringed where they stood when their comrades were gone
+    m.at.forEach((q, k) => inkCircle(g, q.x, q.y, RULES.soldierRadius + 9, pen, m.seed + k * 17, 1.7, 1, p));
+  } else if (m.kind === "moved") {
     // the old dot stays; the little cross comes after the move
     inkDot(g, m.x, m.y, RULES.soldierRadius, pen, m.seed);
     inkCross(g, m.x, m.y, RULES.soldierRadius * 1.2, pen, m.seed, 1.6, 0.7, p);
@@ -84,7 +91,31 @@ export function drawMark(g: Ctx, m: Mark, p = 1) {
   else inkCross(g, m.x, m.y, RULES.soldierRadius * 1.6, pen, m.seed, 2, 1, p);
 }
 
-export function drawDot(g: Ctx, x: Soldier, alpha = 1, grow = 1, at: { x: number; y: number } = x) {
+/** A convoy's footprints: short ticks, left and right, the way a kid draws soldiers marching. */
+export function drawWalk(g: Ctx, a: Pt, b: Pt, color: string, seed: number, p = 1) {
+  const rand = rng(seed);
+  const l = Math.hypot(b.x - a.x, b.y - a.y);
+  if (l < 1) return;
+  const ux = (b.x - a.x) / l, uy = (b.y - a.y) / l;
+  const step = 13;
+  const n = Math.floor(l / step);
+  g.strokeStyle = color;
+  g.lineCap = "round";
+  g.lineWidth = 1.7;
+  for (let i = 0; i <= n * Math.min(1, p); i++) {
+    const side = i % 2 ? 1 : -1;
+    const d = i * step + (rand() - 0.5) * 3;
+    const cx = a.x + ux * d - uy * side * 3.2, cy = a.y + uy * d + ux * side * 3.2;
+    g.globalAlpha = 0.55 + rand() * 0.2;
+    g.beginPath();
+    g.moveTo(cx - ux * 2.4, cy - uy * 2.4);
+    g.lineTo(cx + ux * 2.4, cy + uy * 2.4);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+}
+
+export function drawDot(g: Ctx, x: Pt & Dotted, alpha = 1, grow = 1, at: { x: number; y: number } = x) {
   inkDot(g, at.x, at.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, alpha, grow);
 }
 
@@ -167,8 +198,9 @@ export function dotSpots(s: GameState): Spot[] {
   };
   for (const m of s.marks) {
     if (m.t !== "cross" || m.kind !== "moved") continue;
-    const f = s.flicks[m.turn - 1];
-    if (f) add(f.soldierId, m.x, m.y);
+    // core rules: the cross names who left; a prototype page had one flick a turn
+    const id = m.id ?? (s.v === 1 ? s.flicks[m.turn - 1]?.soldierId : undefined);
+    if (id !== undefined) add(id, m.x, m.y);
   }
   for (const x of s.soldiers) add(x.id, x.x, x.y);
   return [...out.values()];
@@ -205,11 +237,19 @@ export class PageLayer {
 
   /** Bring the page up to date. `moving` is a soldier riding his ink (not settled yet). */
   sync(s: GameState, ink: Ink, S: number, epoch: number, sig?: Signature, moving?: number) {
-    const fresh = !this.c || this.src !== s || this.S !== S || this.epoch !== epoch || s.marks.length < this.marks.filter(Boolean).length;
+    let fresh = !this.c || this.src !== s || this.S !== S || this.epoch !== epoch || s.marks.length < this.marks.filter(Boolean).length;
     // nothing new since last time: most frames stop here
-    const stamp = `${s.marks.length}|${s.bases.length}|${s.turn}|${[...ink.live].join()}|${moving}|${!!sig}`;
+    const acts = s.v === 1 ? s.flicks.length : s.actions.length;
+    const stamp = `${s.marks.length}|${s.bases.length}|${s.turn}|${acts}|${[...ink.live].join()}|${moving}|${!!sig}`;
     if (!fresh && stamp === this.stamp) return { fresh, added: 0 };
     this.stamp = stamp;
+    const spots = dotSpots(s);
+    // Ink is never taken back once the war starts. Before it, a soldier arranged
+    // somewhere else leaves no dot behind: the page is drawn afresh (once per drop).
+    if (!fresh && this.dots.size) {
+      const keys = new Set(spots.map((d) => d.key));
+      for (const k of this.dots) if (!keys.has(k)) { fresh = true; break; }
+    }
     if (fresh) this.rebuild(s, S, epoch);
     const added: ((g: Ctx) => void)[] = [];
     for (const b of s.bases) {
@@ -218,7 +258,7 @@ export class PageLayer {
     s.marks.forEach((m, i) => {
       if (!this.marks[i] && !ink.live.has(`m${i}`)) { added.push((g) => drawMark(g, m)); this.marks[i] = true; }
     });
-    for (const d of dotSpots(s)) {
+    for (const d of spots) {
       if (this.dots.has(d.key) || ink.live.has(`d${d.id}`) || d.id === moving) continue;
       const x = s.soldiers[d.id];
       added.push((g) => drawDot(g, x, 1, 1, d));
