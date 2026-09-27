@@ -27,6 +27,8 @@ export interface Aim {
   spread: number;
   reach: number;
   kind: "shoot" | "move";
+  /** Pen falcon: a sight at the end of the guide, drawn closed as the hand holds still (0..1). */
+  sight?: number;
 }
 
 export interface Frame {
@@ -257,12 +259,24 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   g.closePath();
   g.fill();
   pencilLine(g, me, { x: me.x + dx * show, y: me.y + dy * show }, Math.max(2.2, 1.6 * px), 3);
+  if (a.sight !== undefined) return drawSight(g, me.x + dx * show, me.y + dy * show, a.sight, px);
   // power, as ticks along the guide: each is a notch you can feel
   const notches = Math.floor(a.power * 5 + 1e-6);
   for (let i = 1; i <= notches; i++) {
     const t = (show * i) / 5.5;
     const cx = me.x + dx * t, cy = me.y + dy * t;
     pencilLine(g, { x: cx - dy * 7, y: cy + dx * 7 }, { x: cx + dy * 7, y: cy - dx * 7 }, Math.max(1.8, 1.3 * px), 40 + i, false);
+  }
+}
+
+// A pencilled ring that closes while you hold the phone still, and gets its
+// cross hairs once it has: then a flick of the wrist fires.
+function drawSight(g: Ctx, x: number, y: number, armed: number, px: number) {
+  const r = 26, w = Math.max(2.2, 1.6 * px);
+  pencilLoop(g, x, y, r, 5, w, 0.12 + 0.88 * armed, 0.95);
+  if (armed < 1) return;
+  for (const [ux, uy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+    pencilLine(g, { x: x + ux * (r - 9), y: y + uy * (r - 9) }, { x: x + ux * (r + 11), y: y + uy * (r + 11) }, w, 60 + ux * 3 + uy, false);
   }
 }
 

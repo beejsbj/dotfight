@@ -17,6 +17,8 @@ import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
 import { drawYellow, PageLayer, SETTLED, type Ink } from "./page";
+import { gunPull, tip, type Pose } from "./motion";
+import * as motion from "./motion-input";
 import { leaning, PEN, type PenPose } from "./pen";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, type Filed, type Mode, type Save, type Step } from "./record";
@@ -39,6 +41,11 @@ let kind: ActionKind = "shoot";
 let selected: number | undefined;
 let aim: Pull | null = null;
 let aimAngle = 0; // world angle of the current pull
+let byThumb = { angle: 0, dist: 0 }; // the pull as the thumb has it, before the phone's nudge
+let nudgeFrom: Pose | null = null; // how the phone was held when the pull began
+let penSide = 0; // the pen's sideways lean from the nudge
+let gunFwd = 0; // pen falcon: straight ahead on the page when the phone was raised
+let gunTap = false; // this touch put a raised phone down: the tap does nothing else
 let botAim: { soldierId: number; angle: number; power: number; t0: number } | null = null;
 let ghost: Frame["ghost"];
 let busy = false; // a flick is resolving, the bot is thinking, or the page is turning
@@ -191,7 +198,8 @@ function status(msg?: string) {
     else if (res) t = "";
     else if (isBot(s.current)) t = `${who} is lining up…`;
     else if (aim) t = pull(aim).live ? `let go to ${kind}` : "pull back further…";
-    else if (selected !== undefined) t = `pull back from anywhere, let go`;
+    else if (motion.gun) t = motion.gun.armed < 1 ? "point the phone, hold it still…" : "flick your wrist to fire";
+    else if (selected !== undefined) t = motion.live("gun") ? "pull back, or tap him and raise the phone" : `pull back from anywhere, let go`;
     else t = lastNote ? `${lastNote}` : `${who}: pick up a soldier`;
   }
   $("#status").textContent = t;
@@ -219,6 +227,7 @@ function reset() {
   ghost = undefined;
   selected = undefined;
   lastNote = "";
+  motion.lower();
   fx.clear();
   inkTL.clear();
   sfx.creak(0);
@@ -606,11 +615,13 @@ function showSettings() {
     ${row("tilt", settings.tilt, "sit down to aim", "the camera drops low behind your soldier")}
     ${row("handoff", settings.handoff, "pause between turns", "pass & play: tap before the next go")}
     ${row("sound", !sfx.muted, "sound", "pen, paper, lamp")}
+    ${motion.settingsHtml(row)}
     <button class="act" data-a="back">done</button>`);
   card.onclick = (e) => {
     const b = (e.target as HTMLElement).closest("button");
     if (!b) return;
     sfx.tap();
+    if (motion.settingsClick(b, () => { if (!$("#sheet").hidden) showSettings(); })) return;
     const k = b.dataset.set;
     if (k === "sound") sfx.setMuted(!sfx.muted);
     else if (k === "tilt" || k === "handoff") {
@@ -834,6 +845,7 @@ function select(id: number) {
 
 function standUp() {
   selected = undefined;
+  motion.lower();
   cam.overview();
   dirty = true;
   status();
@@ -848,6 +860,9 @@ const humanTurn = () => screen === "game" && !isBot(s.current) && !busy && $("#s
 
 over.addEventListener("pointerdown", (e) => {
   sfx.unlock();
+  // touching the screen puts a raised phone down (the touch then does what it always did)
+  gunTap = !!motion.gun;
+  if (motion.gun) lowerGun();
   over.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 2) {
@@ -915,6 +930,7 @@ over.addEventListener("pointermove", (e) => {
     if (!aim) {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
+      nudgeFrom = motion.held();
     }
     updateAim(e.clientX, e.clientY);
     status();
@@ -928,9 +944,8 @@ function updateAim(x: number, y: number) {
   if (!aim || g.t !== "aim") return;
   const dx = g.sx - x, dy = g.sy - y, dist = Math.hypot(dx, dy);
   const me = s.soldiers[aim.soldierId];
-  aimAngle = screenDirToWorld(cam.view(), me, dx, dy);
-  aim.x = -Math.cos(aimAngle) * dist;
-  aim.y = -Math.sin(aimAngle) * dist;
+  byThumb = { angle: screenDirToWorld(cam.view(), me, dx, dy), dist };
+  steer();
   aim.kind = kind;
   const p = pull(aim);
   if (p.live && !aim.charged) { aim.charged = true; aim.t0 = T; sfx.buzz(6); }
@@ -939,6 +954,49 @@ function updateAim(x: number, y: number) {
   if (notch !== lastNotch) { if (notch > lastNotch) sfx.buzz(4); lastNotch = notch; }
 }
 let lastNotch = 0;
+
+// The thumb sets the aim; with the motion levels on, the phone's tilt trims it
+// and the hand's tremor sets the wobble. Either way it ends up in the pull, so
+// the flick that's released (and recorded) already has it.
+function steer() {
+  if (!aim) return;
+  const n = motion.nudged(nudgeFrom);
+  aimAngle = byThumb.angle + n.angle;
+  penSide = n.side;
+  aim.x = -Math.cos(aimAngle) * byThumb.dist;
+  aim.y = -Math.sin(aimAngle) * byThumb.dist;
+  aim.steady = motion.steady();
+}
+
+// Pen falcon: tap a soldier, raise the phone and point it; a flick of the wrist fires.
+function raiseGun() {
+  if (selected === undefined || !motion.raise()) return;
+  gunFwd = screenDirToWorld(cam.view(), s.soldiers[selected], 0, -1); // straight up the screen
+  lastArmed = false;
+  sfx.buzz(8);
+  status();
+  dirty = true;
+}
+function lowerGun(why?: string) {
+  motion.lower();
+  status(why);
+  dirty = true;
+}
+let lastArmed = false;
+function stepGun() {
+  const e = motion.gun!.take();
+  if (e?.t === "lowered") return lowerGun("phone lowered: pull back, or tap him to raise it again");
+  if (e?.t === "fire") {
+    const id = selected;
+    motion.lower();
+    if (id === undefined || !humanTurn() || !canAct(s, id)) return;
+    learn("aim");
+    const f = release(gunPull(id, kind, gunFwd + e.delta, e.power, T), T)!;
+    return fire(f, e.power, penLean(e.power));
+  }
+  const armed = motion.gun!.armed >= 1;
+  if (armed !== lastArmed) { lastArmed = armed; if (armed) sfx.buzz(6); status(); }
+}
 
 function up(e: PointerEvent) {
   if (!ptrs.has(e.pointerId)) return;
@@ -971,9 +1029,11 @@ function up(e: PointerEvent) {
       sfx.creak(0);
       if (f && canAct(s, f.soldierId)) { learn("aim"); fire(f, pw, lean); }
       else status("too soft: pull back further");
+    } else if (tapped && gunTap) {
+      // that tap put the raised phone down
     } else if (tapped && g.tapOn === undefined) {
       standUp(); // tap on empty paper puts the pen down
-    }
+    } else if (tapped) raiseGun();
     aim = null;
     sfx.creak(0);
     g = { t: "none" };
@@ -983,7 +1043,7 @@ function up(e: PointerEvent) {
   }
   if (g.t === "pan" && g.id === e.pointerId) {
     const tapped = Math.hypot(p.x - g.sx, p.y - g.sy) < TAP;
-    if (tapped && selected !== undefined && !busy) standUp();
+    if (tapped && selected !== undefined && !busy && !gunTap) standUp();
     g = { t: "none" };
     dirty = true;
   }
@@ -1068,9 +1128,11 @@ function frame(now: number) {
   if (live || wasLive || aim || botAim || lampOn.moving || dawn.moving || T - penDrop < 260) active = true;
   wasLive = live;
   if (aim) {
+    steer();
     const p = pull(aim);
     sfx.creak(p.power, Math.abs(wobble(aim, T)) * 12);
   }
+  if (motion.gun) { stepGun(); active = true; }
   if (active || dirty) {
     const t0 = performance.now();
     renderNow();
@@ -1125,13 +1187,18 @@ function currentFrame(): Frame {
       const pl = pull(aim);
       const ang = aimAngle + wobble(aim, T);
       f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: sigma(pl.power) * 2, reach: reach(kind, pl.power), kind };
-      f.pen = leaning(me.x, me.y, ang, pl.live ? penLean(pl.power) : 0.04, owner, ink);
+      f.pen = tip(leaning(me.x, me.y, ang, pl.live ? penLean(pl.power) : 0.04, owner, ink), ang, penSide);
     } else if (botAim) {
       const k = Math.min(1, (T - botAim.t0) / 700);
       const pw = botAim.power * (1 - Math.pow(1 - k, 2));
       const tremble = Math.sin(T / 1000 * 7.3) * 0.02 * pw;
       f.aim = { soldierId: selected, angle: botAim.angle + tremble, power: pw, spread: sigma(pw) * 2, reach: reach(kind, pw), kind };
       f.pen = leaning(me.x, me.y, botAim.angle + tremble, penLean(pw), owner, ink);
+    } else if (motion.gun) {
+      // the pen points where the phone does; the sight closes as you hold still
+      const ang = gunFwd + motion.gun.delta, pw = 0.6;
+      f.aim = { soldierId: selected, angle: ang, power: pw, spread: sigma(pw) * 2, reach: reach(kind, pw), kind, sight: motion.gun.armed };
+      f.pen = leaning(me.x, me.y, ang, 0.2 + 0.15 * motion.gun.armed, owner, ink);
     } else {
       // set down on the dot: drops in, then stands
       const k = Math.min(1, (T - penDrop) / 240);
@@ -1202,5 +1269,9 @@ if (import.meta.env.DEV) {
     },
     view: (r: Filed) => viewPage(r), replayRecord: (r: Filed) => replay(r),
     resumeRecord: (r: Filed) => resume({ s: unfile(r), mode: r.mode }),
+    // motion aiming: synthetic sensors, and what the aim made of them
+    sensors: motion.simulator(),
+    get aim() { return aim && { angle: aimAngle, thumb: byThumb.angle, wobble: wobble(aim, T), steady: aim.steady, power: pull(aim).power }; },
+    get gun() { return motion.gun && { fwd: gunFwd, delta: motion.gun.delta, armed: motion.gun.armed }; },
   };
 }

@@ -233,6 +233,12 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .card .toggle::before { content: ""; position: absolute; left: 2px; top: 11px; width: 20px; height: 20px; border: 2px solid var(--pencil); border-radius: 3px 5px 3px 4px; }
 .card .toggle.on b { color: var(--blue); }
 .card .toggle.on::after { content: "✓"; position: absolute; left: 3px; top: 0; font-family: var(--hand); font-weight: 700; font-size: 34px; color: var(--blue); }
+.card .sub.motion { margin: 14px 0 0; }
+.card .sub.motion i { font-style: normal; font-size: 18px; color: #77726c; }
+.card .sens { display: flex; gap: 4px; margin: -4px 0 4px 30px; }
+.card .sens button { font-family: var(--hand); font-size: 19px; padding: 1px 8px; color: #6d6863; border-radius: 50%; }
+.card .sens button.on { color: var(--blue); box-shadow: inset 0 0 0 2px var(--blue); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
+.card .toggle.more::before { border-style: dashed; }
 .card.handoff { text-align: center; padding: 34px 20px 34px 44px; }
 .card.over h2 { font-size: 44px; }
 .card.drawer .pages { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; margin: 10px 0 12px; }
