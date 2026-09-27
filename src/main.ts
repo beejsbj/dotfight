@@ -639,8 +639,10 @@ function showHandoff() {
       <p class="fine">tap when you've got it</p>
     </button>`, "handoff");
   sfx.rustle();
-  card.parentElement!.onclick = () => {
-    card.parentElement!.onclick = null;
+  // only the card goes on: it's the button wearing the iPhone's switch label
+  const go = card.querySelector<HTMLButtonElement>(".handoff-tap")!;
+  go.onclick = () => {
+    go.onclick = null;
     haptic("tap");
     closeSheet();
     busy = false;

@@ -225,7 +225,7 @@ function switchIn(label: HTMLLabelElement, hideLabel = true) {
   input.type = "checkbox";
   input.setAttribute("switch", "");
   input.setAttribute("aria-hidden", "true");
-  input.style.cssText = "position:absolute;width:1px;height:1px;margin:0;visibility:hidden;pointer-events:none";
+  input.style.cssText = "position:absolute;width:1px;height:1px;margin:0;opacity:0;pointer-events:none";
   // the label forwards its click to the switch; that copy is ours alone
   input.addEventListener("click", (e) => e.stopPropagation());
   label.appendChild(input);
@@ -239,7 +239,8 @@ function scriptSwitch(): Backend {
   const tick = () => {
     if (!label) {
       label = switchIn(document.createElement("label"));
-      label.style.display = "none";
+      // rendered but invisible: a switch outside the render tree may not tick
+      label.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none";
       document.body.appendChild(label);
     }
     label.click();
