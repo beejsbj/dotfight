@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apply, flurryFrame, fold, frameAt, hashFor, inv, leaves, maxPos, mul, pageOf, pagesAt, posOfPage } from "./book";
+import { apply, apply4, eye, flurryFrame, from2d, mul4, fold, frameAt, hashFor, inv, leaves, maxPos, mul, pageOf, pagesAt, posOfPage } from "./book";
 import { HeightSink, paginate, type Item, type Sized } from "./paginate";
 
 describe("the book's leaves", () => {
@@ -124,6 +124,21 @@ describe("the fold", () => {
     near(apply(f.clip, 3000, 1500), apply(f.frame, 0, 0));
     near(mul(f.clip, f.unclip), [1, 0, 0, 1, 0, 0]);
     near(mul(inv(f.back), f.back), [1, 0, 0, 1, 0, 0]);
+  });
+
+  it("lifts the folded part off the page about the fold, most in mid-turn, flat as it lands", () => {
+    const f = fold(0.5, W, H);
+    // the fold stays put
+    for (const s of [-200, 0, 150]) { const [x, y] = apply(f.frame, 0, s); near(apply4(f.air, x, y), [x, y]); }
+    // a point on the folded part rises towards the reader...
+    const [x, y] = apply(f.frame, -120, 0);
+    expect(f.air[2] * x + f.air[6] * y + f.air[14]).toBeGreaterThan(50);
+    // ...so from above the book it looks further from the middle than it lies
+    const seen = apply4(mul4(eye(W / 2, H / 2, 1500), f.air), x, y);
+    const flat = apply(f.frame, -120 * Math.cos(f.rise), 0);
+    expect(Math.hypot(seen[0] - W / 2, seen[1] - H / 2)).toBeGreaterThan(Math.hypot(flat[0] - W / 2, flat[1] - H / 2));
+    near(fold(1, W, H).air, from2d([1, 0, 0, 1, 0, 0]));
+    expect(fold(0.5, W, H).rise).toBeGreaterThan(fold(0.1, W, H).rise);
   });
 
   it("lays the leaf flat over the spine when it's all the way over", () => {

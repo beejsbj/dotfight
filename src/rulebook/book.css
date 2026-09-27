@@ -11,7 +11,8 @@ html.paged body { min-height: 0; padding: 0; touch-action: pinch-zoom; }
 .paged:not(.ready) main, .paged:not(.ready) header.book, .paged:not(.ready) .stage { visibility: hidden; }
 .paged:not(.ready) .dark { animation-play-state: paused; }
 
-.stage { position: fixed; inset: 0; overflow: clip; touch-action: pinch-zoom; }
+/* its own layer on the desk: turning leaves stay under the lamp's light and the buttons */
+.stage { position: fixed; inset: 0; z-index: 1; overflow: clip; touch-action: pinch-zoom; }
 .area {
   position: absolute;
   top: calc(env(safe-area-inset-top) + 62px); bottom: calc(env(safe-area-inset-bottom) + 58px);

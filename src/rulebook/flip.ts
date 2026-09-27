@@ -1,12 +1,14 @@
 // The rulebook as a book you turn. The rules stay plain HTML in reading order;
 // this flows them onto pages, binds the pages into leaves, and turns the leaves
-// with a flat paper fold: the corner lifts, the leaf shows its back and settles.
+// like paper bound at one edge: the leaf lifts about the spine, its corner curls
+// over along a fold and stands up off the page, showing its back, throwing
+// shadows, all seen in perspective from above; then it settles.
 // Scrolling, swiping, the arrow keys, tapping a page's edge and the contents
 // slip all move one number, the position, so a turn follows your finger or
 // wheel and then settles. Only transforms and opacity change while a leaf is in
 // the air, so the compositor does the work.
 
-import { css, css4, eye, flurryFrame, fold, frameAt, from2d, hashFor, inv, leaves, maxPos, mul, mul4, pageOf, pagesAt, posOfPage, tr, type Frame, type Leaf, type Mat, type Mat4, type Mode, type Side } from "./book";
+import { css, css4, eye, hinge, flurryFrame, fold, frameAt, from2d, hashFor, inv, leaves, maxPos, mul, mul4, pageOf, pagesAt, posOfPage, tr, type Frame, type Leaf, type Mat, type Mat4, type Mode, type Side } from "./book";
 import { paginate, type Box, type Item, type Sink } from "./paginate";
 import { clock } from "./clock";
 import * as sfx from "../sound";
@@ -256,7 +258,7 @@ export function openBook(o: BookOpts) {
     bk.style.setProperty("--ph", `${H}px`);
     bk.style.setProperty("--L", `${L}px`);
     bk.style.setProperty("--sx", `${mode === "spread" ? W : 0}px`);
-    view = eye(mode === "spread" ? 0 : W / 2, H * 0.45, 1.7 * Math.max(H, 1.4 * W));
+    view = eye(mode === "spread" ? 0 : W / 2, H * 0.45, 2.1 * Math.max(H, 1.4 * W));
     bk.style.width = `${bw}px`;
     bk.style.left = `${Math.round((s.aw - bw) / 2 + (mode === "single" ? 5 : 0))}px`;
 
@@ -335,15 +337,19 @@ export function openBook(o: BookOpts) {
     });
   }
 
+  /** How far a leaf lifts about the spine at the middle of its turn, in radians. */
+  const SPINE = 0.55;
   /** The reader's eye, above the middle of the book, in page coordinates. */
   let view: Mat4 = from2d([1, 0, 0, 1, 0, 0]);
 
   function bend(le: LeafEl, t: number) {
     const f = fold(t, W, H, top, L);
-    const clip = css(f.clip), unclip = css(f.unclip);
-    le.clipF.style.transform = clip; le.unF.style.transform = unclip;
-    // the folded part stands up off the page along the fold, seen from above
-    le.clipB.style.transform = css4(mul4(mul4(view, f.air), from2d(f.clip))); le.unB.style.transform = unclip;
+    const unclip = css(f.unclip);
+    // the whole leaf lifts off the page about the spine, and the folded part stands up
+    // further about the fold, like paper bound at one edge, all seen from above
+    const lifted = mul4(view, hinge(0, 0, 0, -1, SPINE * Math.sin(Math.PI * t)));
+    le.clipF.style.transform = css4(mul4(lifted, from2d(f.clip))); le.unF.style.transform = unclip;
+    le.clipB.style.transform = css4(mul4(mul4(lifted, f.air), from2d(f.clip))); le.unB.style.transform = unclip;
     le.back.style.transform = css(f.back);
     // ...throwing its shadow on the leaf where it would lie flat, a little away from the lamp
     const sh = Math.sin(f.rise);
