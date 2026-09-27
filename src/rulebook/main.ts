@@ -110,6 +110,9 @@ function book() {
 
 function scroll() {
   for (const l of lives) fit(l);
+  // the fonts have moved things since the browser jumped to the address: jump again
+  const at = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+  if (at) at.scrollIntoView({ behavior: "instant", block: "start" });
   if (!still && "IntersectionObserver" in window) {
     const seen = new IntersectionObserver((entries) => {
       for (const e of entries) {

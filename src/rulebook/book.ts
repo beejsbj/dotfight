@@ -136,6 +136,46 @@ export const rot = (r: number): Mat => [Math.cos(r), Math.sin(r), -Math.sin(r), 
 export const apply = (m: Mat, x: number, y: number): [number, number] => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
 export const css = (m: Mat) => `matrix(${m.map((v) => Math.round(v * 1e4) / 1e4).join(",")})`;
 
+// --- in the air: the folded part of a leaf lifts off the page ------------------------
+
+/** A 4×4 matrix in CSS matrix3d order (column-major). */
+export type Mat4 = number[];
+
+export const from2d = (m: Mat): Mat4 => [m[0], m[1], 0, 0, m[2], m[3], 0, 0, 0, 0, 1, 0, m[4], m[5], 0, 1];
+export function mul4(a: Mat4, b: Mat4): Mat4 {
+  const o = new Array<number>(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    let s = 0;
+    for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+    o[c * 4 + r] = s;
+  }
+  return o;
+}
+/** Where a point of the page (z = 0) lands on screen through m. */
+export function apply4(m: Mat4, x: number, y: number): [number, number] {
+  const w = m[3] * x + m[7] * y + m[15];
+  return [(m[0] * x + m[4] * y + m[12]) / w, (m[1] * x + m[5] * y + m[13]) / w];
+}
+/** Turn by angle a about the line through (x, y) running along (ux, uy) in the page;
+ *  z points up off the page, towards the reader, as in CSS. */
+export function hinge(x: number, y: number, ux: number, uy: number, a: number): Mat4 {
+  const c = Math.cos(a), s = Math.sin(a), k = 1 - c;
+  // Rodrigues, for a unit axis (ux, uy, 0)
+  const r: Mat4 = [
+    c + ux * ux * k, uy * ux * k, -uy * s, 0,
+    ux * uy * k, c + uy * uy * k, ux * s, 0,
+    uy * s, -ux * s, c, 0,
+    0, 0, 0, 1,
+  ];
+  return mul4(mul4(from2d(tr(x, y)), r), from2d(tr(-x, -y)));
+}
+/** A reader's eye d above the point (x, y). */
+export function eye(x: number, y: number, d: number): Mat4 {
+  const p: Mat4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -1 / d, 0, 0, 0, 1];
+  return mul4(mul4(from2d(tr(x, y)), p), from2d(tr(-x, -y)));
+}
+export const css4 = (m: Mat4) => `matrix3d(${m.map((v) => Math.round(v * 1e6) / 1e6).join(",")})`;
+
 export interface Fold {
   /** where the corner has got to, in page coordinates (origin at the top of the spine) */
   corner: [number, number];
@@ -150,7 +190,15 @@ export interface Fold {
   depth: number;
   /** 0 flat, 1 standing up: how high the leaf is lifted, for shadows */
   lift: number;
+  /** how far the folded part stands up off the page, in radians */
+  rise: number;
+  /** lifts the folded part off the page about the fold: apply after anything placed flat on the fold's spine side */
+  air: Mat4;
 }
+
+/** How far the folded part of a leaf stands up off the page, t of the way over:
+ *  flat as the corner starts to peel and as the leaf lands, most in the middle. */
+export const riseAt = (t: number, most = 0.95) => most * Math.pow(Math.sin(Math.PI * Math.min(1, Math.max(0, t))), 0.85);
 
 /** A leaf of width W and height H, turned t of the way over, by its bottom
  *  (or top) outer corner. The corner swings over in a shallow arc; the fold is
@@ -182,5 +230,6 @@ export function fold(t: number, W: number, H: number, top = false, L = 4 * (W + 
   const c2 = Math.cos(2 * phi), s2 = Math.sin(2 * phi);
   const qx = W - mx, qy = -my;
   const back: Mat = [c2, s2, -s2, c2, mx - c2 * qx - s2 * qy, my - s2 * qx + c2 * qy];
-  return { corner: [px, py], frame, clip, unclip: inv(clip), back, depth: len / 2, lift: Math.sin(Math.PI * t) };
+  const a = riseAt(t);
+  return { corner: [px, py], frame, clip, unclip: inv(clip), back, depth: len / 2, lift: Math.sin(Math.PI * t), rise: a, air: hinge(mx, my, -ny, nx, a) };
 }

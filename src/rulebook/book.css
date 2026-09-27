@@ -7,8 +7,9 @@ html.paged { scroll-behavior: auto; }
 html.paged body { min-height: 0; padding: 0; touch-action: pinch-zoom; }
 .paged .back { position: fixed; }
 .paged .tools { position: fixed; }
-/* until the pages are bound, show only the desk */
+/* until the pages are bound, show only the desk, and the lamp waits to click on over the book */
 .paged:not(.ready) main, .paged:not(.ready) header.book, .paged:not(.ready) .stage { visibility: hidden; }
+.paged:not(.ready) .dark { animation-play-state: paused; }
 
 .stage { position: fixed; inset: 0; overflow: clip; touch-action: pinch-zoom; }
 .area {
@@ -34,6 +35,13 @@ html.paged body { min-height: 0; padding: 0; touch-action: pinch-zoom; }
 /* the lifted leaf casts a soft shadow under the lamp */
 .leaf.t .side.verso { box-shadow: 0 0 22px rgba(18, 10, 3, 0.34), 0 0 4px rgba(18, 10, 3, 0.28); }
 
+/* the lifted part's shadow on the rest of its leaf: soft, darkest where it's highest */
+.cast {
+  display: none; position: absolute; left: 0; top: 0; width: var(--pw); height: var(--ph); transform-origin: 0 0; pointer-events: none; opacity: 0;
+  background: rgba(30, 17, 5, 0.2); box-shadow: 0 0 28px 14px rgba(30, 17, 5, 0.2);
+  will-change: transform, opacity;
+}
+.leaf.t .cast { display: block; }
 /* the bend along the fold: shadow in the crease, light on the curve, fading out */
 .crease {
   display: none; position: absolute; left: 0; top: 0; width: 100px; height: 100px; transform-origin: 0 0; pointer-events: none;

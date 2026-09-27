@@ -6,7 +6,7 @@
 // wheel and then settles. Only transforms and opacity change while a leaf is in
 // the air, so the compositor does the work.
 
-import { css, flurryFrame, fold, frameAt, hashFor, inv, leaves, maxPos, mul, pageOf, pagesAt, posOfPage, type Frame, type Leaf, type Mat, type Mode, type Side } from "./book";
+import { css, css4, eye, flurryFrame, fold, frameAt, from2d, hashFor, inv, leaves, maxPos, mul, mul4, pageOf, pagesAt, posOfPage, tr, type Frame, type Leaf, type Mat, type Mat4, type Mode, type Side } from "./book";
 import { paginate, type Box, type Item, type Sink } from "./paginate";
 import { clock } from "./clock";
 import * as sfx from "../sound";
@@ -27,6 +27,7 @@ interface LeafEl {
   clipF: HTMLElement; unF: HTMLElement; front: HTMLElement;
   clipB: HTMLElement; unB: HTMLElement; back: HTMLElement;
   crease: HTMLElement;
+  cast: HTMLElement;
   state: string;
   ghosted: boolean;
 }
@@ -224,13 +225,16 @@ export function openBook(o: BookOpts) {
     const clipB = el("div", "clip"), unB = el("div", "unclip"), back = sideEl(l.back);
     const crease = el("div", "crease");
     crease.setAttribute("aria-hidden", "true");
+    // the shadow the lifted part throws on the rest of its own leaf
+    const cast = el("div", "cast");
+    cast.setAttribute("aria-hidden", "true");
     front.classList.add("recto");
     back.classList.add("verso");
     back.append(crease);
-    unF.append(front); clipF.append(unF);
+    unF.append(front, cast); clipF.append(unF);
     unB.append(back); clipB.append(unB);
     root.append(clipF, clipB);
-    return { root, clipF, unF, front, clipB, unB, back, crease, state: "x", ghosted: false };
+    return { root, clipF, unF, front, clipB, unB, back, crease, cast, state: "x", ghosted: false };
   }
 
   /** The first thing on a page that isn't a continued shell: a stable place to come back to. */
@@ -252,6 +256,7 @@ export function openBook(o: BookOpts) {
     bk.style.setProperty("--ph", `${H}px`);
     bk.style.setProperty("--L", `${L}px`);
     bk.style.setProperty("--sx", `${mode === "spread" ? W : 0}px`);
+    view = eye(mode === "spread" ? 0 : W / 2, H * 0.45, 1.7 * Math.max(H, 1.4 * W));
     bk.style.width = `${bw}px`;
     bk.style.left = `${Math.round((s.aw - bw) / 2 + (mode === "single" ? 5 : 0))}px`;
 
@@ -320,7 +325,7 @@ export function openBook(o: BookOpts) {
     les.forEach((le, j) => {
       const [s, z] = want.get(j) ?? ["x", 0];
       if (le.state !== s) {
-        if (le.state === "t") for (const e of [le.clipF, le.unF, le.clipB, le.unB, le.back, le.crease]) { e.style.transform = ""; e.style.opacity = ""; }
+        if (le.state === "t") for (const e of [le.clipF, le.unF, le.clipB, le.unB, le.back, le.crease, le.cast]) { e.style.transform = ""; e.style.opacity = ""; }
         le.root.className = `leaf ${s}`;
         le.state = s;
       }
@@ -330,12 +335,20 @@ export function openBook(o: BookOpts) {
     });
   }
 
+  /** The reader's eye, above the middle of the book, in page coordinates. */
+  let view: Mat4 = from2d([1, 0, 0, 1, 0, 0]);
+
   function bend(le: LeafEl, t: number) {
     const f = fold(t, W, H, top, L);
     const clip = css(f.clip), unclip = css(f.unclip);
     le.clipF.style.transform = clip; le.unF.style.transform = unclip;
-    le.clipB.style.transform = clip; le.unB.style.transform = unclip;
+    // the folded part stands up off the page along the fold, seen from above
+    le.clipB.style.transform = css4(mul4(mul4(view, f.air), from2d(f.clip))); le.unB.style.transform = unclip;
     le.back.style.transform = css(f.back);
+    // ...throwing its shadow on the leaf where it would lie flat, a little away from the lamp
+    const sh = Math.sin(f.rise);
+    le.cast.style.transform = css(mul(tr(4 + 10 * sh, 6 + 14 * sh), f.back));
+    le.cast.style.opacity = (0.9 * sh).toFixed(3);
     // the crease: a band of shade and highlight along the fold, on the back
     const D = Math.hypot(W, H);
     const cw = Math.max(1, Math.min(f.depth, W * 0.5));
@@ -363,7 +376,8 @@ export function openBook(o: BookOpts) {
     if (mode === "spread") {
       const open = fr.left >= 0 ? 1 : fr.turning.find((x) => x.leaf === 0)?.t ?? 0;
       bk.style.transform = `translateX(${(-(1 - open) * W) / 2}px)`;
-      boardL.style.opacity = String(Math.min(1, open * 4));
+      // the cover's own board lands on the left only as the cover does
+      boardL.style.opacity = String(clamp((open - 0.82) / 0.18, 0, 1));
     } else bk.style.transform = "";
   }
 
@@ -371,7 +385,10 @@ export function openBook(o: BookOpts) {
 
   let pos = 0, rest = 0;
   let pinned: string | null = null; // the address asked for, kept while its page is open
-  type Anim = { kind: "to" | "flurry"; from: number; to: number; t0: number; dur: number; ease: (u: number) => number };
+  type Anim =
+    | { kind: "to" | "flurry"; from: number; to: number; t0: number; dur: number; ease: (u: number) => number }
+    // following a scroll: the leaf eases after the wheel, so notchy wheels still turn smoothly
+    | { kind: "follow"; to: number; last: number };
   let anim: Anim | null = null;
   let raf = 0;
 
@@ -379,7 +396,17 @@ export function openBook(o: BookOpts) {
     raf = 0;
     if (!anim) return;
     const a = anim;
-    const u = Math.min(1, (clock.now() - a.t0) / a.dur);
+    const now = clock.now();
+    if (a.kind === "follow") {
+      const k = 1 - Math.exp(-Math.max(0, now - a.last) / 70);
+      a.last = now;
+      pos += (a.to - pos) * k;
+      if (Math.abs(a.to - pos) < 2e-4) { pos = a.to; anim = null; }
+      render(frameAt(pos));
+      if (anim) raf = requestAnimationFrame(loop);
+      return;
+    }
+    const u = Math.min(1, (now - a.t0) / a.dur);
     const e = a.ease(u);
     pos = a.from + (a.to - a.from) * e;
     render(a.kind === "flurry" ? flurryFrame(a.from, a.to, e) : frameAt(pos));
@@ -389,7 +416,7 @@ export function openBook(o: BookOpts) {
   }
   const kick = () => { if (!raf) raf = requestAnimationFrame(loop); };
   /** where the book is heading: the end of the running turn, or where it lies */
-  const heading = () => (anim && Number.isInteger(anim.to) ? anim.to : Math.round(pos));
+  const heading = () => (anim && anim.kind !== "follow" && Number.isInteger(anim.to) ? anim.to : Math.round(pos));
 
   function go(to: number, dur?: number, ease?: (u: number) => number) {
     to = clamp(to, 0, max);
@@ -477,14 +504,15 @@ export function openBook(o: BookOpts) {
 
   // --- reading gestures -----------------------------------------------------------------
 
-  // Wheel and trackpad: the leaf follows the scroll, one leaf per gesture, then
-  // settles. A trackpad's coasting doesn't turn more pages; a fresh swipe does.
-  let wg: { base: number; last: number; mag: number; dir: number; done: boolean } | null = null;
+  // Wheel and trackpad: scrolling turns the leaves, the page following the
+  // scroll part of the way; when the scrolling stops the page finishes turning
+  // (or, if you scrolled back, falls back). Scroll on and the next leaf lifts.
+  let wg: { last: number; dir: number; to: number; done: boolean } | null = null;
   let watching = 0;
   const watch = () => {
     watching = 0;
     if (!wg) return;
-    if (clock.now() - wg.last > 170) endWheel();
+    if (clock.now() - wg.last > 200) endWheel();
     else watching = requestAnimationFrame(watch);
   };
   addEventListener("wheel", (e) => {
@@ -494,38 +522,39 @@ export function openBook(o: BookOpts) {
     const k = e.deltaMode === 1 ? 36 : e.deltaMode === 2 ? H : 1;
     const d = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * k;
     if (!d) return;
-    const mag = Math.abs(d), now = clock.now();
-    if (!wg || now - wg.last > 170 || (wg.done && mag > wg.mag * 1.4 && mag > 6)) {
-      wg = { base: heading(), last: 0, mag, dir: 0, done: false };
-      if (anim) { anim = null; }
+    const now = clock.now();
+    if (!wg || now - wg.last > 200) {
+      // a fresh scroll picks the page up wherever it is, even mid-turn
+      wg = { last: now, dir: 0, to: anim && anim.kind === "to" ? pos : anim?.kind === "follow" ? anim.to : pos, done: false };
+      if (anim?.kind === "to") anim = null;
       top = false;
     }
-    wg.last = now; wg.mag = mag; wg.dir = Math.sign(d);
+    wg.last = now; wg.dir = Math.sign(d);
     if (!watching) watching = requestAnimationFrame(watch);
-    if (wg.done) return;
-    if (o.still) { wg.done = true; go(wg.base + wg.dir); return; }
-    const lo = Math.max(0, wg.base - 1), hi = Math.min(max, wg.base + 1);
-    const p = clamp(pos + d / Math.max(360, 0.7 * H), lo, hi);
-    if (p !== wg.base && (p === lo || p === hi)) { wg.done = true; rustle(1); settle(p); return; }
-    pos = p;
-    render(frameAt(p));
+    if (o.still) { if (!wg.done) { wg.done = true; go(heading() + wg.dir); } return; }
+    const was = Math.floor(wg.to + 1e-6);
+    wg.to = clamp(wg.to + d / Math.max(420, 0.72 * H), 0, max);
+    const is = Math.floor(wg.to + 1e-6);
+    if (is !== was) { rustle(1); open(Math.max(is, was)); } // a leaf went over: the pages it lays open start drawing
+    if (anim?.kind === "follow") anim.to = wg.to;
+    else { anim = { kind: "follow", to: wg.to, last: now }; kick(); }
   }, { passive: false });
   function endWheel() {
     const g = wg;
     wg = null;
     if (!g || g.done) return;
-    const off = pos - g.base;
-    if (Math.abs(off) < 1e-4) return;
-    const along = Math.sign(off) === g.dir;
-    go(Math.abs(off) > (along ? 0.1 : 0.66) ? g.base + Math.sign(off) : g.base);
+    const lo = Math.floor(g.to + 1e-6), frac = g.to - lo;
+    if (frac < 1e-4) return go(lo);
+    // a little way along the way you were scrolling is enough to turn it
+    go(g.dir > 0 ? (frac > 0.12 ? lo + 1 : lo) : (frac < 0.88 ? lo : lo + 1));
   }
 
   // Touch: drag the page over, sideways or up; let go and it finishes or falls back.
-  let drag: { id: number; x0: number; y0: number; p0: number; base: number; axis: "" | "x" | "y"; trail: [number, number][] } | null = null;
+  let drag: { id: number; x0: number; y0: number; p0: number; base: number; axis: "" | "x" | "y"; trail: [number, number][]; to: number } | null = null;
   let dragged = false;
   stage.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "mouse" || !e.isPrimary || drag || anim?.kind === "flurry") return;
-    drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, p0: pos, base: heading(), axis: "", trail: [] };
+    drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, p0: pos, base: heading(), axis: "", trail: [], to: pos };
     dragged = false;
   });
   stage.addEventListener("pointermove", (e) => {
@@ -543,8 +572,11 @@ export function openBook(o: BookOpts) {
     }
     const fwd = drag.axis === "x" ? -dx / (W * 0.9) : -dy / (Math.min(H, 760) * 0.55);
     const p = clamp(drag.p0 + fwd, Math.max(0, drag.base - 1), Math.min(max, drag.base + 1));
-    drag.trail.push([clock.now(), p]);
-    if (drag.trail.length > 6) drag.trail.shift();
+    // when the finger was there (the event's own time: a busy frame doesn't slow the flick)
+    drag.trail.push([e.timeStamp, p]);
+    while (drag.trail.length > 2 && e.timeStamp - drag.trail[0][0] > 120) drag.trail.shift();
+    drag.to = p;
+    if (o.still) return; // reduced motion: nothing curls; letting go turns the page at once
     pos = p;
     render(frameAt(p));
   });
@@ -553,10 +585,12 @@ export function openBook(o: BookOpts) {
     const g = drag;
     drag = null;
     if (!g.axis) return;
+    if (o.still) { if (!cancelled && Math.abs(g.to - g.base) > 0.08) go(g.base + Math.sign(g.to - g.base)); return; }
     const [a, b] = [g.trail[0], g.trail[g.trail.length - 1]];
-    const v = a && b && b[0] > a[0] ? (b[1] - a[1]) / (b[0] - a[0]) : 0; // leaves per ms
+    // how fast it was going as it left the finger, in leaves per ms; a finger that stopped has no flick
+    const v = a && b && b[0] > a[0] && e.timeStamp - b[0] < 120 ? (b[1] - a[1]) / (b[0] - a[0]) : 0;
     let to = Math.round(pos);
-    if (!cancelled && Math.abs(v) > 0.0012) to = v > 0 ? Math.ceil(pos - 1e-6) : Math.floor(pos + 1e-6);
+    if (!cancelled && Math.abs(v) > 0.0009) to = v > 0 ? Math.ceil(pos - 1e-6) : Math.floor(pos + 1e-6);
     go(clamp(to, g.base - 1, g.base + 1));
   };
   stage.addEventListener("pointerup", (e) => release(e, false));
