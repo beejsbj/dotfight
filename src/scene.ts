@@ -49,7 +49,8 @@ export interface Frame {
   mover?: { id: number; at: Pt };
   pen?: PenPose;
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] };
-  teach?: { kind: "aim" | "place"; at: Pt; p: number; rot: number };
+  /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
+  teach?: { kind: "aim" | "place" | "note"; at: Pt; p: number; rot: number; text?: string };
   sig?: Signature;
 }
 
@@ -272,7 +273,9 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   g.translate(at.x, at.y);
   g.rotate(-t.rot);
   const pencil = "rgba(52, 50, 48, 0.85)";
-  if (t.kind === "place") {
+  if (t.kind === "note") {
+    handText(g, t.text ?? "", 0, 0, 46, pencil, { upTo: p * 1.2, weight: 400, rot: -0.02, align: "center" });
+  } else if (t.kind === "place") {
     handText(g, "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
     handText(g, "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
   } else {

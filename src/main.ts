@@ -22,6 +22,9 @@ import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, steps, unfile, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
 import { RULES } from "./rules";
+import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
+import { apply as roomApply, check as roomCheck, ENGINE, replay as roomReplay, turn as roomTurn, type Act } from "./room-engine";
+import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
 import { page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { Timeline, reachFraction } from "./timeline";
@@ -92,11 +95,16 @@ const cam = new Camera();
 let W = 0, H = 0, dpr = 1, sdpr = 1, dirty = true;
 
 const isBot = (p: Player) => mode.kind === "bot" && p === 1;
-const name = (p: Player) => (isBot(p) ? "Dawood-bot" : INK.names[p]);
-const rotFor = (p: Player) => (mode.kind === "pnp" && p === 1 ? Math.PI : 0);
+// in a room, the other seat's moves come down the link (watchers: both seats')
+const remote = (p: Player) => mode.kind === "room" && link?.seat !== p;
+const away = (p: Player) => isBot(p) || remote(p);
+const name = (p: Player) => (isBot(p) ? "Dawood-bot" : mode.kind === "room" && link ? (link.names[p] ?? "your friend") : INK.names[p]);
+// pass & play turns the page for red; in a room, red's page sits the other way up for good
+const rotFor = (p: Player) => ((mode.kind === "pnp" && p === 1) || (mode.kind === "room" && link?.seat === 1) ? Math.PI : 0);
 
 function save() {
   if (screen !== "game") return;
+  if (mode.kind === "room") return link?.save({ turn: s.turn, next: roomTurn(s), winner: s.winner });
   localStorage.setItem("pft:save", JSON.stringify({ s, mode } satisfies Save));
 }
 const load = () => readSave(localStorage.getItem("pft:save"));
@@ -175,7 +183,7 @@ function hud() {
     b.classList.toggle("on", on);
     b.setAttribute("aria-checked", String(on));
   }
-  $("#kind").classList.toggle("off", s.phase !== "play" || isBot(s.current) || screen !== "game" || busy && !aim);
+  $("#kind").classList.toggle("off", s.phase !== "play" || away(s.current) || screen !== "game" || busy && !aim);
   $("#bottom").classList.toggle("view", screen === "view" || screen === "replay");
   status();
 }
@@ -185,6 +193,7 @@ function status(msg?: string) {
   if (!msg) {
     const who = name(s.current);
     if (screen === "replay") t = "the war, again";
+    else if (screen === "game" && roomStatus() !== null) t = roomStatus()!;
     else if (screen === "view") t = viewing ? `page ${viewing.page?.no ?? "?"} · ${viewing.page?.date ?? ""}` : "";
     else if (s.phase === "setup") t = isBot(s.current) ? `${who} is drawing a camp…` : `${who}: draw a camp`;
     else if (s.phase === "over") t = `${name(s.winner!)} held the page`;
@@ -195,6 +204,7 @@ function status(msg?: string) {
     else t = lastNote ? `${lastNote}` : `${who}: pick up a soldier`;
   }
   $("#status").textContent = t;
+  $("#status").classList.toggle("tap", t === RESEND);
 }
 
 // --- flow -------------------------------------------------------------------
@@ -266,7 +276,9 @@ function next() {
   dirty = true;
   if (screen !== "game") return;
   if (s.phase === "over") return finish();
+  if (mode.kind === "room" && (link?.queued || remote(s.current))) return roomNext();
   if (!isBot(s.current)) {
+    link?.waiting(false);
     if (s.phase === "play") fx.add("hint", T, 150, 620, "out");
     busy = false;
     hud();
@@ -282,27 +294,27 @@ function next() {
     });
     return;
   }
-  after(500, () => {
-    const f = botFlick(s, (mode as { level: Level }).level);
-    const me = s.soldiers[f.soldierId];
-    selected = f.soldierId;
-    kind = f.kind;
-    // you watch the bot from above, the way you'd lean over a friend's flick
-    void me;
-    sfx.pick();
-    penDrop = T;
-    hud();
-    const power = f.kind === "shoot"
-      ? (f.length - RULES.shootMinLen) / (RULES.shootMaxLen - RULES.shootMinLen)
-      : (f.length - RULES.moveMinLen) / (RULES.moveMaxLen - RULES.moveMinLen);
-    after(650, () => {
-      botAim = { soldierId: f.soldierId, angle: f.angle, power: Math.max(0.05, Math.min(1, power)), t0: T };
-      after(900, () => {
-        const pw = botAim?.power ?? 0.5;
-        const lean = penLean(pw);
-        botAim = null;
-        fire(f, pw, lean);
-      });
+  after(500, () => showFlick(botFlick(s, (mode as { level: Level }).level)));
+}
+
+// Someone else's flick, played out: the pen goes down on the soldier, pulls
+// back, and lets go. You watch from above, the way you'd lean over a friend's.
+function showFlick(f: Flick) {
+  selected = f.soldierId;
+  kind = f.kind;
+  sfx.pick();
+  penDrop = T;
+  hud();
+  const power = f.kind === "shoot"
+    ? (f.length - RULES.shootMinLen) / (RULES.shootMaxLen - RULES.shootMinLen)
+    : (f.length - RULES.moveMinLen) / (RULES.moveMaxLen - RULES.moveMinLen);
+  after(650, () => {
+    botAim = { soldierId: f.soldierId, angle: f.angle, power: Math.max(0.05, Math.min(1, power)), t0: T };
+    after(900, () => {
+      const pw = botAim?.power ?? 0.5;
+      const lean = penLean(pw);
+      botAim = null;
+      fire(f, pw, lean);
     });
   });
 }
@@ -481,7 +493,8 @@ function finish() {
   const w = s.winner!;
   if (screen === "game") {
     localStorage.setItem("pft:drawer", JSON.stringify(addToDrawer(drawer(), file(s, mode))));
-    localStorage.removeItem("pft:save");
+    if (mode.kind === "room") link?.stop();
+    else localStorage.removeItem("pft:save");
   }
   // the page is turned square to the desk, the way it will be filed
   cam.overview();
@@ -501,6 +514,8 @@ let botLevel = (+(localStorage.getItem("pft:lvl") ?? 1) as Level);
 
 function showTitle() {
   screen = "title";
+  leaveRoom();
+  restoreLabel();
   reset();
   closeSheet();
   restoreKindBar();
@@ -516,6 +531,8 @@ function showTitle() {
   const menu = $("#cover .menu");
   menu.innerHTML = `
     ${canResume ? `<button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${saved!.s.phase === "setup" ? "still drawing camps" : `turn ${saved!.s.turn}, ${alive(saved!.s, 0).length} v ${alive(saved!.s, 1).length}`}</small></button>` : ""}
+    <button data-a="friend" class="ink blue">play a friend<small>send a link: each on your own phone</small></button>
+    ${friendsList()}
     <button data-a="bot" class="ink red">play Dawood-bot</button>
     <p class="levels">${LEVELS.map((l, i) => `<button data-lvl="${i}" class="${i === botLevel ? "on" : ""}">${l}</button>`).join("")}</p>
     <button data-a="pnp" class="ink blue">pass &amp; play<small>two of you, one phone</small></button>
@@ -540,6 +557,8 @@ function showTitle() {
     else if (a === "how") showHow();
     else if (a === "drawer") showDrawer();
     else if (a === "settings") showSettings();
+    else if (a === "friend") newRoomOnCover();
+    else if (b.dataset.room) { const r = readRoom(localStorage, b.dataset.room); if (r) enterRoom(r); }
     else if (b.dataset.lvl) {
       botLevel = +b.dataset.lvl as Level;
       localStorage.setItem("pft:lvl", String(botLevel));
@@ -763,6 +782,294 @@ function replayNext() {
   hud();
 }
 
+// --- rooms: one page, two phones, a link sent on WhatsApp ----------------------------
+
+const roomApi = httpApi();
+let link: RoomLink | null = null;
+const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const cleanName = (t: string) => t.replace(/\s+/g, " ").trim().slice(0, 24);
+// Themes are in flight (their PR adds src/theme.ts); until it lands a room's theme is only remembered.
+const applyTheme = (_id?: string) => {};
+const RESEND = "tap here to send the link again";
+
+function sendMove(a: Act) {
+  if (mode.kind === "room") link?.push(a);
+}
+
+function leaveRoom() {
+  if (!link) return;
+  link.stop();
+  link = null;
+  if (location.pathname.startsWith("/r/")) history.replaceState(null, "", "/");
+}
+
+function openLink(d: RoomSaved) {
+  link?.stop();
+  link = new RoomLink(d, {
+    api: roomApi,
+    storage: localStorage,
+    hidden: () => document.hidden,
+    onNews: () => {
+      hud();
+      if (screen === "game" && !busy && !res && link?.queued) next();
+    },
+    onDiverged: () => {
+      // our move lost a race (the same seat on another device, say): take the server's page
+      const l = link!;
+      reset();
+      s = roomReplay(l.data.setup, l.data.log.slice(0, l.data.applied)).s;
+      lastNote = "your last move didn't make it: the page had moved on";
+      hud();
+      next();
+    },
+  });
+  return link;
+}
+
+function enterRoom(d: RoomSaved) {
+  reset();
+  restoreKindBar();
+  closeCover();
+  closeSheet();
+  const l = openLink(d);
+  mode = { kind: "room", code: d.code };
+  const r = roomReplay(d.setup, d.log.slice(0, d.applied));
+  s = r.s;
+  if (r.bad !== undefined) l.broken = "this page doesn't add up: one copy of it is different";
+  for (const a of d.pending) if (d.seat !== null && !roomCheck(s, d.seat, a)) roomApply(s, a);
+  kind = "shoot";
+  screen = "game";
+  viewing = null;
+  cam.overview(rotFor(s.current));
+  cam.snap();
+  dawn.set(s.phase === "over" && !l.queued ? 1 : 0);
+  applyTheme(d.theme);
+  if (location.pathname !== `/r/${d.code}`) history.replaceState(null, "", `/r/${d.code}`);
+  save();
+  l.start();
+  hud();
+  if (s.phase === "over" && !l.queued) { viewBar(); return void after(400, showOver); }
+  after(300, next);
+}
+
+// The other side's go: draw what has come down the link, or wait for it.
+function roomNext() {
+  const l = link!;
+  const e = l.peek();
+  if (!e) {
+    busy = false;
+    l.waiting(true);
+    fx.add("note", T, 300, 1300, "linear");
+    hud();
+    return;
+  }
+  if (roomCheck(s, e.seat, e.a)) {
+    l.broken = "this page doesn't add up: one copy of it is different";
+    l.stop();
+    busy = false;
+    return hud();
+  }
+  busy = true;
+  l.waiting(false);
+  l.drawn();
+  hud();
+  const a = e.a as Act;
+  if (a.t === "base") after(400, () => { drawBase(a.x, a.y); after(900, () => { busy = false; next(); }); });
+  else after(300, () => showFlick(a.f));
+}
+
+// Pencilled on the page, at your end of it, while the other side has the pen.
+function waitNote(): string | null {
+  const l = link;
+  if (screen !== "game" || !l || l.broken || s.phase === "over" || busy || res || !remote(s.current)) return null;
+  if (l.seat === null) return `${name(s.current)}'s go…`;
+  if (l.names[1] === null) return "waiting for your friend to open the link…";
+  return `waiting for ${name(s.current)}…`;
+}
+
+// The line under the page, when a room has something to say; null to fall through.
+function roomStatus(): string | null {
+  const l = link;
+  if (mode.kind !== "room" || !l) return null;
+  if (l.broken) return l.broken;
+  if (l.offline) return l.data.pending.length ? "no signal: your move goes when it can" : "no signal: still trying…";
+  if (s.phase === "over" || res || !remote(s.current)) return null;
+  const who = name(s.current);
+  if (busy) return s.phase === "setup" ? `${who} is drawing a camp…` : `${who} is lining up…`;
+  if (l.seat === 0 && l.names[1] === null) return RESEND;
+  if (l.seat === null) return `watching ${name(0)} v ${name(1)}`;
+  return lastNote;
+}
+
+function showShare() {
+  const l = link;
+  if (!l) return;
+  const me = l.names[l.seat ?? 0];
+  const text = `${me} challenges you to ${GAME.name}, a pen-flick war on the back page of an exercise book. Your red pen's waiting:`;
+  const card = sheet(`
+    <p class="sub">page ${s.page?.no ?? ""} is on the desk</p>
+    <h2>Send it to your friend</h2>
+    <p class="link">${esc(l.url)}</p>
+    <button class="act" data-a="send">send the link</button>
+    <button class="act" data-a="copy">copy it</button>
+    <button class="act red" data-a="back">${s.bases.length === 0 && l.seat === 0 ? "draw your first camp" : "back to the page"}</button>
+    <p class="fine">They open it, write their name and take the red pen. You go first; they can come later.</p>`, "share");
+  card.onclick = async (e) => {
+    const a = (e.target as HTMLElement).closest("button")?.dataset.a;
+    if (!a) return;
+    sfx.tap();
+    if (a === "back") return closeSheet();
+    if (a === "send" && navigator.share) {
+      try { await navigator.share({ title: GAME.name, text, url: l.url }); closeSheet(); } catch { /* they changed their mind */ }
+      return;
+    }
+    const btn = card.querySelector<HTMLElement>('[data-a="copy"]')!;
+    try {
+      await navigator.clipboard.writeText(`${text} ${l.url}`);
+      btn.textContent = "copied: paste it in a chat";
+    } catch {
+      getSelection()?.selectAllChildren(card.querySelector(".link")!);
+      btn.textContent = "press and hold the link to copy it";
+    }
+  };
+}
+
+// On the cover: your name goes on the label, in pencil.
+function nameOnLabel(): HTMLInputElement {
+  const old = $("#cover .label input");
+  if (old) return old as HTMLInputElement;
+  const input = document.createElement("input");
+  input.className = "hand pencil-in";
+  input.maxLength = 24;
+  input.placeholder = "your name";
+  input.setAttribute("autocomplete", "nickname");
+  input.enterKeyHint = "go";
+  input.value = localStorage.getItem("pft:name") ?? "";
+  $("#cover .label .field b").replaceWith(input);
+  return input;
+}
+function restoreLabel() {
+  $("#cover .label input")?.replaceWith(Object.assign(document.createElement("b"), { className: "hand blue", textContent: "Dawood" }));
+}
+function coverNote(t: string) {
+  const menu = $("#cover .menu");
+  let n = menu.querySelector(".note");
+  if (!n) { n = document.createElement("p"); n.className = "note"; menu.prepend(n); }
+  n.textContent = t;
+}
+
+function friendsList() {
+  const rs = listRooms(localStorage).slice(0, 4);
+  if (!rs.length) return "";
+  return `<p class="friends"><span>games with friends</span>${rs.map((r) => {
+    const foe = r.seat === null ? `${r.names[0]} v ${r.names[1] ?? "?"}` : r.names[r.seat === 0 ? 1 : 0] ?? "your friend";
+    const sm = r.summary;
+    const st = !sm ? "" : sm.next === null ? (r.seat === null ? "done" : sm.winner === r.seat ? "you won" : "they won")
+      : r.seat === null ? "watching" : sm.next === r.seat ? "your go" : "their go";
+    return `<button data-room="${esc(r.code)}" class="pencil">${esc(foe)}${st ? ` · ${st}` : ""}</button>`;
+  }).join("")}</p>`;
+}
+
+function newRoomOnCover() {
+  const input = nameOnLabel();
+  const menu = $("#cover .menu");
+  menu.innerHTML = `
+    <p class="note">write your name on the label</p>
+    <button data-a="make" class="ink blue">start a page for two<small>you get a link to send</small></button>
+    <p class="row"><button data-a="back" class="pencil">back</button></p>`;
+  input.focus();
+  const go = async (b: HTMLButtonElement) => {
+    const who = cleanName(input.value);
+    if (!who) { coverNote("your name first, on the label"); return input.focus(); }
+    localStorage.setItem("pft:name", who);
+    b.disabled = true;
+    coverNote("tearing out a page…");
+    try {
+      const setup = { seed: newGame().seed, page: pageStamp() };
+      const theme = localStorage.getItem("pft:theme") ?? undefined;
+      const c = await roomApi.create({ name: who, engine: ENGINE, setup, theme });
+      restoreLabel();
+      enterRoom({ v: 1, code: c.code, seat: 0, secret: c.secret, engine: ENGINE, setup, theme, names: [who, null], log: [], applied: 0, pending: [], updated: Date.now() });
+      showShare();
+    } catch (e) {
+      b.disabled = false;
+      coverNote(e instanceof RoomHttpError ? `the page server said no: ${e.message}` : "can't reach the page server: check your signal and try again");
+    }
+  };
+  const make = menu.querySelector<HTMLButtonElement>('[data-a="make"]')!;
+  input.onkeydown = (e) => { if (e.key === "Enter") void go(make); };
+  menu.onclick = (e) => {
+    const b = (e.target as HTMLElement).closest("button");
+    if (!b || b.disabled) return;
+    sfx.tap();
+    if (b.dataset.a === "make") void go(b);
+    else if (b.dataset.a === "back") { restoreLabel(); showTitle(); }
+  };
+}
+
+// Someone opened /r/<code>: back to our seat, or take the free one, or watch.
+async function openRoom(code: string) {
+  const mine = readRoom(localStorage, code);
+  if (mine) return enterRoom(mine);
+  const menu = $("#cover .menu");
+  const home = (why: string) => { history.replaceState(null, "", "/"); showTitle(); coverNote(why); };
+  menu.onclick = null;
+  menu.innerHTML = `<p class="note">opening the page…</p>`;
+  let v: RoomView;
+  try {
+    v = await roomApi.read(code);
+  } catch (e) {
+    return home(e instanceof RoomHttpError && e.status === 404 ? "that page has gone: links last 30 days after the last move" : "couldn't open that page: check your signal and open the link again");
+  }
+  if (v.engine !== ENGINE) return home("that page needs a newer copy of the game: reload");
+  const host = v.names[0];
+  const input = v.names[1] === null ? nameOnLabel() : null;
+  menu.innerHTML = input ? `
+      <p class="note"><b>${esc(host)}</b> challenges you. Write your name on the label.</p>
+      <button data-a="take" class="ink red">take the red pen<small>${esc(host)} draws first</small></button>
+      <p class="row"><button data-a="watch" class="pencil">just watch</button><button data-a="back" class="pencil">not now</button></p>`
+    : `<p class="note">${esc(host)} v ${esc(v.names[1] ?? "")}</p>
+      <button data-a="watch" class="ink blue">watch the war<small>both pens are taken</small></button>
+      <p class="row"><button data-a="back" class="pencil">back</button></p>`;
+  const saved = (seat: RoomSaved["seat"], secret: string | null, names: RoomSaved["names"]): RoomSaved => ({
+    v: 1, code, seat, secret, engine: v.engine, setup: v.setup as RoomSaved["setup"], theme: v.theme, names,
+    // arriving late, only the last couple of moves are drawn in
+    log: v.entries, applied: Math.max(0, v.entries.length - 2), pending: [], updated: Date.now(),
+  });
+  const take = async (b: HTMLButtonElement) => {
+    const who = cleanName(input!.value);
+    if (!who) { coverNote("your name first, on the label"); return input!.focus(); }
+    localStorage.setItem("pft:name", who);
+    b.disabled = true;
+    coverNote("picking up the red pen…");
+    try {
+      const j = await roomApi.join(code, who);
+      restoreLabel();
+      if (j.seat === null) { enterRoom(saved(null, null, v.names)); lastNote = "someone got to the red pen first: you're watching"; return hud(); }
+      enterRoom(saved(j.seat, j.secret, j.seat === 1 ? [host, who] : [who, v.names[1]]));
+    } catch (e) {
+      b.disabled = false;
+      coverNote(e instanceof RoomHttpError ? `the page server said no: ${e.message}` : "can't reach the page server: check your signal and try again");
+    }
+  };
+  if (input) input.onkeydown = (e) => { if (e.key === "Enter") void take(menu.querySelector<HTMLButtonElement>('[data-a="take"]')!); };
+  menu.onclick = (e) => {
+    const b = (e.target as HTMLElement).closest("button");
+    if (!b || b.disabled) return;
+    sfx.unlock();
+    sfx.tap();
+    const a = b.dataset.a;
+    if (a === "back") { restoreLabel(); history.replaceState(null, "", "/"); showTitle(); }
+    else if (a === "watch") { restoreLabel(); enterRoom(saved(null, null, v.names)); }
+    else if (a === "take") void take(b);
+  };
+}
+
+$("#status").onclick = () => { if ($("#status").classList.contains("tap")) { sfx.tap(); showShare(); } };
+document.addEventListener("visibilitychange", () => { if (!document.hidden) link?.wake(); });
+window.addEventListener("focus", () => link?.wake());
+window.addEventListener("online", () => link?.wake());
+
 // --- the page as an image -------------------------------------------------------
 
 const exportLayer = new PageLayer();
@@ -844,7 +1151,7 @@ function pinchInfo() {
   return { d: Math.hypot(a.x - b.x, a.y - b.y), m: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
 }
 
-const humanTurn = () => screen === "game" && !isBot(s.current) && !busy && $("#sheet").hidden;
+const humanTurn = () => screen === "game" && !away(s.current) && !busy && $("#sheet").hidden;
 
 over.addEventListener("pointerdown", (e) => {
   sfx.unlock();
@@ -950,6 +1257,7 @@ function up(e: PointerEvent) {
       learn("place");
       fx.clear();
       drawBase(ghost.x, ghost.y);
+      sendMove({ t: "base", x: ghost.x, y: ghost.y });
       ghost = undefined;
       afterBase();
     }
@@ -969,7 +1277,7 @@ function up(e: PointerEvent) {
       aim = null;
       lastNotch = 0;
       sfx.creak(0);
-      if (f && canAct(s, f.soldierId)) { learn("aim"); fire(f, pw, lean); }
+      if (f && canAct(s, f.soldierId)) { learn("aim"); fire(f, pw, lean); sendMove({ t: "flick", f }); }
       else status("too soft: pull back further");
     } else if (tapped && g.tapOn === undefined) {
       standUp(); // tap on empty paper puts the pen down
@@ -1094,7 +1402,7 @@ function currentFrame(): Frame {
     s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
     selected, ghost, sig: signatureFor(s, mode), lean: leanOf(),
   };
-  const human = screen === "game" && !isBot(s.current) && $("#sheet").hidden;
+  const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
   if (ghost) {
     f.keepOut = s.bases.map((b) => ({ x: b.x, y: b.y, r: b.r + RULES.baseRadius + (b.owner === s.current ? RULES.minBaseGap : RULES.minEnemyBaseGap) }));
@@ -1109,6 +1417,12 @@ function currentFrame(): Frame {
   if (human && s.phase === "play" && selected === undefined && !aim && !res && !busy) {
     const mine = alive(s, s.current);
     f.hint = { p: fx.p("hint", T), bases: s.bases.filter((b) => b.owner === s.current && inBase(mine, b).length) };
+  }
+  const note = waitNote();
+  if (note) {
+    // at your end of the page, whichever way up it is (clear of the header)
+    const low = Math.cos(cam.cur.rot) > 0;
+    f.teach = { kind: "note", text: note, at: { x: RULES.pageW / 2, y: low ? RULES.pageH - 70 : 160 }, p: fx.p("note", T), rot: cam.cur.rot };
   }
   // the pen
   if (res) {
@@ -1166,13 +1480,15 @@ function showBoot() {
   requestAnimationFrame(frame);
   showTitle();
 }
+const roomPath = location.pathname.match(/^\/r\/([a-z0-9]{6})\/?$/)?.[1];
 showBoot();
+if (roomPath) void openRoom(roomPath);
 
 // dev-only handle for scripted playtests
 if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
-    get selected() { return selected; }, get res() { return res; },
+    get selected() { return selected; }, get res() { return res; }, get link() { return link; }, get mode() { return mode; },
     set speed(v: number) { speed = v; }, get speed() { return speed; },
     poke: () => { dirty = true; },
     frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view }; },

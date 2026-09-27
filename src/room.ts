@@ -154,8 +154,11 @@ export class RoomLink {
       return;
     }
     if (hidden) return; // visibilitychange wakes us
-    if (ms === undefined && !this.waitingFor) return;
-    this.timer = setTimeout(() => void this.poll().finally(() => this.schedule()), ms ?? this.pollDelay());
+    // on our go, still look in now and then while the friend's seat is empty, to learn their name
+    const lonely = this.data.seat === 0 && this.data.names[1] === null;
+    if (ms === undefined && !this.waitingFor && !lonely) return;
+    ms ??= this.waitingFor ? this.pollDelay() : 4000;
+    this.timer = setTimeout(() => void this.poll().finally(() => this.schedule()), ms);
   }
 
   /** Fetch whatever is new. Only when nothing of ours is in flight. */
