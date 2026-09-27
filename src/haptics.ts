@@ -266,6 +266,8 @@ function scriptSwitch(): Backend {
 const TAPPED: HapticEvent[] = ["pickup", "settle"];
 function tapSwitch(): Backend {
   let owed = -Infinity; // when the game last felt something a tap could deliver
+  // a gesture that has moved past tap slop won't click, so it can't deliver a tick
+  let from: { x: number; y: number } | null = null, dragged = false;
   const overlay = (b: HTMLElement) => {
     if (b.querySelector(":scope > label[data-haptic]")) return;
     if (getComputedStyle(b).position === "static") b.style.position = "relative";
@@ -275,7 +277,7 @@ function tapSwitch(): Backend {
   };
   return {
     kind: "switch", mode: "tap",
-    play: (_p, ev) => { if (TAPPED.includes(ev)) owed = performance.now(); },
+    play: (_p, ev) => { if (TAPPED.includes(ev)) owed = dragged ? -Infinity : performance.now(); },
     cancel: () => { owed = -Infinity; },
     install(canvas, on) {
       // every button, now and later, wears a label: tapping it ticks
@@ -290,6 +292,12 @@ function tapSwitch(): Backend {
       wrap.prepend(canvas);
       // last word, after the button's own handler (a settings toggle may just
       // have switched haptics off): no tick unless it's on and was earned
+      document.addEventListener("pointerdown", (e) => { from = { x: e.clientX, y: e.clientY }; dragged = false; }, true);
+      document.addEventListener("pointermove", (e) => {
+        if (!from || dragged || Math.hypot(e.clientX - from.x, e.clientY - from.y) < 10) return;
+        dragged = true;
+        owed = -Infinity;
+      }, true);
       document.addEventListener("click", (e) => {
         const l = (e.target as Element | null)?.closest?.("label[data-haptic]");
         if (!l) return;
