@@ -226,9 +226,10 @@ export function inkFlick(ctx: Ctx, pts: Pt[], color: string, seed: number, width
   if (upTo <= 0) return;
   const head = n * Math.min(1, upTo);
   const last = Math.ceil(head);
-  const { wet, skip } = theme.ink;
+  const { wet, skip, tool } = theme.ink;
   ctx.strokeStyle = ctx.fillStyle = paint(ctx, color);
-  ctx.lineCap = "round";
+  // a ballpoint beads where it catches; gel and lead run smooth
+  ctx.lineCap = tool === "ballpoint" ? "round" : "butt";
   // resting blob: a wet pen pools where it stood, a pencil barely marks
   ctx.globalAlpha = Math.min(0.9, 0.55 * wet) * alpha;
   ctx.beginPath();

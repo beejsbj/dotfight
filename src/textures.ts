@@ -93,6 +93,32 @@ function tile(g: CanvasRenderingContext2D, tex: HTMLCanvasElement, scale: number
   g.fillRect(0, 0, w, h);
 }
 
+// Tiles are small and kept per theme, so switching back to a paper is quick.
+const tiles = new Map<string, HTMLCanvasElement>();
+function cached(key: string, make: () => HTMLCanvasElement) {
+  let c = tiles.get(key);
+  if (!c) { c = make(); tiles.set(key, c); }
+  return c;
+}
+
+/** Speckle: a tileable scatter of light and dark flecks, as ImageData (no per-fleck draw calls). */
+function speckle(size: number, seed: number, light: RGB, dark: RGB, la: number, da: number, density: number) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d")!;
+  const img = g.createImageData(size, size);
+  const r = rng(seed);
+  for (let i = 0; i < img.data.length; i += 4) {
+    if (r() > density) continue;
+    const lit = r() < 0.5, k = r();
+    const col = lit ? light : dark;
+    img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2];
+    img.data[i + 3] = Math.round(255 * (lit ? la : da) * (0.5 + k * 0.5));
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
 /** The theme's desk, in page units scaled by S, with the sheet at (pad, pad). */
 function surface(g: CanvasRenderingContext2D, w: number, h: number, t: Theme, S: number, pad: number, pw: number, ph: number) {
   const { a, b, accent } = t.desk;
@@ -100,11 +126,11 @@ function surface(g: CanvasRenderingContext2D, w: number, h: number, t: Theme, S:
   const at = (x: number) => (pad + x) * S; // page units to desk pixels
   switch (t.desk.kind) {
     case "walnut":
-      tile(g, woodTexture(), 1.5 * S, w, h);
+      tile(g, cached(t.id, () => woodTexture()), 1.5 * S, w, h);
       break;
     case "school": {
       // a varnished school desk: honey wood, years of scratches and ink
-      tile(g, woodTexture(512, 12, a, b, [60, 34, 14], 7), 1.8 * S, w, h);
+      tile(g, cached(t.id, () => woodTexture(512, 12, a, b, [60, 34, 14], 7)), 1.8 * S, w, h);
       g.lineCap = "round";
       for (let k = 0; k < 90; k++) {
         const x = r() * w, y = r() * h, l = (20 + r() * 120) * S, an = (r() - 0.5) * 0.9;
@@ -130,17 +156,15 @@ function surface(g: CanvasRenderingContext2D, w: number, h: number, t: Theme, S:
       break;
     }
     case "mahogany": {
-      tile(g, woodTexture(512, 21, a, b, [30, 10, 6], 15), 1.4 * S, w, h);
+      tile(g, cached(t.id, () => woodTexture(512, 21, a, b, [30, 10, 6], 15)), 1.4 * S, w, h);
       // a green leather blotter under the pad, its corners in darker leather
       const m = 90, x0 = at(-m), y0 = at(-m), x1 = at(pw + m), y1 = at(ph + m);
       g.fillStyle = "rgba(0, 0, 0, 0.35)";
       g.fillRect(x0 + 4 * S, y0 + 8 * S, x1 - x0, y1 - y0);
       g.fillStyle = `rgb(${accent.join(",")})`;
       g.fillRect(x0, y0, x1 - x0, y1 - y0);
-      for (let k = 0; k < 1800; k++) {
-        g.fillStyle = r() < 0.5 ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.06)";
-        g.fillRect(x0 + r() * (x1 - x0), y0 + r() * (y1 - y0), 1 + r() * 3, 1 + r() * 2);
-      }
+      g.fillStyle = g.createPattern(cached(`${t.id}:leather`, () => speckle(128, 8, [255, 255, 255], [0, 0, 0], 0.06, 0.1, 0.35)), "repeat")!;
+      g.fillRect(x0, y0, x1 - x0, y1 - y0);
       const cw = 150 * S;
       g.fillStyle = "#2a1510";
       for (const [cx, cy, sx, sy] of [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]]) {
@@ -152,7 +176,7 @@ function surface(g: CanvasRenderingContext2D, w: number, h: number, t: Theme, S:
       break;
     }
     case "birch":
-      tile(g, woodTexture(512, 33, a, b, [120, 90, 50], 5), 2.2 * S, w, h);
+      tile(g, cached(t.id, () => woodTexture(512, 33, a, b, [120, 90, 50], 5)), 2.2 * S, w, h);
       // pencil shavings' dust and a graphite smudge or two
       for (let k = 0; k < 5; k++) {
         const x = r() * w, y = r() * h, rad = (30 + r() * 60) * S;
@@ -167,10 +191,8 @@ function surface(g: CanvasRenderingContext2D, w: number, h: number, t: Theme, S:
     case "mat": {
       g.fillStyle = `rgb(${a.join(",")})`;
       g.fillRect(0, 0, w, h);
-      for (let k = 0; k < (w * h) / 30; k++) {
-        g.fillStyle = r() < 0.5 ? `rgba(${b.join(",")}, 0.5)` : `rgba(${accent.join(",")}, 0.25)`;
-        g.fillRect(r() * w, r() * h, 1, 1);
-      }
+      g.fillStyle = g.createPattern(cached(t.id, () => speckle(256, 3, b, accent, 0.5, 0.25, 0.066)), "repeat")!;
+      g.fillRect(0, 0, w, h);
       if (t.desk.kind === "mat") {
         // a self-healing cutting mat: a centimetre grid, bold every five, knife scores
         const cm = 48 * S;
@@ -200,10 +222,8 @@ function surface(g: CanvasRenderingContext2D, w: number, h: number, t: Theme, S:
       g.fillStyle = `rgba(${a.join(",")}, 0.3)`;
       for (let x = ox - sq; x < w; x += sq * 2) g.fillRect(x, 0, sq, h);
       for (let y = oy - sq; y < h; y += sq * 2) g.fillRect(0, y, w, sq);
-      for (let k = 0; k < (w * h) / 40; k++) {
-        g.fillStyle = r() < 0.6 ? "rgba(255, 255, 255, 0.1)" : `rgba(${accent.join(",")}, 0.12)`;
-        g.fillRect(r() * w, r() * h, 1 + r() * 2, 1);
-      }
+      g.fillStyle = g.createPattern(cached(t.id, () => speckle(256, 4, [255, 255, 255], accent, 0.1, 0.12, 0.05)), "repeat")!;
+      g.fillRect(0, 0, w, h);
       break;
     }
   }

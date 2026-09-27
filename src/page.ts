@@ -186,19 +186,19 @@ function gum(g: Ctx, w: number) {
 
 // The drawing sheet's title block across the top, and the blueprint's uneven wash.
 function titleBlock(g: Ctx, P: Theme["paper"], w: number) {
-  const x0 = RULES.margin + 7, x1 = w - 29, y0 = 29, y1 = 92;
+  const x0 = RULES.margin + 7, x1 = w - 29, y0 = 29, y1 = 96;
   g.strokeStyle = P.margin;
   g.lineWidth = 1.4;
   g.strokeRect(x0, y0, x1 - x0, y1 - y0);
   g.beginPath();
-  for (const x of [330, 670]) { g.moveTo(x, y0); g.lineTo(x, y1); }
+  for (const x of [300, 700]) { g.moveTo(x, y0); g.lineTo(x, y1); }
   g.stroke();
   g.fillStyle = P.print;
-  g.font = "22px 'Special Elite', monospace";
   g.textAlign = "center";
-  g.fillText(`${GAME.name.toUpperCase()} · GENERAL ARRANGEMENT`, 500, 58);
-  g.font = "13px 'Special Elite', monospace";
-  g.fillText("SCALE 1:1 · DO NOT SCALE · ALL INK TO BE FINAL", 500, 80);
+  g.font = "24px 'Special Elite', monospace";
+  g.fillText(GAME.name.toUpperCase(), 500, 60);
+  g.font = "12px 'Special Elite', monospace";
+  g.fillText("GENERAL ARRANGEMENT · SCALE 1:1 · DO NOT SCALE", 500, 82);
   g.textAlign = "left";
 }
 function wash(g: Ctx, w: number, h: number) {

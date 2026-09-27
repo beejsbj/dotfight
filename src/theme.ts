@@ -296,7 +296,7 @@ const BLUEPRINT: Theme = {
   paper: {
     colour: "#1c4c8c", lines: "graph", line: "rgba(214, 230, 255, 0.10)", bold: "rgba(214, 230, 255, 0.22)", step: 25, every: 4, top: 100,
     margin: "rgba(232, 242, 255, 0.72)", marginStyle: "frame",
-    print: "rgba(232, 242, 255, 0.8)", labels: [["DRG No.", 88, 66], ["DATE", 690, 66]], noAt: [196, 62], dateAt: [770, 62],
+    print: "rgba(232, 242, 255, 0.8)", labels: [["DRG No.", 88, 50], ["DATE", 712, 50]], noAt: [190, 84], dateAt: [730, 86],
     grain: 0.8, foxing: "rgba(255, 255, 255, 0.035)", extra: "titleblock", age: [214, 218, 200], ageK: 0.35,
   },
   ink: {
