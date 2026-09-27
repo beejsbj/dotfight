@@ -1595,7 +1595,11 @@ if (import.meta.env.DEV) {
     /** What Dawood-bot would do now (for driving a human seat in playtests). */
     botMove: (level: Level = 1) => turn.botMove(s, level, (Math.random() * 2 ** 32) >>> 0),
     /** Apply an action as the flow would (flicks resolve on screen). */
-    act: (a: Action) => (a.t === "flick" ? fire(a, 0.6, 0.3) : perform(a, () => { busy = false; next(); })),
+    act: (x: Action | { soldierId: number; kind: "shoot" | "move"; angle: number; length: number; bend: number }) => {
+      // older playtest scripts pass a prototype flick
+      const a: Action = "soldierId" in x ? { t: "flick", soldier: x.soldierId, kind: x.kind === "shoot" ? "snipe" : "lunge", angle: x.angle, length: x.length, bend: x.bend, wob: 0 } : x;
+      return a.t === "flick" ? fire(a, 0.6, 0.3) : perform(a, () => { busy = false; next(); });
+    },
     /**
      * A seeded bot-v-bot war on the core rules, filed in the drawer (finished or
      * not: `maxTurns` stops it early). Returns the record.
