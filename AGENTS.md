@@ -44,7 +44,7 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 
 ## Rules: where they stand
 
-`RULES.md` is the single rulebook: Core (Quick battle) and Advanced (Long war), with an open/to-test table. The playable game still runs the older simple rules (shoot or move). The new rules were simulated on the rules-lab branches `rules/lab` (PR #3, report `docs/rules-lab/report.md`) and `rules/lab-2` (PR #4, `docs/rules-lab/round-2.md`). Both are built on the retired notebook UI, so bringing a rule into the game means porting it into Lamplight. Rule decisions are Burooj's; record them in `RULES.md` and on the `/rules` pages together.
+`RULES.md` is the single rulebook: Core (Quick battle) and Long war, with an open/to-test table. The playable game still runs the older simple rules (shoot or move). The new rules were simulated on the rules-lab branches `rules/lab` (PR #3, report `docs/rules-lab/report.md`) and `rules/lab-2` (PR #4, `docs/rules-lab/round-2.md`). Both are built on the retired notebook UI, so bringing a rule into the game means porting it into Lamplight. Rule decisions are Burooj's; record them in `RULES.md` and on the `/rules` pages together.
 
 ## Coordination
 

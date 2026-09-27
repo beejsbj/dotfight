@@ -1,6 +1,6 @@
 # Rules
 
-_Dotfight. Consolidated 2026-09-26 from Burooj's decisions and two rounds of the rules lab. The same rules, with drawings, are in two books: [Core rules](https://dotfight.vercel.app/rules) ([rules.html](rules.html)) and [Advanced rules](https://dotfight.vercel.app/rules/advanced) ([rules/advanced.html](rules/advanced.html))._
+_Dotfight. Consolidated 2026-09-26 from Burooj's decisions and two rounds of the rules lab. The same rules, with drawings, are in two books: [Core rules](https://dotfight.vercel.app/rules) ([rules.html](rules.html)) and [Long war rules](https://dotfight.vercel.app/rules/advanced) ([rules/advanced.html](rules/advanced.html))._
 
 This is Dawood's game. He made it up at school, and he and Burooj played it in grades 5 and 6 with ballpoint pens on the back pages of their exercise books. Nobody wrote the rules down. What follows is the game remembered, argued over and rebuilt.
 
@@ -9,7 +9,7 @@ This is Dawood's game. He made it up at school, and he and Burooj played it in g
 Anything marked **(to test)** has a number or strength nobody has felt at a real table yet. **(being designed)** means the idea exists and the rule doesn't. Lab values are what the simulations used, on a page 1000 units wide and 1700 tall.
 
 - [Core rules](#core-rules-quick-battle): Dawood's game, played as a Quick battle. Everything you need to play.
-- [Advanced rules](#advanced-rules-long-war): the Long war, which adds shaped bases and a page that fights back.
+- [Long war rules](#long-war-rules): book 2, which adds shaped bases and a page that fights back.
 - [Open / to test](#open--to-test)
 
 # Core rules (Quick battle)
@@ -84,7 +84,18 @@ A separate choice from the size of the war:
 - by a shared link (planned)
 - real time on two devices (planned)
 
-# Advanced rules (Long war)
+## Tactics
+
+_Plays that fall out of the rules, for players. Also the outline for the Core tutorial (BJS-462)._
+
+- **Stay behind the wall.** A wall costs a snipe power and shakes a lunger. Men inside a ring are hard to reach; men on open paper are free.
+- **Look for a row.** Two with one bullet: enemy soldiers standing in a line give you another flick. Never leave yours in one.
+- **Bait the lunge.** One man just outside your base invites a lunge; a lunger who lands among the rest gets shot.
+- **Catch the convoy.** A send is on open paper for exactly one enemy turn, and five together is a row. Send small, and behind a base.
+- **Soft to finish, hard to gamble.** Soft flicks are short and sure; save the hard, wild one for when a miss costs nothing.
+- **Mind the last four.** A side down to four flicks twice, steadier. Take the last few in one turn if you can.
+
+# Long war rules
 
 For players who like long games. Everything in the core rules still holds. The Long war adds:
 
@@ -122,6 +133,18 @@ Every line runs at somebody's base, so ink piles up round bases over the game an
 - Soldiers are drawn in their base's shape: dots in a camp, little triangles in a prism, little hexagons in a cushion. For now it's only a look.
 - Their shape's power might wake up only in a last stand. (idea)
 
+## Tactics
+
+_Plays that fall out of the long war's rules. Also the outline for the War and Advanced tutorials (BJS-462)._
+
+- **Curve it round a camp.** A full camp bends lines near it, so a shot can swing round into a base you can't see straight. Your own camps bend your lines too.
+- **Shoot the well down.** A camp's pull is its garrison: thin it and it stops bending.
+- **Bank off a cushion.** A glancing line bounces off a hexagon to reach behind a wall; a square one goes in.
+- **Put the prism in front.** Lines passing out through a triangle split: one flick, two targets.
+- **Ride your own grooves.** Meet your old line shallow and it carries you on; meet theirs steep and take the jolt rather than be cut short.
+- **Let the page fill.** Ink piles up round bases as cover: the open game is early, the scribble late.
+- **Walk the long road behind something.** Convoys are out for several turns; route them behind a cushion or a wall of ink.
+
 # Open / to test
 
 Every value here is a lab guess or a direction nobody has played yet.
@@ -140,7 +163,7 @@ Every value here is a lab guess or a direction nobody has played yet.
 | Quick preset: 3 bases of 8 | Untried. The lab's advice if games drag was a smaller army. |
 | Game length | The lab's Lunge & snipe ran about 53 turns (88 flicks). Is that a phone game? |
 
-## Advanced
+## Long war
 
 | What | Where it stands |
 |---|---|
