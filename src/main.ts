@@ -220,7 +220,7 @@ const CARD = {
 function acts() {
   const el = $("#acts");
   const c0 = core();
-  const mine = screen === "game" && !isBot(s.current) && !busy && !!c0 && $("#sheet").hidden;
+  const mine = screen === "game" && !isBot(s.current) && !busy && !aim && !!c0 && $("#sheet").hidden;
   let html = "";
   if (mine && c0.phase === "position") html = `<button data-act="ready" class="go">done arranging</button>`;
   else if (mine && c0.phase === "play") {
@@ -1236,6 +1236,7 @@ over.addEventListener("pointermove", (e) => {
     if (!aim) {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
+      acts();
     }
     updateAim(e.clientX, e.clientY);
     status();
@@ -1325,6 +1326,7 @@ function up(e: PointerEvent) {
     aim = null;
     sfx.creak(0);
     g = { t: "none" };
+    acts();
     if (!res) status();
     dirty = true;
     return;
