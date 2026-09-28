@@ -243,7 +243,9 @@ function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
   g.globalAlpha = 1;
 }
 
-const aimShow = (a: Aim) => (a.kind === "move" ? a.reach * 0.55 : Math.min(a.reach, 110 + a.reach * 0.2));
+const aimShow = (a: Aim) =>
+  a.sight !== undefined ? 560 // the pen falcon's sight sits out past the standing pen, where you can see it
+  : a.kind === "move" ? a.reach * 0.55 : Math.min(a.reach, 110 + a.reach * 0.2);
 
 function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   const me = s.soldiers[a.soldierId];
@@ -272,7 +274,7 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
 // A pencilled ring that closes while you hold the phone still, and gets its
 // cross hairs once it has: then a flick of the wrist fires.
 function drawSight(g: Ctx, x: number, y: number, armed: number, px: number) {
-  const r = 26, w = Math.max(2.2, 1.6 * px);
+  const r = 36, w = Math.max(2.6, 1.8 * px);
   pencilLoop(g, x, y, r, 5, w, 0.12 + 0.88 * armed, 0.95);
   if (armed < 1) return;
   for (const [ux, uy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
