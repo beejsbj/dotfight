@@ -58,6 +58,8 @@ export interface Frame {
   /** A volley (life.ts): the defenders' jabs, drawn on and glinting away, and the intruder's cross if the rules haven't drawn one. */
   jabs?: { pts: Pt[]; p: number; alpha: number; owner: 0 | 1; seed: number }[];
   stamp?: { x: number; y: number; owner: 0 | 1; seed: number; p: number };
+  /** A comic bubble (bubble.ts) beside soldier-at `at`: how much is written (p) and how faded. */
+  bubble?: { text: string; at: Pt; p: number; alpha: number; style: "scrap" | "ring"; side: 1 | -1; seed: number; owner: 0 | 1 };
   /** The line boil: whether the living boil at all, wall time (ms) for its frame, and how bold (boil.ts boldAt). */
   boil?: { on: boolean; ms: number; bold: number };
 }
@@ -380,12 +382,13 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
 let inked: { x: number; y: number; w: number; h: number } | null = { x: 0, y: 0, w: 1e5, h: 1e5 };
 export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: number) {
   const sheen = sheenStrokes(f);
-  if (!f.pen && !sheen.length && !inked) return;
+  if (!f.pen && !sheen.length && !inked && !f.bubble) return;
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (inked) g.clearRect(inked.x, inked.y, inked.w, inked.h);
   inked = null;
   const box = new Box();
   if (sheen.length) drawSheen(g, f, sheen, box);
+  if (f.bubble) drawBubble(g, f, f.bubble, box, W, H);
   if (f.pen) {
     const pb = penBox(f.pen, f.view);
     box.add(pb.x0, pb.y0); box.add(pb.x1, pb.y1);
@@ -410,6 +413,85 @@ export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: numbe
     const x1 = Math.min(W, Math.ceil(box.x1) + 4), y1 = Math.min(H, Math.ceil(box.y1) + 4);
     if (x1 > x0 && y1 > y0) inked = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }
+}
+
+// A comic bubble: a torn scrap of paper with a word in pen, or a pencilled
+// word ringed round, beside him, in the lamp's light like the pen.
+function drawBubble(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box, W: number, H: number) {
+  const at = project(f.view, b.at.x, b.at.y);
+  const k = Math.max(0.3, Math.min(2, at.k));
+  const size = Math.round(Math.max(15, Math.min(24, 12 + 7 * k)));
+  g.save();
+  g.font = `700 ${size}px Caveat, "Patrick Hand", cursive`;
+  const w = g.measureText(b.text).width;
+  g.restore();
+  // up and to one side of him, kept on screen
+  const gap = 7 + 7 * k;
+  let side = b.side;
+  if (at.x + side * (gap + w + 20) > W - 6 || at.x + side * (gap + w + 20) < 6) side = -side as 1 | -1;
+  const cx = at.x + side * (gap + w / 2 + 8), cy = at.y - gap - size * 0.5;
+  const hw = w / 2 + size * 0.45, hh = size * 0.62;
+  if (cx - hw < 0 || cx + hw > W || cy - hh < 0 || cy + hh > H) return;
+  const rand = (i: number) => (Math.sin(b.seed * 12.9898 + i * 78.233) * 43758.5453) % 1;
+  const jit = (i: number) => Math.abs(rand(i)) - 0.5;
+  const tilt = jit(1) * 0.12;
+  const x0 = cx - hw - 6, y0 = cy - hh - 6, x1 = cx + hw + 6, y1 = cy + hh + 6;
+  box.add(x0, y0); box.add(x1, y1); box.add(at.x, at.y, 4);
+  g.save();
+  g.globalAlpha = b.alpha;
+  g.translate(cx, cy);
+  g.rotate(tilt);
+  const tail = { x: (at.x - cx) * Math.cos(-tilt) - (at.y - cy) * Math.sin(-tilt), y: (at.x - cx) * Math.sin(-tilt) + (at.y - cy) * Math.cos(-tilt) };
+  const toward = { x: tail.x * 0.55, y: tail.y * 0.55 };
+  if (b.style === "scrap") {
+    // torn along the top and bottom, cut straight at the sides
+    const pts: [number, number][] = [];
+    const n = Math.max(4, Math.round(hw / 6));
+    for (let i = 0; i <= n; i++) pts.push([-hw + (2 * hw * i) / n, -hh + jit(10 + i) * 3.2]);
+    for (let i = n; i >= 0; i--) pts.push([-hw + (2 * hw * i) / n, hh + jit(40 + i) * 3.2]);
+    const path = () => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); };
+    g.save(); g.translate(1.2, 2); path(); g.fillStyle = "rgba(30, 20, 10, 0.22)"; g.fill(); g.restore();
+    path();
+    g.fillStyle = "#f3ead3";
+    g.fill();
+    g.lineWidth = 0.7;
+    g.strokeStyle = "rgba(90, 80, 64, 0.35)";
+    g.stroke();
+    // a little pen tick toward him
+    g.strokeStyle = INK.pens[b.owner];
+    g.lineWidth = 1.3;
+    g.lineCap = "round";
+    const sx = Math.sign(toward.x) * hw * 0.7;
+    g.beginPath(); g.moveTo(sx, hh + 2); g.lineTo(sx + (toward.x - sx) * 0.35, hh + 2 + Math.max(3, (toward.y - hh) * 0.35)); g.stroke();
+    g.globalAlpha = b.alpha;
+    handText(g, b.text, 0, size * 0.32, size, INK.pens[b.owner], { upTo: b.p, align: "center", alpha: b.alpha, rot: jit(3) * 0.05 });
+  } else {
+    handText(g, b.text, 0, size * 0.32, size, "rgba(52, 50, 48, 0.9)", { upTo: b.p, align: "center", alpha: b.alpha, weight: 700 });
+    if (b.p >= 1) {
+      // ringed round afterwards, the way you'd circle a word, with a stroke toward him
+      g.save();
+      g.scale(1, hh / hw);
+      pencilLoop(g, 0, 0, hw + 3, (b.seed % 997) + 5, 1.4, 1, 0.9 * b.alpha);
+      g.restore();
+      g.strokeStyle = "rgba(58, 56, 54, 0.6)";
+      g.lineWidth = 1.2;
+      g.lineCap = "round";
+      const a = Math.atan2(toward.y, toward.x);
+      const ex = Math.cos(a) * (hw + 3), ey = Math.sin(a) * (hh + 3);
+      g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex + Math.cos(a) * 6, ey + Math.sin(a) * 6); g.stroke();
+    }
+  }
+  g.restore();
+  // in the same light as everything else
+  const lit = lightAt(f.lamp, b.at.x, b.at.y);
+  g.save();
+  g.beginPath();
+  g.rect(x0, y0, x1 - x0, y1 - y0);
+  g.clip();
+  g.globalCompositeOperation = "source-atop";
+  g.fillStyle = `rgba(22, 15, 10, ${Math.min(0.8, (1 - lit) * 0.85)})`;
+  g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  g.restore();
 }
 
 function penBox(p: PenPose, v: View) {

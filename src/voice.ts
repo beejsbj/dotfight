@@ -6,9 +6,10 @@
 // the tick of a pen on paper. They're made small and far away, down on the
 // page: bright, thin, soft. No samples.
 //
-// A crowd is never louder than a few of them: a chorus is capped at a handful
-// of voices, each quieter the more there are, and the same thing said twice
-// in quick succession is said once.
+// Occasional, never a chorus (Burooj: "I want sounds for them, but not this
+// much"). At most two voices at once; a moment (a flick, a volley, a pick-up)
+// gets one voice, now and then two, never everyone (curate); each word has a
+// long cooldown; and they're quiet, down on the page.
 
 import { bus, muted } from "./sound";
 import { LIFE, unit } from "./life";
@@ -130,23 +131,50 @@ export function setLevel(v: number) {
 }
 export const levelName = () => (level >= 1 ? "on" : level > 0 ? "soft" : "off");
 /** Loudness of a voice at level 1, into the room's bus. */
-const PEAK = 0.15;
-/** Never more voices at once than this; a crowd is a few of them. */
-export const MAX_VOICES = 5;
+const PEAK = 0.09;
+/** Never more voices at once than this. */
+export const MAX_VOICES = 2;
+/** And never two starting closer together than this (s), unless planned as a pair. */
+export const SPACING = 0.35;
 
 // --- playing --------------------------------------------------------------------
 
 let busyUntil: number[] = [];
 const lastSaid = new Map<string, number>();
+let lastAny: number | undefined;
 let n = 0;
 let chain: { ac: AudioContext; bus: GainNode; out: AudioNode } | null = null;
 
-/** Should `what` be said now? Rate-limits repeats and caps the crowd. Pure over its inputs. */
-export function allowed(now: number, busy: number[], last: number | undefined, gap: number) {
+/**
+ * Should `what` be said now? Its own cooldown, room among the voices
+ * already going, and a little space after the last one started. Pure over its inputs.
+ */
+export function allowed(now: number, busy: number[], last: number | undefined, gap: number, lastAny?: number) {
   if (last !== undefined && now - last < gap) return false;
+  if (lastAny !== undefined && Math.abs(now - lastAny) < SPACING) return false;
   return busy.filter((t) => t > now).length < MAX_VOICES;
 }
-const GAP: Record<Say, number> = { phew: 0.5, jab: 0.03, hup: 0.15, look: 0.3, murmur: 0.25, eep: 0.05, gasp: 0.02, oh: 0.3, cheer: 0.03, wheee: 0.3, land: 0.2, uhoh: 1 };
+/** How long before the same word is said again (s): long, so a word stays a small event. */
+export const GAP: Record<Say, number> = { phew: 6, jab: 8, hup: 5, look: 4, murmur: 14, eep: 3, gasp: 2.5, oh: 6, cheer: 6, wheee: 5, land: 5, uhoh: 30 };
+
+/** What a moment's voices are worth: the one that speaks is the one that matters most. */
+const WORTH: Record<Say, number> = { gasp: 9, eep: 8, cheer: 7, uhoh: 7, oh: 6, phew: 5, jab: 4, hup: 4, look: 4, wheee: 3, land: 2, murmur: 1 };
+
+/**
+ * One moment's cues, cut down to what's said: the one that matters most,
+ * and now and then (seeded) a second, later, from someone else with
+ * something else to say. Never everyone. Pure.
+ */
+export function curate<T extends { at: number; id: number; say: Say }>(cues: readonly T[], seed: number, most = 2): T[] {
+  if (!cues.length) return [];
+  const ranked = [...cues].sort((a, b) => WORTH[b.say] - WORTH[a.say] || a.at - b.at);
+  const out = [ranked[0]];
+  if (most > 1 && unit(seed, 71) < 0.4) {
+    const second = ranked.find((c) => c.say !== out[0].say && c.id !== out[0].id && Math.abs(c.at - out[0].at) >= SPACING * 1000);
+    if (second) out.push(second);
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
 
 /**
  * Soldier `id` (of side `owner`) says `what`, `delay` seconds from now,
@@ -171,8 +199,9 @@ export function say(what: Say, id: number, owner: 0 | 1, delay = 0, gain = 1, le
   const t = ac.currentTime + Math.max(0, delay);
   busyUntil = busyUntil.filter((x) => x > ac.currentTime);
   const key = `${what}`;
-  if (!allowed(t, busyUntil, lastSaid.get(key), GAP[what])) return;
+  if (!allowed(t, busyUntil, lastSaid.get(key), GAP[what], lastAny)) return;
   lastSaid.set(key, t);
+  lastAny = t;
   const syl = phrase(what, voicePitch(id, owner), id * 7919 + n++, len);
   const end = Math.max(...syl.map((s) => s.at + s.dur));
   busyUntil.push(t + end);

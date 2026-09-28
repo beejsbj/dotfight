@@ -290,6 +290,57 @@ export default async function (T, out) {
       { what: "gasp", id: 3, owner: 1, at: 0.62, gain: 0.8 }, { what: "cheer", id: 40, owner: 0, at: 1.0, gain: 0.5 }, { what: "cheer", id: 41, owner: 0, at: 1.08, gain: 0.5 },
     ]);
   }
+  // --- a busy moment, before and after the voices were cut down ---------------------
+  // Picked up, then a shot through a full camp: everything the old plan voiced
+  // (a chorus of up to five, at the old level), against what's said now (one
+  // voice, now and then two, quieter). One MP3: before, a pause, after.
+  if (want("busy")) {
+    const fs = await import("node:fs");
+    fs.mkdirSync(`${out}/voices`, { recursive: true });
+    const OLD = 0.15 / 0.09; // the old level over the new
+    const pick = { what: "hup", id: 4, owner: 0, at: 0 };
+    const flick = [
+      { say: "gasp", id: 33, at: 1350, gain: 0.8 }, { say: "gasp", id: 36, at: 1500, gain: 0.8 },
+      { say: "eep", id: 35, at: 1420, gain: 0.9 }, { say: "eep", id: 34, at: 1470, gain: 0.7 }, { say: "eep", id: 38, at: 1560, gain: 0.6 },
+      { say: "cheer", id: 4, at: 1750, gain: 1 }, { say: "cheer", id: 6, at: 1820, gain: 0.4 }, { say: "cheer", id: 9, at: 1890, gain: 0.4 },
+      { say: "phew", id: 35, at: 2170, gain: 0.7 }, { say: "oh", id: 37, at: 2300, gain: 0.8 }, { say: "oh", id: 39, at: 2480, gain: 0.8 },
+    ];
+    const owner = (id) => (id >= 30 ? 1 : 0);
+    const before = [pick, { what: "murmur", id: 6, owner: 0, at: 0.3, gain: 0.8 }, ...flick.map((c) => ({ what: c.say, id: c.id, owner: owner(c.id), at: c.at / 1000, gain: c.gain }))]
+      .map((l) => ({ ...l, gain: (l.gain ?? 1) * OLD }));
+    const kept = await page.evaluate((flick) => window.pft.voice.curate(flick, 4 * 131 + 12), flick);
+    const after = [pick, ...kept.map((c) => ({ what: c.say, id: c.id, owner: owner(c.id), at: c.at / 1000, gain: c.gain }))];
+    for (const [name, lines] of [["busy-before", before], ["busy-after", after]]) {
+      const r = await page.evaluate((lines) => window.pft.voiceWav(lines), lines);
+      fs.writeFileSync(`${out}/voices/${name}.wav`, Buffer.from(r.wav, "base64"));
+      console.log(`voice ${name.padEnd(12)} ${lines.length} lines, peak ${r.peak.toFixed(3)}: ${lines.map((l) => l.what).join(" ")}`);
+    }
+    spawnSync("ffmpeg", ["-loglevel", "error", "-y", "-i", `${out}/voices/busy-before.wav`, "-f", "lavfi", "-t", "1.2", "-i", "anullsrc=r=44100:cl=mono", "-i", `${out}/voices/busy-after.wav`,
+      "-filter_complex", "[0][1][2]concat=n=3:v=0:a=1", "-c:a", "libmp3lame", "-q:a", "4", `${out}/voices/busy-before-then-after.mp3`], { stdio: "inherit" });
+  }
+
+  // --- a comic bubble or two ------------------------------------------------------------
+  if (want("bubbles")) {
+    await war(7, 12);
+    const camp = await fullest("mine");
+    await flat(camp, 2.4);
+    const men = await menIn(camp);
+    const say = async (name, kind, id, clip) => {
+      // offered until one is taken (they're rare on purpose), then written on, held and faded
+      await page.evaluate(({ kind, id }) => {
+        const p = window.pft;
+        for (let k = 0; k < 60 && !p.bubbles.cur; k++) { p.bubbles.reset(); p.speak(kind, id, p.wall, 1000 + k * 7); }
+        p.poke();
+      }, { kind, id });
+      await seq(name, 26, 1000 / 12, { [name]: clip });
+      await page.evaluate(() => window.pft.bubbles.reset());
+    };
+    await say("bubble-ready", "ready", men[0].id, await box(camp, 150));
+    await say("bubble-idle", "idle", men[3].id, await box(camp, 150));
+    await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
+    await step(0, 150);
+    await say("bubble-birdseye", "phew", men[1].id);
+  }
   await page.evaluate(() => window.pft.hand(false));
 }
 

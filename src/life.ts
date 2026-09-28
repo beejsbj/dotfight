@@ -2,9 +2,9 @@
 //
 // A soldier has no face. Everything he feels is carried by the four things a
 // hand-drawn dot can do: move a little off his spot, squash and stretch along
-// an axis, swell or shrink, and be scribbled faster or slower. The scribble is
-// his heartbeat (boil.ts draws a living soldier as a pen going round and round
-// his dot): calm, it goes round steadily; excited or scared, it races; when a
+// an axis, swell or shrink, and be redrawn faster or slower. How fast his
+// drawings swap is his heartbeat (boil.ts swaps a living soldier between three
+// drawings of his dot): calm, steadily; excited or scared, racing; when a
 // comrade is crossed out it stops for a beat, the way you hold your breath.
 //
 // Everything here is presentation. Nothing reads or writes game state beyond
@@ -40,6 +40,8 @@ export const LIFE = {
   camps: true,
   /** Haptics for these moments (feel.ts). */
   haptics: true,
+  /** Now and then a comic bubble: a word or two on a torn scrap, or pencilled and ringed, beside him (bubble.ts). */
+  bubbles: true,
 };
 
 /** 12 fps: the boil's drawing rate. One key drawing per frame. */
