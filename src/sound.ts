@@ -164,8 +164,3 @@ export function birds() {
   phrase(1.3, 2600, 2);
   phrase(2.4, 3500, 4);
 }
-
-// Android only: iOS Safari has no vibration. Short, sparse, never a buzz.
-export function buzz(pattern: number | number[]) {
-  navigator.vibrate?.(pattern);
-}
