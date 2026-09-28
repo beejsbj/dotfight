@@ -267,7 +267,7 @@ const TAPPED: HapticEvent[] = ["pickup", "settle"];
 function tapSwitch(): Backend {
   let owed = -Infinity; // when the game last felt something a tap could deliver
   // a gesture that has moved past tap slop won't click, so it can't deliver a tick
-  let from: { x: number; y: number } | null = null, dragged = false;
+  let from: { x: number; y: number } | null = null, dragged = false, down = 0;
   const overlay = (b: HTMLElement) => {
     if (b.querySelector(":scope > label[data-haptic]")) return;
     if (getComputedStyle(b).position === "static") b.style.position = "relative";
@@ -290,14 +290,22 @@ function tapSwitch(): Backend {
       wrap.style.display = "contents";
       canvas.replaceWith(wrap);
       wrap.prepend(canvas);
-      // last word, after the button's own handler (a settings toggle may just
-      // have switched haptics off): no tick unless it's on and was earned
-      document.addEventListener("pointerdown", (e) => { from = { x: e.clientX, y: e.clientY }; dragged = false; }, true);
+      // capture phase, so this runs before the game's own handler for the same press:
+      // whatever an earlier gesture owed is stale, and a second finger makes a pinch
+      const drop = () => { dragged = true; owed = -Infinity; };
+      document.addEventListener("pointerdown", (e) => {
+        owed = -Infinity;
+        from = { x: e.clientX, y: e.clientY };
+        dragged = ++down > 1;
+      }, true);
+      document.addEventListener("pointerup", () => { down = Math.max(0, down - 1); }, true);
+      document.addEventListener("pointercancel", () => { down = Math.max(0, down - 1); drop(); }, true);
       document.addEventListener("pointermove", (e) => {
         if (!from || dragged || Math.hypot(e.clientX - from.x, e.clientY - from.y) < 10) return;
-        dragged = true;
-        owed = -Infinity;
+        drop();
       }, true);
+      // last word, after the button's own handler (a settings toggle may just
+      // have switched haptics off): no tick unless it's on and was earned
       document.addEventListener("click", (e) => {
         const l = (e.target as Element | null)?.closest?.("label[data-haptic]");
         if (!l) return;
