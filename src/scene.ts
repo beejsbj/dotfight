@@ -223,7 +223,7 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
     g.globalAlpha = 1;
   }
   if (f.teach) { drawTeach(g, f.teach); box.add(f.teach.at.x, f.teach.at.y, 420); }
-  if (f.aim) { drawAim(g, s, f.aim, px); box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + 24); }
+  if (f.aim) { drawAim(g, s, f.aim, px); box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + (f.aim.sight !== undefined ? 90 : 24)); }
 }
 
 function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
@@ -274,11 +274,13 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
 // A pencilled ring that closes while you hold the phone still, and gets its
 // cross hairs once it has: then a flick of the wrist fires.
 function drawSight(g: Ctx, x: number, y: number, armed: number, px: number) {
-  const r = 36, w = Math.max(2.6, 1.8 * px);
-  pencilLoop(g, x, y, r, 5, w, 0.12 + 0.88 * armed, 0.95);
+  const r = 48, w = Math.max(5, 3.2 * px);
+  pencilLoop(g, x, y, r, 5, w * 0.7, 1, 0.3); // where it will close, sketched faintly
+  pencilLoop(g, x, y, r, 5, w, 0.12 + 0.88 * armed, 1); // pressed in as the hand holds still
   if (armed < 1) return;
+  pencilLoop(g, x, y, r - 3, 9, w * 0.8, 1, 0.8); // gone over twice: armed
   for (const [ux, uy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
-    pencilLine(g, { x: x + ux * (r - 9), y: y + uy * (r - 9) }, { x: x + ux * (r + 11), y: y + uy * (r + 11) }, w, 60 + ux * 3 + uy, false);
+    pencilLine(g, { x: x + ux * (r - 16), y: y + uy * (r - 16) }, { x: x + ux * (r + 18), y: y + uy * (r + 18) }, w, 60 + ux * 3 + uy, false);
   }
 }
 
