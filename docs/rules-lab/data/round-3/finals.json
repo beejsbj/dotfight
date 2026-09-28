@@ -1,0 +1,109 @@
+{
+ "games": 2000,
+ "maxTurns": 400,
+ "rules": {
+  "version": 1,
+  "reach": {
+   "min": 300,
+   "max": 1800
+  },
+  "snipeWallLoss": 0.1,
+  "snipeKillLoss": 0.05,
+  "snipeEarnAt": 2,
+  "lungeWallShake": 0.08,
+  "lungeKillShake": 0.04,
+  "lungeLinkTremor": 0.05,
+  "sendMax": 5,
+  "positionReach": 20,
+  "lastStandAt": 4,
+  "lastStandFlicks": 2,
+  "lastStandSteady": 0.6
+ },
+ "at": "2026-09-27T13:00:14.907Z",
+ "summaries": [
+  {
+   "label": "quick",
+   "games": 2000,
+   "turns": {
+    "mean": 15.9155,
+    "p10": 11,
+    "p50": 15,
+    "p90": 22
+   },
+   "flicksPerGame": 41.126,
+   "firstWins": 0.522,
+   "stalled": 0,
+   "killsPerFlick": 1.012935855663084,
+   "lungeShare": 0.7553615717550941,
+   "doubleRate": 0.43459894642679653,
+   "sendsPerGame": 6.2235,
+   "roadKills": 4.537,
+   "stopsPerGame": 0.1875,
+   "longestTurn": {
+    "mean": 6.4385,
+    "p90": 8,
+    "max": 13
+   },
+   "chain": {
+    "mean": 2.3724606690087064,
+    "share": [
+     0.3551244844967161,
+     0.268901787078051,
+     0.17966244081258592,
+     0.19631128761264702
+    ],
+    "max": 11
+   },
+   "crashes": 1.889,
+   "offPage": 1.082,
+   "standGames": 1,
+   "standBoth": 0.8115,
+   "standWins": 0.8115,
+   "comeback": 0.3281914893617021,
+   "arranged": 35.3645,
+   "outside": 0.41369791666666755
+  },
+  {
+   "label": "classic",
+   "games": 2000,
+   "turns": {
+    "mean": 28.3985,
+    "p10": 21,
+    "p50": 28,
+    "p90": 37
+   },
+   "flicksPerGame": 72.764,
+   "firstWins": 0.5185,
+   "stalled": 0,
+   "killsPerFlick": 1.231165136606014,
+   "lungeShare": 0.69286322906932,
+   "doubleRate": 0.4836789941159362,
+   "sendsPerGame": 14.3435,
+   "roadKills": 8.9655,
+   "stopsPerGame": 0.275,
+   "longestTurn": {
+    "mean": 7.54,
+    "p90": 10,
+    "max": 15
+   },
+   "chain": {
+    "mean": 2.480955661630825,
+    "share": [
+     0.3500319866148319,
+     0.2549087151222873,
+     0.1756803306923872,
+     0.21937896757049358
+    ],
+    "max": 15
+   },
+   "crashes": 3.857,
+   "offPage": 2.215,
+   "standGames": 1,
+   "standBoth": 0.721,
+   "standWins": 0.721,
+   "comeback": 0.30613305613305614,
+   "arranged": 72.9815,
+   "outside": 0.4335350000000012
+  }
+ ]
+}

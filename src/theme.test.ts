@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { newGame } from "./game";
+import { SIZES } from "./rules";
+import * as legacy from "./legacy";
 import { blank, file, readSave, unfile } from "./record";
 import {
   applyTheme, chooseTheme, chosenTheme, currentTheme, DEFAULT_THEME, homeTheme, luma, resolveTheme, setRoomTheme,
@@ -136,15 +138,18 @@ describe("which paper wins", () => {
 
 describe("a page keeps its paper", () => {
   it("the stamp carries the theme through saves, the drawer and replays", () => {
-    const s = newGame(9, { no: 4, date: "26 Sep 2026", theme: "legal" });
-    const r = JSON.parse(JSON.stringify(file(s, { kind: "pnp" })));
-    expect(unfile(r).page?.theme).toBe("legal");
-    expect(blank(r).page?.theme).toBe("legal");
-    expect(readSave(JSON.stringify({ s, mode: { kind: "pnp" } }))!.s.page?.theme).toBe("legal");
+    // core-rules pages and first-rules (legacy) pages alike
+    for (const s of [newGame(SIZES.quick, 9, { no: 4, date: "26 Sep 2026", theme: "legal" }), legacy.newGame(9, { no: 4, date: "26 Sep 2026", theme: "legal" })]) {
+      const r = JSON.parse(JSON.stringify(file(s, { kind: "pnp" })));
+      expect(unfile(r).page?.theme).toBe("legal");
+      expect(blank(r).page?.theme).toBe("legal");
+      expect(readSave(JSON.stringify({ s, mode: { kind: "pnp" } }))!.s.page?.theme).toBe("legal");
+    }
   });
 
   it("an old page with no theme is on Lamplight's paper", () => {
-    expect(themeOf(newGame(1, { no: 1, date: "" }).page?.theme).id).toBe("lamplight");
+    expect(themeOf(newGame(SIZES.quick, 1, { no: 1, date: "" }).page?.theme).id).toBe("lamplight");
+    expect(themeOf(legacy.newGame(1, { no: 1, date: "" }).page?.theme).id).toBe("lamplight");
   });
 
   it("applyTheme with no id (a room from before themes) applies the paper you'd have anyway", () => {
