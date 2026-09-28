@@ -1,3 +1,6 @@
+import { guardBrowserJob, browserOpts } from "./lib/guarded-browser.mjs";
+await guardBrowserJob();
+
 // Screenshots of both rulebooks (/rules, and /rules/advanced: the long war) and their share cards.
 // The books open as books you turn; "-full" shots are the one-long-page reading (?read=all).
 // Needs the dev server running and a Chrome/Chromium binary:
@@ -11,8 +14,9 @@ const base = (process.argv[2] ?? "http://localhost:5173/").replace(/\/$/, "");
 const og = process.argv.includes("--og");
 const out = "docs/shots/rules-page";
 mkdirSync(out, { recursive: true });
-const b = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
+const b = await chromium.launch({ ...browserOpts, executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
 const errors = [];
+try {
 
 async function open(viewport, dpr, motion = "no-preference", hash = "", path = "/rules") {
   const ctx = await b.newContext({ viewport, deviceScaleFactor: dpr, reducedMotion: motion, hasTouch: viewport.width < 700, isMobile: viewport.width < 700 });
@@ -65,6 +69,8 @@ if (og) {
   }
 }
 
-await b.close();
+} finally {
+  await b.close();
+}
 if (errors.length) { console.error(errors.join("\n")); process.exit(1); }
 console.log(`shots in ${out}/${og ? ", public/og-rules.jpg, public/og-rules-advanced.jpg" : ""}`);
