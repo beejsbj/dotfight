@@ -439,7 +439,14 @@ class BoilCanvas {
     const px = ([x0, y0, x1, y1]: number[]) => [Math.floor(x0 * S) - X - 1, Math.floor(y0 * S) - Y - 1, Math.ceil(x1 * S) - Math.floor(x0 * S) + 2, Math.ceil(y1 * S) - Math.floor(y0 * S) + 2];
     // each living soldier's pose this tick: the new one if his look changed, else the one he was drawn in
     const life = this.life(), dset = new Set(dirty), f = boilFrame(ms, LIFE_FPS);
-    const pose = this.things.map((t, i) => (!t.body || !life ? undefined : all || dset.has(i) || !this.poses[i] ? life.pose(t.body.id, f * LIFE_FRAME) : this.poses[i]));
+    // (a pose that differs from the drawn one by less than poseCode sees is the drawn one: he isn't moved for nothing)
+    const pose = this.things.map((t, i) => {
+      if (!t.body || !life) return undefined;
+      const was = this.poses[i];
+      if (was && !dset.has(i) && !all) return was;
+      const q = life.pose(t.body.id, f * LIFE_FRAME);
+      return was && poseCode(was, S) === poseCode(q, S) ? was : q;
+    });
     // each thing's page box this tick: a living soldier's is where he was drawn and where he's going
     const ext = this.things.map((t, i) => {
       const full = [t.x0, t.y0, t.x1, t.y1];
