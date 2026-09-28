@@ -12,6 +12,7 @@ import {
   type ActionKind, type Flick, type GameState, type Outcome, type Player, type Pt,
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
+import { haptic, haptics, Ratchet } from "./haptics";
 import { inkTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
@@ -82,7 +83,7 @@ interface Resolve {
   t0: number; dur: number; snags: Snag[];
   kills: { i: number; at: number; hit: boolean; last: boolean }[];
   first: number; mover?: number; end: number;
-  pen: boolean; cam: boolean; startLean: number; startAngle: number;
+  pen: boolean; cam: boolean; startLean: number; startAngle: number; settled?: boolean;
   done: () => void;
 }
 let res: Resolve | null = null;
@@ -95,6 +96,7 @@ const els: Els = {
 };
 const over = $<HTMLCanvasElement>("#over");
 const og = over.getContext("2d")!;
+haptics.install(over); // iOS 26.5+: labels for real taps to land on
 const cam = new Camera();
 let W = 0, H = 0, dpr = 1, sdpr = 1, dirty = true;
 
@@ -328,7 +330,6 @@ function drawBase(x: number, y: number, quick = 1) {
   hud();
   fx.add(`b${b.id}`, T, 0, 380 * quick, "out");
   sfx.circle();
-  sfx.buzz(10);
   const dots = s.soldiers.slice(-RULES.soldiersPerBase);
   jotOrder(dots).forEach((i, k) => {
     const delay = (430 + k * 62) * quick;
@@ -352,6 +353,7 @@ function handOver() {
     cam.turnTo(rotFor(s.current));
     if (slow) cam.snap(); // a struggling phone skips the spin
     sfx.turnPage();
+    haptic("turn");
     after(settings.handoff && s.phase === "play" ? 700 : 900, () => {
       if (settings.handoff && s.phase === "play") showHandoff();
       else { busy = false; next(); }
@@ -421,7 +423,6 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   if (opts.cam ?? true) cam.overview();
   sfx.slip(power);
   sfx.scratch(dur / 1000 / speed + 0.05, f.kind === "shoot" ? 0.6 : 0.45);
-  sfx.buzz(12);
   hud();
 }
 
@@ -450,9 +451,10 @@ function stepResolve() {
     fx.add(`m${k.i}`, T, 0, k.last ? 260 : 150);
     sfx.snag(k.last);
     sfx.cross(0.02, k.last ? 1.2 : 1);
-    sfx.buzz(k.last ? [30, 40, 60] : 16);
-    if (r.cam) cam.shake(k.last ? 9 : 4);
+    // replays are watched, not felt
+    if (r.cam) { cam.shake(k.last ? 9 : 4); haptic(k.last ? "over" : "kill", r.kills.filter((x) => x.hit).length); }
   }
+  if (!r.settled && it >= r.dur) { r.settled = true; if (r.pen && !isBot(r.owner)) haptic("land"); }
   if (it >= r.end) {
     const done = r.done;
     res = null;
@@ -573,6 +575,7 @@ function closeCover() {
   if (c.hidden) return;
   c.classList.add("open");
   sfx.rustle();
+  haptic("turn");
   setTimeout(() => { if (c.classList.contains("open")) c.hidden = true; }, 700);
 }
 
@@ -615,6 +618,7 @@ function showSettings() {
     ${row("tilt", settings.tilt, "sit down to aim", "the camera drops low behind your soldier")}
     ${row("handoff", settings.handoff, "pause between turns", "pass & play: tap before the next go")}
     ${row("sound", !sfx.muted, "sound", "pen, paper, lamp")}
+    ${haptics.supported ? row("haptics", haptics.enabled, "haptics", "the pen felt under your thumb") : ""}
     ${motion.settingsHtml(row)}
     <button class="act" data-a="back">done</button>`);
   card.onclick = (e) => {
@@ -624,24 +628,33 @@ function showSettings() {
     if (motion.settingsClick(b, () => { if (!$("#sheet").hidden) showSettings(); })) return;
     const k = b.dataset.set;
     if (k === "sound") sfx.setMuted(!sfx.muted);
+    else if (k === "haptics") { haptics.setEnabled(!haptics.enabled); haptic("tap"); }
     else if (k === "tilt" || k === "handoff") {
       settings[k] = !settings[k];
       localStorage.setItem(`pft:${k}`, settings[k] ? "1" : "0");
       applyTilt();
     } else if (b.dataset.a === "back") return closeSheet();
-    showSettings();
+    // re-draw after this click has finished: on iPhone the tick is the tapped
+    // label's own default action, which needs its switch still in the page
+    setTimeout(showSettings);
   };
 }
 
 function showHandoff() {
   const nextP = s.current;
+  // a real button, so an iPhone's tap-only haptics have a switch label to land on
   const card = sheet(`
-    <p class="sub">${lastNote}</p>
-    <h2 style="color:${INK.pens[nextP]}">Your pen, ${name(nextP)}</h2>
-    <p class="fine">tap when you've got it</p>`, "handoff");
+    <button type="button" class="handoff-tap">
+      <p class="sub">${lastNote}</p>
+      <h2 style="color:${INK.pens[nextP]}">Your pen, ${name(nextP)}</h2>
+      <p class="fine">tap when you've got it</p>
+    </button>`, "handoff");
   sfx.rustle();
-  card.parentElement!.onclick = () => {
-    card.parentElement!.onclick = null;
+  // only the card goes on: it's the button wearing the iPhone's switch label
+  const go = card.querySelector<HTMLButtonElement>(".handoff-tap")!;
+  go.onclick = () => {
+    go.onclick = null;
+    haptic("tap");
     closeSheet();
     busy = false;
     next();
@@ -835,7 +848,7 @@ function nearestOwn(w: Pt): number | undefined {
 }
 
 function select(id: number) {
-  if (selected !== id) { sfx.pick(); penDrop = T; }
+  if (selected !== id) { sfx.pick(); haptic("pickup"); penDrop = T; }
   if (!taught("aim") && selected === undefined) fx.add("teach", T, 500, 1100, "linear");
   selected = id;
   sitOn(s.soldiers[id]);
@@ -930,6 +943,7 @@ over.addEventListener("pointermove", (e) => {
     if (!aim) {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
+      ratchet.reset();
       nudgeFrom = motion.held();
     }
     updateAim(e.clientX, e.clientY);
@@ -948,12 +962,11 @@ function updateAim(x: number, y: number) {
   steer();
   aim.kind = kind;
   const p = pull(aim);
-  if (p.live && !aim.charged) { aim.charged = true; aim.t0 = T; sfx.buzz(6); }
-  // a notch every fifth of full power
-  const notch = Math.floor(p.power * 5 + 1e-6);
-  if (notch !== lastNotch) { if (notch > lastNotch) sfx.buzz(4); lastNotch = notch; }
+  if (p.live && !aim.charged) { aim.charged = true; aim.t0 = T; }
+  // a ratchet: detents as power builds, tightening toward full
+  if (ratchet.step(p.power, p.live) !== null) haptic("notch", p.power);
 }
-let lastNotch = 0;
+const ratchet = new Ratchet();
 
 // The thumb sets the aim; with the motion levels on, the phone's tilt trims it
 // and the hand's tremor sets the wobble. Either way it ends up in the pull, so
@@ -973,7 +986,6 @@ function raiseGun() {
   if (selected === undefined || !motion.raise()) return;
   gunFwd = screenDirToWorld(cam.view(), s.soldiers[selected], 0, -1); // straight up the screen
   lastArmed = false;
-  sfx.buzz(8);
   status();
   dirty = true;
 }
@@ -992,10 +1004,12 @@ function stepGun() {
     if (id === undefined || !humanTurn() || !canAct(s, id)) return;
     learn("aim");
     const f = release(gunPull(id, kind, gunFwd + e.delta, e.power, T), T)!;
+    haptic("flick", e.power);
     return fire(f, e.power, penLean(e.power));
   }
   const armed = motion.gun!.armed >= 1;
-  if (armed !== lastArmed) { lastArmed = armed; if (armed) sfx.buzz(6); status(); }
+  // the sight has closed: a detent you feel
+  if (armed !== lastArmed) { lastArmed = armed; if (armed) haptic("notch", 1); status(); }
 }
 
 function up(e: PointerEvent) {
@@ -1008,6 +1022,7 @@ function up(e: PointerEvent) {
       learn("place");
       fx.clear();
       drawBase(ghost.x, ghost.y);
+      haptic("settle"); // our own camp lands under the thumb; the bot's is only seen
       ghost = undefined;
       afterBase();
     }
@@ -1025,9 +1040,8 @@ function up(e: PointerEvent) {
       const pw = pull(aim).power;
       const lean = penLean(pw);
       aim = null;
-      lastNotch = 0;
       sfx.creak(0);
-      if (f && canAct(s, f.soldierId)) { learn("aim"); fire(f, pw, lean); }
+      if (f && canAct(s, f.soldierId)) { learn("aim"); haptic("flick", pw); fire(f, pw, lean); }
       else status("too soft: pull back further");
     } else if (tapped && gunTap) {
       // that tap put the raised phone down
@@ -1061,7 +1075,7 @@ over.addEventListener("wheel", (e) => {
 function bindKind() {
   for (const b of document.querySelectorAll<HTMLButtonElement>("#kind button[data-kind]")) {
     b.onclick = () => {
-      if (kind !== b.dataset.kind) { sfx.tap(); sfx.buzz(5); }
+      if (kind !== b.dataset.kind) sfx.tap();
       kind = b.dataset.kind as ActionKind;
       if (aim) aim.kind = kind;
       hud();
@@ -1082,6 +1096,8 @@ $("#menu-btn").onclick = () => {
   if (screen === "view" || screen === "replay") restoreKindBar();
   showTitle();
 };
+// every button, card and toggle: a light tick as it's pressed (never on pan or scroll)
+document.addEventListener("click", (e) => { if (e.isTrusted && (e.target as Element).closest?.("button")) haptic("tap"); }, true);
 window.addEventListener("keydown", (e) => {
   if (e.key === "m") $<HTMLButtonElement>('#kind [data-kind="move"]')?.click();
   if (e.key === "s") $<HTMLButtonElement>('#kind [data-kind="shoot"]')?.click();
@@ -1130,7 +1146,9 @@ function frame(now: number) {
   if (aim) {
     steer();
     const p = pull(aim);
-    sfx.creak(p.power, Math.abs(wobble(aim, T)) * 12);
+    const w = wobble(aim, T);
+    sfx.creak(p.power, Math.abs(w) * 12);
+    if (ratchet.shake(w !== 0)) haptic("wobble");
   }
   if (motion.gun) { stepGun(); active = true; }
   if (active || dirty) {
@@ -1239,7 +1257,7 @@ showBoot();
 if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
-    get selected() { return selected; }, get res() { return res; },
+    get selected() { return selected; }, get res() { return res; }, haptics,
     set speed(v: number) { speed = v; }, get speed() { return speed; },
     poke: () => { dirty = true; },
     frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view }; },

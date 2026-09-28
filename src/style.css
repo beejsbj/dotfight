@@ -279,3 +279,6 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   to { transform: rotateY(-150deg) rotate(-2.2deg); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* the hand-off card is one big button (a haptic tap target on iPhone) */
+.handoff-tap { all: unset; display: block; width: 100%; cursor: pointer; }
