@@ -9,6 +9,8 @@ import { idle } from "../lib/phone.mjs";
 export default async function (T, out) {
   const { page } = T;
   page.setDefaultTimeout(120000); // a loaded box takes its time over screenshots
+  // one paper, not whichever the load drew: THEME=<id> (lamplight by default)
+  await page.evaluate((id) => window.pft.theme?.apply(id), process.env.THEME ?? "lamplight");
   await page.waitForTimeout(1000);
   await page.evaluate(({ seed, turns }) => {
     window.pft.slow = false;
