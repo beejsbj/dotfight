@@ -197,6 +197,9 @@ describe("level 3: gun hold", () => {
     const r = drive(gun, [[upright, 500], [upright, 400]], flat);
     expect(gun.armed).toBe(1);
     expect(snap(gun, r.at, r.t + 800, 600)?.t).toBe("fire"); // nothing arrived for most of a second
+    const gun2 = new GunHold();
+    const r2 = drive(gun2, [[upright, 500], [upright, 400]], flat);
+    expect(snap(gun2, r2.at, r2.t + 800, 380)?.t).toBe("fire"); // and a gentle snap that starts slow
   });
 
   it("fires on a shake from a phone without a gyro", () => {

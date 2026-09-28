@@ -221,6 +221,7 @@ export class GunHold {
       if (this.armed >= 1) this.armedT = t;
       this.stillAim = this.delta;
     } else {
+      if (this.armed >= 1) this.armedT = t; // the grace runs from the first moving sample
       this.armed = Math.max(0, this.armed - dt / 200);
     }
   }
