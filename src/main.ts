@@ -660,11 +660,11 @@ function showSettings() {
     ${row("tilt", settings.tilt, "sit down to aim", "the camera drops low behind your soldier")}
     ${row("handoff", settings.handoff, "pause between turns", "pass & play: tap before the next go")}
     ${row("sound", !sfx.muted, "sound", "pen, paper, lamp")}
+    ${haptics.supported ? row("haptics", haptics.enabled, "haptics", "the pen felt under your thumb") : ""}
     <h3>Paper</h3>
     ${row("surprise", !chosen, "a surprise each time", chosen ? `always the ${themeOf(chosen).name.toLowerCase()}` : "a different book every time you open it")}
     <div class="papers" role="radiogroup" aria-label="Paper"></div>
     ${room ? `<p class="fine">This room is on the ${themeOf(room).name.toLowerCase()}: a room is one sheet, so its paper wins. Your pick is kept for later.</p>` : ""}
-    ${haptics.supported ? row("haptics", haptics.enabled, "haptics", "the pen felt under your thumb") : ""}
     <button class="act" data-a="back">done</button>`, "settings");
   const papers = card.querySelector(".papers")!;
   for (const t of THEMES) {

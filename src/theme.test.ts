@@ -147,6 +147,14 @@ describe("a page keeps its paper", () => {
     expect(themeOf(newGame(1, { no: 1, date: "" }).page?.theme).id).toBe("lamplight");
   });
 
+  it("applyTheme with no id (a room from before themes) applies the paper you'd have anyway", () => {
+    applyTheme("graph");
+    applyTheme(undefined);
+    expect(currentTheme()).toBe(homeTheme());
+    applyTheme("nope");
+    expect(currentTheme()).toBe(homeTheme());
+  });
+
   it("withTheme draws in another paper and puts the room back", () => {
     applyTheme("copy");
     expect(withTheme("blueprint", () => theme.id)).toBe("blueprint");

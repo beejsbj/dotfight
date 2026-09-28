@@ -14,10 +14,12 @@
 // A page remembers the paper it was started on (`page.theme` in its stamp), so
 // resuming, the drawer and replays show it as it was played.
 //
-// For the room link: store `currentTheme()` in the room's meta when you make
-// a room (or derive one with `themeFromSeed(roomSeed)`), call
-// `setRoomTheme(meta.theme)` when a player joins, and `setRoomTheme()` when
-// they leave.
+// For the room link (play/room-link): store `currentTheme()` as the room's
+// `theme` when you make a room (the page stamp from `pageStamp()` carries it
+// too, as `setup.page.theme`), call `setRoomTheme(d.theme ?? d.setup.page?.theme)`
+// in `enterRoom`, and `setRoomTheme()` in `leaveRoom`. Its current stand-in
+// calls, `applyTheme(d.theme)` with `d.theme` possibly undefined, also work:
+// an unknown or missing id applies the paper you'd have had anyway.
 //
 // Pure apart from `applyTheme`, `chooseTheme` and `setRoomTheme`, which touch
 // the DOM and localStorage only when those exist.
@@ -450,9 +452,12 @@ export function withTheme<T>(id: string | undefined, fn: () => T): T {
   try { return fn(); } finally { theme = was; }
 }
 
-/** Put a theme in force: tokens for the renderer, CSS for the HUD, words on the cover. */
-export function applyTheme(id: string): void {
-  const t = themeOf(id);
+/**
+ * Put a theme in force: tokens for the renderer, CSS for the HUD, words on the cover.
+ * No id (a room made before themes, say) means the paper you'd get anyway: `homeTheme()`.
+ */
+export function applyTheme(id?: string | null): void {
+  const t = themeOf(isTheme(id) ? id : homeTheme());
   const changed = t !== theme;
   theme = t;
   if (typeof document !== "undefined") paintChrome(t);
