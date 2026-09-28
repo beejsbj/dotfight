@@ -1,10 +1,10 @@
 # Rules
 
-_Dotfight. Consolidated 2026-09-26 from Burooj's decisions and two rounds of the rules lab. The same rules, with drawings, are in two books: [Core rules](https://dotfight.vercel.app/rules) ([rules.html](rules.html)) and [Advanced rules](https://dotfight.vercel.app/rules/advanced) ([rules/advanced.html](rules/advanced.html))._
+_Dotfight. Consolidated 2026-09-26 from Burooj's decisions and three rounds of the rules lab. The same rules, with drawings, are in two books: [Core rules](https://dotfight.vercel.app/rules) ([rules.html](rules.html)) and [Advanced rules](https://dotfight.vercel.app/rules/advanced) ([rules/advanced.html](rules/advanced.html))._
 
 This is Dawood's game. He made it up at school, and he and Burooj played it in grades 5 and 6 with ballpoint pens on the back pages of their exercise books. Nobody wrote the rules down. What follows is the game remembered, argued over and rebuilt.
 
-**The playable game on the site still runs the first, simpler rules** (shoot or move, see [the appendix](#appendix-the-rules-from-memory)). The rules below come from the rules lab (branches `rules/lab` and `rules/lab-2`) and are still to be ported into the game.
+**The game plays the core rules below** (Quick battle). Old saves and pages filed before the port keep the first, simpler rules (shoot or move, see [the appendix](#appendix-the-rules-from-memory)) and still replay by them. The advanced rules are still to be ported. The numbers are in `src/rules.ts`; round 3 of the rules lab measured them on the game's own engine ([report](docs/rules-lab/round-3.md)).
 
 Anything marked **(to test)** has a number or strength nobody has felt at a real table yet. **(being designed)** means the idea exists and the rule doesn't. Lab values are what the simulations used, on a page 1000 units wide and 1700 tall.
 
@@ -21,7 +21,7 @@ Two players, two pens (blue and red) and one sheet of paper. Everything drawn st
 ## Setup
 
 1. **Bases.** Players take turns drawing bases (circles), one at a time. Each base is jotted full of soldier dots.
-2. **Positioning.** Before the first flick, each side arranges its soldiers, anywhere inside its bases or a little outside the walls (lab: 20 units, a dot and a bit). The first player arranges first; the second sees that arrangement before arranging. There's no minimum inside, but staying in is worth it: walls protect (a line loses power and a lunger shakes crossing them), and a lunger who lands among enemy soldiers is shot.
+2. **Positioning.** Before the first flick, each side arranges its soldiers, anywhere inside its bases or a little outside the walls (20 units, a dot and a bit; to test). The first player arranges first; the second sees that arrangement before arranging. There's no minimum inside, but staying in is worth it: walls protect (a line loses power and a lunger shakes crossing them), and a lunger who lands among enemy soldiers is shot.
 
 ## A turn
 
@@ -34,23 +34,23 @@ Pull back and release, like flicking a pen stood on its tip. The harder the flic
 ## Snipe
 
 - The ink line crosses out every enemy soldier it crosses. It pierces.
-- **Power loss.** Passing through a base wall costs the line a lot of its power; passing through a soldier costs less. The line tapers and falls short. (to test: lab gentle values of 5% a wall and 10% a kill were fine on their own; 15% and 25% stalled games.)
-- **Extra flick.** Cross out two or more with one line ("two with one bullet") and you flick again. It can chain, and power loss is the natural limit. The lab's rising bar (each further snipe needing one more kill) is dropped. (to test: whether power loss alone keeps streaks short.)
+- **Power loss.** Passing through a base wall costs the line a lot of its power; passing through a soldier costs less. The line tapers and falls short. Every wall counts, empty rings and your own other bases too, except the wall at your back as the line leaves the base you stand in. (to test: 10% of what's left at a wall, 5% at a soldier crossed out: the lab's gentle magnitudes, turned round so walls cost more.)
+- **Extra flick.** Cross out two or more with one line ("two with one bullet") and you flick again. It can chain, and power loss is the natural limit. The lab's rising bar (each further snipe needing one more kill) is dropped. (Round 3: power loss does keep snipe streaks short; the long turns are lunge chains.)
 
 ## Lunge
 
 _Formerly "move"._
 
 - The soldier runs along his own ink, as far as a shot can go, and crosses out every enemy he passes. He stands where the ink stops.
-- **Walls shake him.** Crossing a wall shakes his hand; crossing a soldier shakes it a little. It's the same foundation as a snipe's power loss, paid in shake instead of power. (to test)
-- **Lunge again.** Each lunge kill earns another lunge by the same soldier, and you may stop instead. Every link adds a fixed shake (lab: 0.05 rad, about 3°, however softly you flick).
+- **Walls shake him.** Crossing a wall shakes his hand; crossing a soldier shakes it a little. It's the same foundation as a snipe's power loss, paid in shake instead of power: his heading jolts at each wall and each soldier and the rest of his line turns with it. (to test: 0.08 rad, about 4.6°, at a wall; 0.04 at a soldier)
+- **Lunge again.** A lunge that crosses someone out earns another lunge by the same soldier, and you may stop instead. Every link adds a fixed shake (0.05 rad, about 3°, however softly you flick; to test).
 - **Through a base.** He may cut right through an enemy base, crossing out the soldiers inside, as long as he doesn't land in it. He pays shake at both walls and at every soldier he crosses: costly, but legal.
-- **Where he lands decides.** Inside an enemy base with enemy soldiers in it, they shoot him on the spot. In an empty enemy ring nothing happens; he's fine. Off the page, he's lost. Whatever he crossed out on the way stays crossed out.
+- **Where he lands decides.** Inside an enemy base with enemy soldiers in it, they shoot him on the spot. In an empty enemy ring nothing happens; he's fine (and if he crossed out the last man inside on the way in, it's an empty ring by the time he lands). Off the page, he's lost. Whatever he crossed out on the way stays crossed out.
 
 ## Send
 
-- Free, once a turn, alongside your flick: **up to 5 soldiers** per send. (to test)
-- **On the road for one turn.** In a Quick battle the convoy walks out visibly between turns (seen as a quick time-lapse) and arrives at the start of your next turn. That leaves exactly one enemy turn in which it's on the road, and any line that crosses it then crosses them out. (to test)
+- Free, once a turn, alongside your flick: **up to 5 soldiers** per send, from one of your bases to another of yours (an empty ring included). Send before your last flick: the flick that ends your turn hands the pen over. The ones nearest the road go. (to test)
+- **On the road for one turn.** In a Quick battle the convoy walks out visibly between turns (seen as a quick time-lapse) and arrives at the start of your next turn. That leaves exactly one enemy turn in which it's on the road, and any line that crosses it then crosses them out. On the road they stand in a column across its middle. (to test)
 - Exposure is the cost, and the size limits itself: a big convoy on open paper is exactly what a "two with one bullet" snipe is looking for.
 - In the Long war, convoys walk for several turns instead (see [Sends in the long war](#sends-in-the-long-war)).
 
@@ -130,15 +130,15 @@ Every value here is a lab guess or a direction nobody has played yet.
 
 | What | Where it stands |
 |---|---|
-| Snipe power loss per wall and per kill | Lab: 5% a wall and 10% a kill were fine alone; 15% and 25% stalled games. Now a core rule, so its strength is the first thing to feel out. |
-| Snipe extra flick with no rising bar | The lab needed a rising bar to keep turns short (without it, turns of up to 17 flicks). Whether power loss alone does the job is untested. |
-| Lunge shake at walls and soldiers | Direction only; no numbers yet. Is cutting through a base too cheap, or too dear? |
-| Lunge chain shake per link | Lab: 0.05 rad (about 3°). |
-| Positioning reach | Lab: 20 units. Inside-only changed nothing; 40 turned the game towards lunges. The lab also saw a whole garrison walk out of its base; "keep at least one inside" is not a rule. |
-| Send limit of 5 | New. The bet is that big convoys limit themselves as snipe targets. |
-| Quick battle send timing | New: out between turns, on the road for exactly one enemy turn, home at the start of your next. |
-| Quick preset: 3 bases of 8 | Untried. The lab's advice if games drag was a smaller army. |
-| Game length | The lab's Lunge & snipe ran about 53 turns (88 flicks). Is that a phone game? |
+| Snipe power loss per wall and per kill | 10% of what's left at a wall, 5% at a soldier crossed out (the lab's gentle magnitudes, walls costing more). Round 3: fair, and snipe streaks stay short. |
+| Snipe extra flick with no rising bar | Round 3: the worst turn averages 6.4 flicks in Quick and 7.5 in Classic (up to 13–15), and it's lunge chains that make them long, not snipes. |
+| Lunge shake at walls and soldiers | 0.08 rad at a wall, 0.04 at a soldier. Round 3: lunges are 69–76% of flicks, because cutting through a base is legal now. Is it too cheap? Doubling the wall shake only brings lunges to 58–66%. |
+| Lunge chain shake per link | 0.05 rad (about 3°). A fifth of chains run to four or more; 0.10 a link cut that to an eighth. The first lever to try if chains feel long. |
+| Positioning reach | 20 units. Inside-only changed nothing in the lab; 40 turned the game towards lunges. "Keep at least one inside" is not a rule (the bot keeps half inside by choice). |
+| Send limit of 5 | Round 3: 6 sends a game in Quick, 14 in Classic, and about two walkers in three are crossed out on the road. |
+| Quick battle send timing | Out when the pen changes hands, a column across the middle of the road for exactly one enemy turn, home at the start of your next. |
+| Quick preset: 3 bases of 8 | Round 3: about 16 turns (41 flicks), 52% to the first player. |
+| Game length | Round 3: Quick about 16 turns (41 flicks), Classic 28 (73). Round 2's Lunge & snipe ran 53. |
 
 ## Advanced
 
@@ -177,3 +177,4 @@ What Dawood confirmed on 2026-09-25: 5 bases of 10 soldiers; no new soldiers, ev
 
 - Round 1: 32,000 simulated games, five rule sets ([report](https://github.com/beejsbj/dotfight/blob/rules/lab/docs/rules-lab/report.md), [PR #3](https://github.com/beejsbj/dotfight/pull/3)).
 - Round 2: lunge and snipe, walking sends, rings, positioning, pen physics, billiards ([report](https://github.com/beejsbj/dotfight/blob/rules/lab-2/docs/rules-lab/round-2.md), [PR #4](https://github.com/beejsbj/dotfight/pull/4)).
+- Round 3: the core rules on the game's own engine, 2,000 games each of Quick and Classic ([report](docs/rules-lab/round-3.md)).

@@ -1,0 +1,14 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`themeFromSeed > is deterministic: the same seed is always the same paper 1`] = `
+[
+  "lamplight",
+  "blueprint",
+  "graph",
+  "legal",
+  "graph",
+  "legal",
+  "lamplight",
+  "blueprint",
+]
+`;

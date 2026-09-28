@@ -11,7 +11,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "share-art": "node scripts/share-art.mjs",
-    "rules-art": "node scripts/rules-page.mjs"
+    "rules-art": "node scripts/rules-page.mjs",
+    "lab": "node --import ./scripts/ts-resolve.mjs scripts/rules-lab.ts"
   },
   "devDependencies": {
     "playwright-core": "^1.63.0",

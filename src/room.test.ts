@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { stubRedis } from "../api/_redis-stub";
 import { RoomError, rooms, type Rooms } from "../api/_rooms";
-import { botBase, botFlick } from "./bot";
-import { canPlaceBase, type GameState } from "./game";
-import { ENGINE, acts, apply, check, fresh, replay, turn, type Act, type Setup } from "./room-engine";
+import { botAction, botArrange, botBase } from "./bot";
+import { canPlaceBase, illegal, type Action, type GameState } from "./game";
+import { CORE, SIZES } from "./rules";
+import { ENGINE, apply, check, drifted, fresh, hash, replay, turn, type Payload, type Setup } from "./room-engine";
 import { RoomHttpError, type RoomApi, type Seat } from "./room-protocol";
 import { listRooms, readRoom, RoomLink, type Saved } from "./room";
 
@@ -52,48 +53,61 @@ function phone(data: Saved, api: RoomApi) {
     catchUp() {
       for (let e = p.link.peek(); e; e = p.link.peek()) {
         expect(check(s, e.seat, e.a)).toBeNull();
-        apply(s, e.a as Act);
         p.link.drawn();
+        apply(s, e.a as Payload);
+        expect(drifted(s, e.a as Payload)).toBe(false);
       }
     },
-    move(a: Act) {
-      expect(check(s, p.link.seat!, a)).toBeNull();
-      apply(s, a);
-      p.link.push(a);
+    move(a: Action) {
+      const pl: Payload = { a };
+      expect(check(s, p.link.seat!, pl)).toBeNull();
+      apply(s, pl);
+      p.link.push({ a, h: hash(s) });
     },
   };
   return p;
 }
 
-const setup: Setup = { seed: 424242, page: { no: 1, date: "26 Sep 2026" } };
+const setup: Setup = { seed: 424242, size: SIZES.quick, rules: CORE, page: { no: 1, date: "26 Sep 2026" } };
 const saved = (code: string, seat: Seat | null, secret: string | null, names: Saved["names"]): Saved =>
   ({ v: 1, code, seat, secret, engine: ENGINE, setup, names, log: [], applied: 0, pending: [], updated: 0 });
 
 let k = 1;
-function botMove(s: GameState): Act {
+function botMove(s: GameState): Action {
   if (s.phase === "setup") {
     const spot = botBase(s, (x, y) => !canPlaceBase(s, x, y), k++)!;
     return { t: "base", x: spot.x, y: spot.y };
   }
-  return { t: "flick", f: botFlick(s, 1, k++) };
+  if (s.phase === "position") return botArrange(s, k++).find((a) => !illegal(s, a)) ?? { t: "ready" };
+  return botAction(s, 1, k++);
 }
 
 describe("room engine adapter", () => {
   it("replays a log to the same page, and stops where it stops adding up", () => {
     const s = fresh(setup);
-    const log: { seat: Seat; a: Act }[] = [];
-    while (s.phase !== "over" && log.length < 40) {
+    const log: { seat: Seat; a: Payload }[] = [];
+    while (s.phase !== "over" && log.length < 120) {
       const a = botMove(s);
-      log.push({ seat: turn(s)!, a });
-      apply(s, a);
+      const seat = turn(s)!;
+      apply(s, { a });
+      log.push({ seat, a: { a, h: hash(s) } });
     }
-    expect(replay(setup, log).s).toEqual(s);
-    expect(acts(s)).toEqual(log.map((e) => e.a));
-    const bad = [...log.slice(0, 7), { seat: log[7].seat === 0 ? 1 : 0, a: log[7].a } as { seat: Seat; a: Act }];
+    const kinds = new Set(log.map((e) => e.a.a.t));
+    expect(kinds.has("arrange") && kinds.has("ready") && kinds.has("flick")).toBe(true);
+    const r = replay(setup, log);
+    expect(r.s).toEqual(s);
+    expect(r.drift).toBeUndefined();
+    expect(s.actions).toEqual(log.map((e) => e.a.a));
+    const bad = [...log.slice(0, 7), { seat: log[7].seat === 0 ? 1 : 0, a: log[7].a } as { seat: Seat; a: Payload }];
     expect(replay(setup, bad).bad).toBe(7);
-    expect(check(fresh(setup), 0, { t: "flick", f: { soldierId: 0, kind: "shoot", angle: 0, length: 1, bend: 0 } })).toBe("illegal flick");
-    expect(check(fresh(setup), 0, { t: "base", x: NaN, y: 1 })).toBe("bad camp");
-    expect(check(fresh(setup), 0, { t: "nope" })).toBe("unknown action");
+    // a hash that doesn't match our page is flagged, not swallowed
+    const off = log.map((e, i) => (i === 9 ? { ...e, a: { ...e.a, h: "nope" } } : e));
+    expect(replay(setup, off).drift).toBe(9);
+    expect(check(fresh(setup), 0, { a: { t: "flick", soldier: 0, kind: "snipe", angle: 0, length: 1, bend: 0, wob: 0 } })).toBeTruthy();
+    expect(check(fresh(setup), 0, { a: { t: "base", x: NaN, y: 1 } })).toBeTruthy();
+    expect(check(fresh(setup), 0, { a: { t: "nope" } })).toBeTruthy();
+    expect(check(fresh(setup), 0, { t: "base", x: 1, y: 1 })).toBe("unknown action");
+    expect(check(fresh(setup), 1, { a: { t: "ready" } })).toBe("not their turn");
   });
 });
 
@@ -125,7 +139,7 @@ describe("room link", () => {
     for (let i = 0; i < 400 && a.s.phase !== "over"; i++) await turnOf(a, b);
     expect(a.s.phase).toBe("over");
     expect(b.s).toEqual(a.s);
-    expect(a.link.data.log.map((e) => e.a)).toEqual(acts(a.s));
+    expect(a.link.data.log.map((e) => (e.a as Payload).a)).toEqual(a.s.actions);
   });
 
   it("a phone that was away catches up from the log", async () => {

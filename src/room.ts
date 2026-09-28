@@ -6,7 +6,7 @@
 // main.ts applies what arrives (`next()`), and hands over what the player
 // does (`push()`). The engine is only touched through `room-engine.ts`.
 
-import type { Act, Setup } from "./room-engine";
+import type { Setup } from "./room-engine";
 import type { Entry, RoomApi, Seat } from "./room-protocol";
 
 export interface Saved {
@@ -23,7 +23,7 @@ export interface Saved {
   /** How many of `log` are on the page here; the rest are still to be drawn. */
   applied: number;
   /** Our own moves, on the page here, not yet on the server. They follow `log`. */
-  pending: Act[];
+  pending: unknown[];
   updated: number;
   /** For the cover's list. */
   summary?: { turn: number; next: Seat | null; winner?: Seat };
@@ -107,7 +107,7 @@ export class RoomLink {
   }
 
   /** The player made a move here. It's already on the page; send it. */
-  push(a: Act) {
+  push(a: unknown) {
     if (this.data.seat === null) return;
     this.data.pending.push(a);
     this.save();
