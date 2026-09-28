@@ -42,8 +42,7 @@ export const BOIL = {
    * stray would be a wobble. The first level whose `m` the zoom is under.
    */
   bold: [
-    { m: 1.35, amp: 2.6 }, // standing up: the whole page, and watching the ink
-    { m: 1.9, amp: 1.7 }, // on the way down
+    { m: 1.6, amp: 2.6 }, // standing up: the whole page, and watching the ink
     { m: Infinity, amp: 1 }, // leaning in
   ],
   /** A boil tick costing more than this (ms, median of recent ticks) and the device can't afford it: stop. */
@@ -304,17 +303,18 @@ class BoilCanvas {
   }
 
   /**
-   * Queue the sprites still missing at boldness `bold`, made a few a tick,
-   * first drawings first; until one is made its thing is drawn from a stand-in
-   * (the same drawing at another boldness, or the page's drawing).
+   * Queue the sprites still missing, made a few a tick: boldness `bold`'s
+   * first, first drawings first, then the other boldness's, so a camera
+   * going up or down later finds them made. Until one is made its thing is
+   * drawn from a stand-in (the same drawing at another boldness, or the page's drawing).
    */
   private queue(bold: number) {
     this.later = [];
     const asked = new Set<string>();
-    for (let w = 0; w < BOIL.variants; w++) for (const t of this.things) {
+    for (const b of [bold, ...BOIL.bold.keys()]) for (let w = 0; w < BOIL.variants; w++) for (const t of this.things) {
       if (!t.boils && w > 0) continue;
-      const k = spriteKey(t, w, bold);
-      if (!this.sprites.has(k) && !asked.has(k)) { asked.add(k); this.later.push({ t, wob: w, bold }); }
+      const k = spriteKey(t, w, b);
+      if (!this.sprites.has(k) && !asked.has(k)) { asked.add(k); this.later.push({ t, wob: w, bold: b }); }
     }
   }
 
