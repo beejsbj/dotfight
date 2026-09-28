@@ -3,6 +3,12 @@ import { hostname } from "node:os";
 import { readFileSync, accessSync, constants } from "node:fs";
 import { spawn } from "node:child_process";
 
+// Playwright launches Chrome with --disable-dev-shm-usage, which puts its shared
+// memory (every canvas and compositor frame) in $TMPDIR. The guard's $TMPDIR is
+// on the write-capped SSD, so each frame became disk writes and the game ran at
+// ~2 fps. /dev/shm is RAM, and counts against the job's memory cap instead.
+export const browserOpts = { ignoreDefaultArgs: ["--disable-dev-shm-usage"] };
+
 export function needsGuard(host, cgroup) {
   return host.split(".")[0] === "bjslab" && !cgroup.includes("/app-t3tests.slice/");
 }

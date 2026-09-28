@@ -1,4 +1,4 @@
-import { guardBrowserJob } from "./lib/guarded-browser.mjs";
+import { guardBrowserJob, browserOpts } from "./lib/guarded-browser.mjs";
 await guardBrowserJob();
 
 // Screenshots of both rulebooks (/rules and /rules/advanced) and their share cards.
@@ -13,7 +13,7 @@ const base = (process.argv[2] ?? "http://localhost:5173/").replace(/\/$/, "");
 const og = process.argv.includes("--og");
 const out = "docs/shots/rules-page";
 mkdirSync(out, { recursive: true });
-const b = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
+const b = await chromium.launch({ ...browserOpts, executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
 const errors = [];
 try {
 

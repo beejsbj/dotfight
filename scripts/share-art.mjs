@@ -1,4 +1,4 @@
-import { guardBrowserJob } from "./lib/guarded-browser.mjs";
+import { guardBrowserJob, browserOpts } from "./lib/guarded-browser.mjs";
 await guardBrowserJob();
 
 // Renders the share card (og.jpg) and app icons from the game itself.
@@ -9,7 +9,7 @@ import { writeFileSync } from "node:fs";
 import { chromium } from "playwright-core";
 
 const url = process.argv[2] ?? "http://localhost:5173/";
-const b = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
+const b = await chromium.launch({ ...browserOpts, executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
 
 try {
 // --- share card: a real frame from a war in progress, the camera sitting

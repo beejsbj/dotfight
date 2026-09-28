@@ -2,10 +2,11 @@
 // Usage: node scripts/playtest.mjs <scenario> [url] [outdir]
 // Needs the dev server (window.pft is dev-only) and Chrome.
 
+import { browserOpts } from "./guarded-browser.mjs";
 import { chromium } from "playwright-core";
 
 export async function phone({ url = "http://localhost:5191/", w = 390, h = 844, dpr = 3, clear = true, taught = true } = {}) {
-  const browser = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox", ...(process.env.PFT_ARGS ? process.env.PFT_ARGS.split(" ") : [])] });
+  const browser = await chromium.launch({ ...browserOpts, executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox", ...(process.env.PFT_ARGS ? process.env.PFT_ARGS.split(" ") : [])] });
   try {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr, hasTouch: true, isMobile: true });
     const page = await ctx.newPage();
