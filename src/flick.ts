@@ -2,12 +2,13 @@
 // imprecision of a real pen flick: a visible wobble if you hold a charged
 // flick too long, and a small unseen error on release.
 
-import type { ActionKind, Flick } from "./game";
-import { FEEL, RULES } from "./rules";
+import { gauss } from "./geom";
+import type { Flick, Kind } from "./game";
+import { FEEL } from "./rules";
 
 export interface Aim {
   soldierId: number;
-  kind: ActionKind;
+  kind: Kind;
   ax: number; // where the finger went down (screen px)
   ay: number;
   x: number; // where it is now
@@ -42,27 +43,24 @@ export function sigma(power: number) {
   return FEEL.jitterBase + FEEL.jitterPower * power * power;
 }
 
-export function reach(kind: ActionKind, power: number) {
-  const p = Math.pow(power, 0.9);
-  return kind === "shoot"
-    ? RULES.shootMinLen + (RULES.shootMaxLen - RULES.shootMinLen) * p
-    : RULES.moveMinLen + (RULES.moveMaxLen - RULES.moveMinLen) * p;
-}
+/** How shaky the hand is: a multiplier on the release error, and a tremor (radians, 1 sd) added in quadrature. */
+export interface Hand { mult: number; tremor: number }
+export const STEADY: Hand = { mult: 1, tremor: 0 };
 
-function gauss(rand: () => number) {
-  const u = Math.max(1e-9, rand()), v = rand();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
+/** Radians (1 sd) of release error for a flick of this power by this hand. */
+export const aimError = (power: number, h: Hand = STEADY) => Math.hypot(sigma(power) * h.mult, h.tremor);
 
-// Let go of the pen.
-export function release(a: Aim, now: number, rand: () => number = Math.random): Flick | null {
+// Let go of the pen. `lengthOf` turns power into a line length; every bit of
+// randomness is resolved here, so the engine only ever sees a finished flick.
+export function release(a: Aim, now: number, lengthOf: (power: number) => number, h: Hand = STEADY, rand: () => number = Math.random): Flick | null {
   const p = pull(a);
   if (!p.live) return null;
   return {
-    soldierId: a.soldierId,
+    soldier: a.soldierId,
     kind: a.kind,
-    angle: p.angle + wobble(a, now) + gauss(rand) * sigma(p.power),
-    length: reach(a.kind, p.power) * (1 + gauss(rand) * FEEL.lengthJitter),
+    angle: p.angle + wobble(a, now) + gauss(rand) * aimError(p.power, h),
+    length: lengthOf(p.power) * (1 + gauss(rand) * FEEL.lengthJitter * h.mult),
     bend: (rand() * 2 - 1) * FEEL.bendMax * (0.3 + 0.7 * p.power),
+    wob: (rand() * 2 ** 32) >>> 0,
   };
 }

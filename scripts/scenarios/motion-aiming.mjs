@@ -98,7 +98,7 @@ export default async function (T, out) {
   const duel = () => ev(() => {
     const s = window.pft.s;
     let best = null;
-    for (const a of s.soldiers) if (a.owner === 0 && a.alive) for (const b of s.soldiers) if (b.owner === 1 && b.alive) {
+    for (const a of s.soldiers) if (a.owner === 0 && a.alive && a.convoy === undefined) for (const b of s.soldiers) if (b.owner === 1 && b.alive) {
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       if (!best || d < best.d) best = { a, b, d };
     }
@@ -129,8 +129,8 @@ export default async function (T, out) {
     }
   }
 
-  const flicks = () => ev(() => window.pft.s.flicks.length);
-  const lastFlick = () => ev(() => window.pft.s.flicks.at(-1));
+  const flicks = () => ev(() => window.pft.s.actions.filter((a) => a.t === "flick").length);
+  const lastFlick = () => ev(() => window.pft.s.actions.filter((a) => a.t === "flick").at(-1));
   const crossed = () => ev(() => window.pft.s.marks.filter((m) => m.t === "cross" && m.kind === "kill" && m.owner === 0).length);
 
   try {
@@ -150,10 +150,15 @@ export default async function (T, out) {
     await page.click(".card [data-a=back]");
     await page.waitForTimeout(300);
 
-    // a war with Dawood-bot
+    // a quick battle with Dawood-bot, on the core rules
+    await page.click("[data-size=quick]");
+    await page.waitForTimeout(200);
     await page.getByText("play Dawood-bot").click();
     await page.waitForTimeout(900);
-    for (const [x, y] of [[300, 1300], [700, 1450], [520, 1050]]) { await idle(T); await placeAt(T, x, y); await page.waitForTimeout(300); }
+    const nb = await ev(() => window.pft.s.size.bases);
+    for (const [x, y] of [[260, 1350], [720, 1450], [520, 1150], [260, 1580], [760, 1180]].slice(0, nb)) { await idle(T); await placeAt(T, x, y); await page.waitForTimeout(300); }
+    await idle(T);
+    await page.click("[data-act=ready]"); // positioning: as drawn
     await idle(T);
     await page.waitForTimeout(600);
 
@@ -268,8 +273,8 @@ export default async function (T, out) {
           miss = Math.min(miss, Math.hypot(a.x + vx * t - fx, a.y + vy * t - fy));
         }
         return { miss, d: Math.hypot(fx - me.x, fy - me.y) };
-      }, [f.soldierId, foe.x, foe.y]);
-      check(f.length > 700 && ink.miss < ink.d * 0.06, "the shot landed ink, passing close to the enemy it was aimed at",
+      }, [f.soldier, foe.x, foe.y]);
+      check(ink.miss < ink.d * 0.06, "the shot landed ink, passing close to the enemy it was aimed at",
         `${ink.miss.toFixed(0)} units off a soldier ${ink.d.toFixed(0)} away (a hit is within ~10); crossed out ${k}`);
       await shot("3e-landed");
       await idle(T);

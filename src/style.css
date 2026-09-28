@@ -1,11 +1,22 @@
 :root {
+  /* the theme's tokens for the HUD; src/theme.ts sets them (these are Lamplight's) */
   --paper: #f3efe4;
-  --blue: #1b3899;
-  --red: #c01e2a;
+  --blue: #1b3899; /* the first pen, as it reads on the HUD's paper */
+  --red: #c01e2a; /* the second pen */
   --pencil: #3f3c39;
+  --fine: #77726c;
   --grid: rgba(84, 128, 168, 0.28);
+  --lines: repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 17px), repeating-linear-gradient(var(--grid) 0 1px, transparent 1px 17px);
+  --card-margin: rgba(200, 64, 64, .45);
   --tape: #e6d6ad;
   --kraft: #9a6f45;
+  --label: #fbf8f0;
+  --label-ink: #3a5fa8;
+  --title-0: var(--blue);
+  --title-1: var(--red);
+  --desk-rgb: 243, 236, 220;
+  --desk-shadow: rgba(0, 0, 0, .8);
+  --live-blend: multiply;
   --hand: "Caveat", "Patrick Hand", cursive;
   --print: "Patrick Hand", "Caveat", sans-serif;
   --type: "Special Elite", "Courier New", monospace;
@@ -24,7 +35,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* the desk: page-space layers the compositor moves (never repainted for the camera) */
 #world, #world > * { pointer-events: none; }
 #desk, #page-host > canvas { position: fixed; left: 0; top: 0; transform-origin: 0 0; display: block; will-change: transform; }
-#live { position: fixed; display: block; mix-blend-mode: multiply; will-change: transform; }
+#live { position: fixed; display: block; mix-blend-mode: var(--live-blend); will-change: transform; }
 #light, #haze { position: fixed; inset: 0; width: 100vw; height: 100dvh; display: block; }
 #light { mix-blend-mode: multiply; }
 #over { position: fixed; inset: 0; width: 100vw; height: 100dvh; touch-action: none; display: block; }
@@ -60,7 +71,7 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .tag.on[data-p="0"], .tag.won[data-p="0"] { transform: rotate(-1.6deg) translateY(2px) scale(1.04); }
 .tag.on[data-p="1"], .tag.won[data-p="1"] { transform: rotate(1.3deg) translateY(2px) scale(1.04); }
 .tag .name { font-family: var(--hand); font-weight: 700; font-size: clamp(18px, 5.6vw, 25px); padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tag .count { font-family: var(--hand); font-size: 17px; color: #5a534b; margin-top: 1px; white-space: nowrap; }
+.tag .count { font-family: var(--hand); font-size: 17px; color: var(--pencil); opacity: .85; margin-top: 1px; white-space: nowrap; }
 /* the ink left in that player's pen */
 .tag::after {
   content: ""; position: absolute; bottom: 4px; height: 2px; border-radius: 2px;
@@ -71,10 +82,10 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 
 .tab {
   flex: none; width: 46px; height: 46px; display: grid; place-items: center;
-  font-family: var(--hand); font-weight: 700; font-size: 19px; color: rgba(243, 239, 228, .82);
+  font-family: var(--hand); font-weight: 700; font-size: 19px; color: rgba(var(--desk-rgb), .82);
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, rgba(255,240,215,.12), rgba(0,0,0,.25));
-  box-shadow: inset 0 0 0 1.5px rgba(243, 239, 228, .22);
+  background: var(--tab-bg, radial-gradient(circle at 40% 35%, rgba(255,240,215,.12), rgba(0,0,0,.25)));
+  box-shadow: inset 0 0 0 1.5px rgba(var(--desk-rgb), .22);
 }
 #menu-btn span { font-size: 28px; line-height: 1; transform: translateY(-2px); }
 .tab:active { transform: scale(.94); }
@@ -88,8 +99,8 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 #status {
   margin: 0 auto 8px; width: fit-content; max-width: 100%; min-height: 1.15em;
   font-family: var(--hand); font-size: clamp(18px, 5.4vw, 23px); line-height: 1.15;
-  color: rgba(243, 236, 220, calc(.35 + .6 * var(--lamp))); text-align: center; pointer-events: none;
-  text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  color: rgba(var(--desk-rgb), calc(.35 + .6 * var(--lamp))); text-align: center; pointer-events: none;
+  text-shadow: 0 1px 3px var(--desk-shadow);
 }
 
 /* move / shoot: two index cards; the one in hand is lifted into the light
@@ -99,8 +110,8 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   position: relative; height: 66px; padding: 7px 12px 8px 14px; text-align: left;
   display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 2px;
   background:
-    linear-gradient(transparent 13px, rgba(84, 128, 168, .45) 13px 14.5px, transparent 14.5px),
-    radial-gradient(ellipse at 30% 20%, rgba(255,250,240,.6), transparent 70%),
+    linear-gradient(transparent 13px, var(--grid) 13px 14.5px, transparent 14.5px),
+    radial-gradient(ellipse at 30% 20%, var(--card-glow, rgba(255,250,240,.6)), transparent 70%),
     var(--paper);
   border-radius: 2px;
   box-shadow: 0 1px 0 rgba(0,0,0,.25), 0 6px 14px rgba(0,0,0,.45);
@@ -110,8 +121,8 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   transition: transform .22s cubic-bezier(.2,.9,.3,1.3), opacity .2s;
 }
 #kind button:nth-child(2) { transform: translateY(7px) rotate(.9deg); }
-#kind button b { position: relative; font-family: var(--hand); font-weight: 700; font-size: 32px; line-height: .95; color: #807a73; padding: 0 4px; transition: color .2s; }
-#kind button i { font-family: var(--hand); font-style: normal; font-size: 15px; color: #6d6863; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+#kind button b { position: relative; font-family: var(--hand); font-weight: 700; font-size: 32px; line-height: .95; color: var(--fine); padding: 0 4px; transition: color .2s; }
+#kind button i { font-family: var(--hand); font-style: normal; font-size: 15px; color: var(--fine); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 #kind button.on { opacity: 1; transform: translateY(-3px) rotate(-1.4deg); }
 #kind button.on:nth-child(2) { transform: translateY(-3px) rotate(1.2deg); }
 #kind button.on b { color: var(--ink, var(--blue)); }
@@ -121,6 +132,25 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   transform: rotate(-4deg); opacity: .85;
 }
 #kind.off { opacity: .3; pointer-events: none; }
+#kind button.barred { opacity: .25; }
+#kind button.barred b { text-decoration: line-through; text-decoration-thickness: 2px; }
+
+/* send, stop, done: pencilled on the desk above the cards */
+#acts { display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; margin: -2px auto 8px; min-height: 0; }
+#acts:empty { display: none; }
+#acts button, #acts span {
+  font-family: var(--hand); font-size: 23px; line-height: 1.1; color: rgba(var(--desk-rgb), calc(.45 + .5 * var(--lamp)));
+  text-shadow: 0 1px 3px var(--desk-shadow); padding: 2px 6px;
+}
+#acts button { text-decoration: underline; text-decoration-color: rgba(var(--desk-rgb), .35); text-underline-offset: 4px; }
+#acts button small { font-size: 16px; opacity: .7; }
+#acts button.go { color: rgb(var(--desk-rgb)); text-decoration: none; border: 2px solid rgba(var(--desk-rgb), .55); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; padding: 3px 14px; }
+#acts button[data-n] { min-width: 38px; text-decoration: none; border: 2px solid rgba(var(--desk-rgb), .45); border-radius: 50%; }
+#acts button.x { opacity: .7; }
+#acts button:active { transform: translateY(1px) scale(.97); }
+
+.tag.stand .count { color: var(--red); font-weight: 700; }
+.tag[data-p="0"].stand .count { color: var(--blue); }
 #bottom.view #kind button { opacity: 1; }
 #bottom.view #kind button b { color: var(--pencil); }
 
@@ -158,25 +188,24 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 #cover.open .book { animation: bookOpen .7s cubic-bezier(.5,0,.6,1) both; }
 
 .label {
-  position: relative; background: #fbf8f0; padding: 14px 16px 10px; border-radius: 10px;
-  box-shadow: inset 0 0 0 3px #fbf8f0, inset 0 0 0 4.5px #3a5fa8, inset 0 0 0 7px #fbf8f0, inset 0 0 0 8px #3a5fa8, 0 2px 3px rgba(0,0,0,.25);
+  position: relative; background: var(--label); padding: 14px 16px 10px; border-radius: 10px;
+  box-shadow: inset 0 0 0 3px var(--label), inset 0 0 0 4.5px var(--label-ink), inset 0 0 0 7px var(--label), inset 0 0 0 8px var(--label-ink), 0 2px 3px rgba(0,0,0,.25);
   transform: rotate(1deg);
 }
-.label .school { margin: 0; font-family: var(--type); font-size: 11px; letter-spacing: .12em; color: #3a5fa8; text-align: center; }
-.label h1 { margin: 2px 0 8px; font-family: var(--hand); font-weight: 700; font-size: 46px; line-height: .95; color: var(--blue); text-align: center; transform: rotate(-2deg); }
-.label h1 em { font-style: normal; color: var(--red); }
-.label .field { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 2px 0 0; border-bottom: 1.5px solid rgba(58, 95, 168, .5); font-family: var(--type); font-size: 13px; color: #3a5fa8; }
+.label .school { margin: 0; font-family: var(--type); font-size: 11px; letter-spacing: .12em; color: var(--label-ink); text-align: center; }
+.label h1 { margin: 2px 0 8px; font-family: var(--hand); font-weight: 700; font-size: 46px; line-height: .95; color: var(--title-0); text-align: center; transform: rotate(-2deg); }
+.label h1 em { font-style: normal; color: var(--title-1); }
+.label .field { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 2px 0 0; border-bottom: 1.5px solid color-mix(in srgb, var(--label-ink) 50%, transparent); font-family: var(--type); font-size: 13px; color: var(--label-ink); }
 .label .field span { width: 64px; flex: none; }
 .label .field b { font-family: var(--hand); font-weight: 700; font-size: 25px; line-height: 1.05; }
-.hand.blue { color: var(--blue); }
+.label .hand.blue { color: var(--title-0); }
 
 /* the menu: a torn-out slip of squared paper tucked into the cover */
 .menu {
   position: relative; margin: 18px -4px 2px 8px; padding: 14px 14px 12px 16px;
   background:
-    linear-gradient(90deg, transparent 22px, rgba(200, 64, 64, .45) 22px 23.5px, transparent 23.5px),
-    repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 16px),
-    repeating-linear-gradient(var(--grid) 0 1px, transparent 1px 16px),
+    linear-gradient(90deg, transparent 22px, var(--card-margin) 22px 23.5px, transparent 23.5px),
+    var(--lines),
     var(--paper);
   transform: rotate(1.6deg);
   box-shadow: 0 6px 14px rgba(0,0,0,.35), 0 1px 0 rgba(0,0,0,.2);
@@ -189,10 +218,21 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .menu .ink.red { color: var(--red); }
 .menu .ink:active { transform: translateX(3px); }
 .menu .levels { display: flex; gap: 4px; margin: -2px 0 8px 18px; }
-.menu .levels button { font-family: var(--hand); font-size: 21px; padding: 2px 8px; color: #6d6863; border-radius: 50%; }
+.menu .levels button { font-family: var(--hand); font-size: 21px; padding: 2px 8px; color: var(--fine); border-radius: 50%; }
 .menu .levels button.on { color: var(--red); box-shadow: inset 0 0 0 2px var(--red); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
+.menu .head { font-family: var(--hand); font-size: 19px; color: var(--pencil); margin: 6px 0 0 18px; letter-spacing: .02em; }
+.menu .sizes { display: flex; gap: 2px; margin: 0 0 4px 12px; }
+.menu .sizes button { font-family: var(--hand); text-align: center; padding: 2px 8px 3px; color: var(--fine); border-radius: 50%; }
+.menu .sizes button b { display: block; font-size: 23px; font-weight: 700; line-height: 1; }
+.menu .sizes button small { display: block; font-size: 15px; line-height: 1; }
+.menu .sizes button.on { color: var(--blue); box-shadow: inset 0 0 0 2px var(--blue); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
+.menu .custom { display: flex; gap: 16px; margin: 0 0 6px 20px; font-family: var(--hand); }
+.menu .custom .step { display: inline-flex; align-items: baseline; gap: 4px; }
+.menu .custom .step b { font-size: 24px; min-width: 18px; text-align: center; color: var(--blue); }
+.menu .custom .step small { font-size: 16px; color: var(--pencil); }
+.menu .custom .step button { font-size: 24px; width: 28px; color: var(--pencil); }
 .menu .row { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 8px 0 0 18px; }
-.menu .pencil { font-family: var(--hand); font-size: 22px; color: var(--pencil); text-decoration: underline; text-decoration-color: rgba(63,60,57,.35); text-underline-offset: 3px; }
+.menu .pencil { font-family: var(--hand); font-size: 22px; color: var(--pencil); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--pencil) 35%, transparent); text-underline-offset: 3px; }
 .card a.act { text-decoration: none; }
 
 /* --- cards: a page torn from the same book ------------------------------------ */
@@ -206,9 +246,8 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .card {
   width: min(380px, 100%); max-height: 100%; overflow: auto; position: relative;
   background:
-    linear-gradient(90deg, transparent 30px, rgba(200, 64, 64, .45) 30px 31.5px, transparent 31.5px),
-    repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px 18px),
-    repeating-linear-gradient(var(--grid) 0 1px, transparent 1px 18px),
+    linear-gradient(90deg, transparent 30px, var(--card-margin) 30px 31.5px, transparent 31.5px),
+    var(--lines),
     var(--paper);
   padding: 22px 20px 20px 44px;
   box-shadow: 0 14px 36px rgba(0,0,0,.6);
@@ -222,21 +261,30 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .card li { margin-bottom: 6px; }
 .card .sub { font-family: var(--hand); font-size: 23px; color: var(--pencil); margin-bottom: 6px; }
 .card .stats { font-family: var(--hand); font-size: 20px; margin-bottom: 12px; }
-.card .fine { font-size: 14px; color: #77726c; margin-top: 10px; }
+.card .fine { font-size: 14px; color: var(--fine); margin-top: 10px; }
 .card .act { display: block; font-family: var(--hand); font-weight: 700; font-size: 29px; line-height: 1.25; color: var(--blue); text-align: left; padding: 2px 0; }
 .card .act::before { content: "→ "; font-weight: 400; opacity: .6; }
 .card .act.red { color: var(--red); }
 .card .act:active { transform: translateX(3px); }
 .card .toggle { display: block; width: 100%; text-align: left; padding: 8px 0 8px 34px; position: relative; }
 .card .toggle b { display: block; font-family: var(--hand); font-size: 27px; line-height: 1; color: var(--pencil); }
-.card .toggle i { font-style: normal; font-size: 14px; color: #77726c; }
+.card .toggle i { font-style: normal; font-size: 14px; color: var(--fine); }
 .card .toggle::before { content: ""; position: absolute; left: 2px; top: 11px; width: 20px; height: 20px; border: 2px solid var(--pencil); border-radius: 3px 5px 3px 4px; }
 .card .toggle.on b { color: var(--blue); }
 .card .toggle.on::after { content: "✓"; position: absolute; left: 3px; top: 0; font-family: var(--hand); font-weight: 700; font-size: 34px; color: var(--blue); }
-.card .sub.motion { margin: 14px 0 0; }
-.card .sub.motion i { font-style: normal; font-size: 18px; color: #77726c; }
+.card h3 { font-family: var(--hand); font-weight: 700; font-size: 30px; line-height: 1; margin: 14px 0 0; color: var(--pencil); }
+/* the paper picker: a corner of each paper, cut out and laid on the card */
+.card .papers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 8px; margin: 4px 0 8px; }
+.card .paper { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.card .paper canvas { width: 100%; max-width: 66px; height: auto; display: block; box-shadow: 0 2px 5px rgba(0,0,0,.35); transform: rotate(-2deg); transition: transform .2s; }
+.card .paper:nth-child(2n) canvas { transform: rotate(1.6deg); }
+.card .paper span { font-family: var(--hand); font-size: 16px; line-height: 1; text-align: center; color: var(--fine); }
+.card .paper.here span { color: var(--pencil); }
+.card .paper.on canvas { transform: rotate(-1deg) translateY(-3px) scale(1.06); outline: 2.4px solid var(--blue); outline-offset: 3px; border-radius: 1px; }
+.card .paper.on span { color: var(--blue); font-weight: 700; }
+.card .fine.motion { margin: 2px 0 2px; }
 .card .sens { display: flex; gap: 4px; margin: -4px 0 4px 30px; }
-.card .sens button { font-family: var(--hand); font-size: 19px; padding: 1px 8px; color: #6d6863; border-radius: 50%; }
+.card .sens button { font-family: var(--hand); font-size: 19px; padding: 1px 8px; color: var(--fine); border-radius: 50%; }
 .card .sens button.on { color: var(--blue); box-shadow: inset 0 0 0 2px var(--blue); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
 .card .toggle.more::before { border-style: dashed; }
 .card.handoff { text-align: center; padding: 34px 20px 34px 44px; }

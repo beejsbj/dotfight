@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { botBase, botFlick } from "./bot";
+import { botAction, botArrange, botBase } from "./bot";
 import { pull, release, wobble, type Aim as Pull } from "./flick";
-import { alive, canPlaceBase, newGame, rng, type Flick } from "./game";
+import { act, canPlaceBase, hand as hand0, illegal, newGame, reachOf, rng, type Action, type Flick } from "./game";
 import { GUN, GunHold, gunPull, nudge, NUDGE, pose, Steadiness, wrap, type GunEvent, type Motion, type Orientation } from "./motion";
-import { apply, file, unfile } from "./record";
-import { FEEL } from "./rules";
+import { file, unfile } from "./record";
+import { FEEL, SIZES } from "./rules";
 import botSrc from "./bot.ts?raw";
 import gameSrc from "./game.ts?raw";
 import recordSrc from "./record.ts?raw";
@@ -135,7 +135,7 @@ describe("level 2: hand steadiness", () => {
   });
 
   it("scales the flick's real wobble, not just the picture", () => {
-    const a: Pull = { soldierId: 0, kind: "shoot", ax: 0, ay: 0, x: 0, y: FEEL.maxPullPx, t0: 0, charged: true };
+    const a: Pull = { soldierId: 0, kind: "snipe", ax: 0, ay: 0, x: 0, y: FEEL.maxPullPx, t0: 0, charged: true };
     // held long enough that the wobble is fully grown; caught near a swing, not a zero crossing
     let t = 2500;
     for (let u = 2500; u < 3500; u += 10) if (Math.abs(wobble(a, u)) > Math.abs(wobble(a, t))) t = u;
@@ -143,7 +143,8 @@ describe("level 2: hand steadiness", () => {
     expect(Math.abs(base)).toBeGreaterThan(0.01);
     expect(wobble({ ...a, steady: 0.3 }, t)).toBeCloseTo(base * 0.3, 9);
     // and the released flick carries it: same seed, only the hand differs
-    const f1 = release({ ...a, steady: 0.3 }, t, rng(9))!, f2 = release({ ...a, steady: 2.5 }, t, rng(9))!;
+    const len = () => 1000;
+    const f1 = release({ ...a, steady: 0.3 }, t, len, undefined, rng(9))!, f2 = release({ ...a, steady: 2.5 }, t, len, undefined, rng(9))!;
     expect(f2.angle - f1.angle).toBeCloseTo(base * 2.2, 9);
   });
 });
@@ -233,47 +234,46 @@ describe("level 3: gun hold", () => {
 
 describe("determinism: the engine never reads a sensor", () => {
   it("a war fought with sensor-shaped flicks replays from its record to the same page", () => {
-    const s = newGame(21, { no: 1, date: "26 Sep 2026" });
+    const s = newGame(SIZES.quick, 21, { no: 1, date: "26 Sep 2026" });
     let k = 3;
-    while (s.phase === "setup") {
-      const spot = botBase(s, (x, y) => !canPlaceBase(s, x, y), k++)!;
-      apply(s, { t: "base", x: spot.x, y: spot.y });
-    }
+    while (s.phase === "setup") { const p = botBase(s, (x, y) => !canPlaceBase(s, x, y), k++)!; act(s, { t: "base", ...p }); }
+    while (s.phase === "position") for (const a of botArrange(s, k++)) { if (!illegal(s, a)) act(s, a); if (a.t === "ready") break; }
     const hand = rng(77); // the release error, as Math.random would give it in the game
     const levels = ["nudge", "steady", "gun"] as const;
-    let turn = 0;
+    let phoned = 0, fell = 0;
     while (s.phase === "play" && s.turn < 60) {
-      if (s.current === 1) { apply(s, { t: "flick", f: botFlick(s, 1, k++) }); continue; }
-      // player 0 aims the way the bot would, then the phone gets its say
-      const plan = botFlick(s, 2, k++);
-      const lvl = levels[turn++ % 3];
+      // player 0 plans the way the sharp bot would; when it's a flick, the phone gets its say
+      const plan = botAction(s, s.current === 0 ? 2 : 1, k++);
+      if (s.current === 1 || plan.t !== "flick") { act(s, plan); continue; }
+      const lvl = levels[phoned++ % 3];
+      const lengthOf = (pw: number) => reachOf(s.rules, pw), h = hand0(s, plan.soldier, plan.kind);
       let f: Flick | null;
       if (lvl === "gun") {
         const gun = new GunHold();
         const aimAt: Orientation = { alpha: -deg(wrap(plan.angle + Math.PI / 2)), beta: 80, gamma: 0 };
         const r = drive(gun, [[{ alpha: 0, beta: 80, gamma: 0 }, 300], [aimAt, 500], [aimAt, 400]], { alpha: 0, beta: 10, gamma: 0 });
-        const e = snap(gun, r.at, r.t, 300 + (turn % 5) * 120) as Extract<GunEvent, { t: "fire" }>;
-        f = release(gunPull(plan.soldierId, plan.kind, -Math.PI / 2 + e.delta, e.power, 0), 0, hand);
+        const e = snap(gun, r.at, r.t, 300 + (phoned % 5) * 120) as Extract<GunEvent, { t: "fire" }>;
+        f = release(gunPull(plan.soldier, plan.kind, -Math.PI / 2 + e.delta, e.power, 0), 0, lengthOf, h, hand);
       } else {
-        const d = 30 + ((turn * 37) % 100);
-        const a: Pull = { soldierId: plan.soldierId, kind: plan.kind, ax: 0, ay: 0, x: 0, y: 0, t0: 0, charged: true };
+        const d = 30 + ((phoned * 37) % 100);
+        const a: Pull = { soldierId: plan.soldier, kind: plan.kind, ax: 0, ay: 0, x: 0, y: 0, t0: 0, charged: true };
         let ang = plan.angle;
-        if (lvl === "nudge") ang += nudge(pose({ alpha: 0, beta: 40, gamma: 0 }), pose({ alpha: 0, beta: 40, gamma: (turn % 7) * 4 - 12 })).angle;
-        else { const st = new Steadiness(); for (let t = 0; t < 800; t += 16) st.feed({ rate: { alpha: turn % 30, beta: 1, gamma: -1 } }, t); a.steady = st.factor(); }
+        if (lvl === "nudge") ang += nudge(pose({ alpha: 0, beta: 40, gamma: 0 }), pose({ alpha: 0, beta: 40, gamma: (phoned % 7) * 4 - 12 })).angle;
+        else { const st = new Steadiness(); for (let t = 0; t < 800; t += 16) st.feed({ rate: { alpha: phoned % 30, beta: 1, gamma: -1 } }, t); a.steady = st.factor(); }
         a.x = -Math.cos(ang) * d;
         a.y = -Math.sin(ang) * d;
-        f = release(a, 2500, hand);
+        f = release(a, 2500, lengthOf, h, hand);
       }
-      apply(s, { t: "flick", f: f ?? plan });
+      const act1: Action = f ? { t: "flick", ...f } : plan;
+      if (act1 === plan || illegal(s, act1)) { fell++; act(s, plan); } else act(s, act1);
     }
-    expect(turn).toBeGreaterThan(6);
-    expect(s.flicks.length).toBeGreaterThan(12);
-    expect(s.marks.filter((m) => m.t === "cross").length).toBeGreaterThan(3); // the shots landed ink that mattered
+    expect(phoned).toBeGreaterThan(6);
+    expect(fell).toBe(0); // every one of them was the phone's flick, not the plan's
+    expect(s.marks.filter((m) => m.t === "cross" && m.kind === "kill").length).toBeGreaterThan(3); // the shots landed ink that mattered
     // the record is only engine inputs: no sensor reading rides along
-    for (const f of s.flicks) expect(Object.keys(f).sort()).toEqual(["angle", "bend", "kind", "length", "soldierId"]);
+    for (const a of s.actions) if (a.t === "flick") expect(Object.keys(a).sort()).toEqual(["angle", "bend", "kind", "length", "soldier", "t", "wob"]);
     const again = unfile(JSON.parse(JSON.stringify(file(s, { kind: "bot", level: 1 }))));
     expect(again).toEqual(s);
-    expect(alive(again, 0).length + alive(again, 1).length).toBe(alive(s, 0).length + alive(s, 1).length);
   });
 
   it("keeps sensors out of the engine and the record", () => {
@@ -284,7 +284,7 @@ describe("determinism: the engine never reads a sensor", () => {
 // Keep the pull helper honest: a gun shot is a pull like any other.
 describe("gunPull", () => {
   it("is the pull-back that points that way with that power", () => {
-    const p = pull(gunPull(3, "move", 0.7, 0.6, 100));
+    const p = pull(gunPull(3, "lunge", 0.7, 0.6, 100));
     expect(p.angle).toBeCloseTo(0.7, 9);
     expect(p.power).toBeCloseTo(0.6, 9);
     expect(p.live).toBe(true);

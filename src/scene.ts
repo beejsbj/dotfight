@@ -9,14 +9,16 @@
 // pen lives on the untilted overlay. A camera move therefore costs a few
 // style writes and a couple of hundred pixels of gradient, not a repaint.
 
-import type { GameState, Pt } from "./game";
-import { INK, handText, pencilArrow, pencilLine, pencilLoop } from "./ink";
+import type { Pt } from "./game";
+import type { AnyState as GameState } from "./record";
+import { INK, handText, lead, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
 import { cssMatrix, layerMatrix, project, stageCss, toLocal, type View } from "./projection";
 import { RULES } from "./rules";
 import { DESK, deskTexture } from "./textures";
+import { theme } from "./theme";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -26,7 +28,7 @@ export interface Aim {
   power: number;
   spread: number;
   reach: number;
-  kind: "shoot" | "move";
+  kind: "snipe" | "lunge";
   /** Pen falcon: a sight at the end of the guide, drawn closed as the hand holds still (0..1). */
   sight?: number;
   /** How far out the sight sits (page units), kept on screen. */
@@ -53,7 +55,19 @@ export interface Frame {
   mover?: { id: number; at: Pt };
   pen?: PenPose;
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] };
-  teach?: { kind: "aim" | "place"; at: Pt; p: number; rot: number };
+  /** Convoys walking (the time-lapse between turns): each soldier from where he stood to where he'll stand. */
+  walkers?: { id: number; from: Pt; to: Pt; p: number }[];
+  /** Positioning: how far each of your bases' soldiers may stand, in pencil. */
+  zones?: { x: number; y: number; r: number }[];
+  /** Positioning: the soldier under your finger. */
+  drag?: { id: number; at: Pt; ok: boolean };
+  /** A send being drawn, base to base, in pencil. */
+  sendArrow?: { from: Pt; to: Pt; ok: boolean };
+  /** Sends ordered this turn: the road in pencil, the ones going ringed. */
+  orders?: { a: Pt; b: Pt; at: Pt[] }[];
+  /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
+  danger?: { x: number; y: number; r: number }[];
+  teach?: { kind: "aim" | "place" | "arrange"; at: Pt; p: number; rot: number; note?: string };
   sig?: Signature;
 }
 
@@ -89,17 +103,17 @@ class Box {
 let lastCss = { desk: "", page: "", live: "" };
 let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
 let airKey = "";
-let deskInit = false;
+let deskTheme = ""; // the theme the desk canvas was painted for
 
 /** Put the page-space layers where the camera says. Style writes only. */
 function place(els: Els, f: Frame) {
   const v = f.view;
-  if (!deskInit) {
+  if (deskTheme !== theme.id) {
     const d = deskTexture(RULES.pageW, RULES.pageH);
     els.desk.width = d.width; els.desk.height = d.height;
     els.desk.getContext("2d")!.drawImage(d, 0, 0);
     els.desk.style.width = `${d.width}px`; els.desk.style.height = `${d.height}px`;
-    deskInit = true;
+    deskTheme = theme.id;
   }
   const dm = cssMatrix(layerMatrix(v, DESK.S, -DESK.pad, -DESK.pad));
   if (dm !== lastCss.desk) { els.desk.style.transform = dm; lastCss.desk = dm; }
@@ -143,13 +157,26 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     if (page.has(k) || !ink.live.has(k)) return;
     drawMark(g, m, ink.p(k));
     if (m.t === "stroke") for (const p of m.pts) box.add(p.x, p.y, 8);
+    else if (m.t === "walk") { box.add(m.a.x, m.a.y, 10); box.add(m.b.x, m.b.y, 10); }
+    else if (m.t === "stand") for (const p of m.at) box.add(p.x, p.y, 24);
     else box.add(m.x, m.y, 20);
   });
+  const walking = new Set(f.walkers?.map((w) => w.id));
   for (const x of s.soldiers) {
     const jot = `d${x.id}`;
-    if (ink.live.has(jot)) { drawDot(g, x, 1, ink.p(jot)); box.add(x.x, x.y, 12); }
+    if (ink.live.has(jot) && !walking.has(x.id) && f.drag?.id !== x.id) { drawDot(g, x, 1, ink.p(jot)); box.add(x.x, x.y, 12); }
   }
   if (f.mover) { drawDot(g, s.soldiers[f.mover.id], 1, 1, f.mover.at); box.add(f.mover.at.x, f.mover.at.y, 12); }
+  for (const w of f.walkers ?? []) {
+    if (w.p <= 0) continue; // held: still standing where the page shows him
+    const e = w.p * w.p * (3 - 2 * w.p);
+    const at = { x: w.from.x + (w.to.x - w.from.x) * e, y: w.from.y + (w.to.y - w.from.y) * e };
+    // a little bob as he marches
+    at.y -= Math.abs(Math.sin(w.p * Math.PI * 7)) * 2.5 * (1 - w.p);
+    drawDot(g, s.soldiers[w.id], 1, 1, at);
+    box.add(at.x, at.y, 12);
+  }
+  if (f.drag) { drawDot(g, s.soldiers[f.drag.id], f.drag.ok ? 1 : 0.45, 1, f.drag.at); box.add(f.drag.at.x, f.drag.at.y, 14); }
   if (f.sig && !page.isSigned && ink.live.has("sign")) {
     drawSignature(g, f.sig, ink.p("sign"));
     box.add(0, RULES.pageH - 110); box.add(RULES.pageW, RULES.pageH);
@@ -188,7 +215,7 @@ function renderAir(els: Els, f: Frame) {
   const { view: v, lamp, lean } = f;
   const age = ageOf(f.s);
   const tip = f.pen ?? (f.selected !== undefined ? f.s.soldiers[f.selected] : undefined);
-  const key = [v.x, v.y, v.z, v.rot, v.tilt, v.px, v.py, lamp.on, lamp.dawn, age, lean, tip?.x, tip?.y].map((n) => (typeof n === "number" ? n.toFixed(3) : n)).join("|");
+  const key = [theme.id, v.x, v.y, v.z, v.rot, v.tilt, v.px, v.py, lamp.on, lamp.dawn, age, lean, tip?.x, tip?.y].map((n) => (typeof n === "number" ? n.toFixed(3) : n)).join("|");
   if (key === airKey) return;
   airKey = key;
   stageStats.air++;
@@ -204,6 +231,28 @@ function renderAir(els: Els, f: Frame) {
 function drawGuides(g: Ctx, f: Frame, box: Box) {
   const { s, view: v } = f;
   const px = 1 / v.z;
+  for (const z of f.zones ?? []) {
+    // dashed pencil: how far out his men may stand
+    const n = 36;
+    for (let i = 0; i < n; i += 2) {
+      const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+      pencilLine(g, { x: z.x + Math.cos(a0) * z.r, y: z.y + Math.sin(a0) * z.r }, { x: z.x + Math.cos(a1) * z.r, y: z.y + Math.sin(a1) * z.r }, Math.max(1.4, px), 300 + i, false);
+    }
+    box.add(z.x, z.y, z.r + 6);
+  }
+  for (const d of f.danger ?? []) { pencilHatchRing(g, d.x, d.y, d.r, px); box.add(d.x, d.y, d.r + 6); }
+  for (const o of f.orders ?? []) {
+    pencilArrow(g, o.a, o.b, 0.08, 611, Math.max(1.8, px * 1.2), 1, 0.85);
+    for (const q of o.at) pencilLoop(g, q.x, q.y, RULES.soldierRadius + 7, 71 + Math.round(q.x), Math.max(1.4, px), 1, 0.8);
+    box.add(o.a.x, o.a.y, 30); box.add(o.b.x, o.b.y, 30);
+    for (const q of o.at) box.add(q.x, q.y, 20);
+  }
+  if (f.sendArrow) {
+    g.globalAlpha = f.sendArrow.ok ? 1 : 0.45;
+    pencilArrow(g, f.sendArrow.from, f.sendArrow.to, 0.08, 612, Math.max(2, px * 1.4), 1, 0.9);
+    g.globalAlpha = 1;
+    box.add(f.sendArrow.from.x, f.sendArrow.from.y, 30); box.add(f.sendArrow.to.x, f.sendArrow.to.y, 30);
+  }
   if (f.keepOut) {
     for (const k of f.keepOut) { pencilHatchRing(g, k.x, k.y, k.r, px); box.add(k.x, k.y, k.r + 6); }
   }
@@ -247,7 +296,7 @@ function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
 
 const aimShow = (a: Aim) =>
   a.sight !== undefined ? a.sightAt ?? 560 // the pen falcon's sight: out past the standing pen, where you can see it
-  : a.kind === "move" ? a.reach * 0.55 : Math.min(a.reach, 110 + a.reach * 0.2);
+  : a.kind === "lunge" ? Math.min(a.reach * 0.55, 110 + a.reach * 0.3) : Math.min(a.reach, 110 + a.reach * 0.2);
 
 function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   const me = s.soldiers[a.soldierId];
@@ -256,7 +305,7 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   const show = aimShow(a);
   if (a.power <= 0) return;
   // the cone of doubt, faint graphite
-  g.fillStyle = "rgba(60,58,56,0.09)";
+  g.fillStyle = lead(theme).cone;
   g.beginPath();
   g.moveTo(me.x, me.y);
   g.arc(me.x, me.y, show, a.angle - a.spread, a.angle + a.spread);
@@ -291,10 +340,13 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   g.save();
   g.translate(at.x, at.y);
   g.rotate(-t.rot);
-  const pencil = "rgba(52, 50, 48, 0.85)";
+  const pencil = lead(theme).note;
   if (t.kind === "place") {
     handText(g, "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
-    handText(g, "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
+    handText(g, t.note ?? "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
+  } else if (t.kind === "arrange") {
+    handText(g, "drag your men where you want them", 0, 0, 40, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
+    handText(g, "(in camp, or just outside the wall)", 0, 42, 32, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
   } else {
     // under the soldier, toward you: the way your thumb pulls
     pencilArrow(g, { x: 6, y: 34 }, { x: 14, y: 128 }, 0.12, 77, 2.4, Math.min(1, p * 1.6), 0.9);
@@ -329,9 +381,10 @@ export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: numbe
     g.rect(pb.x0, pb.y0, pb.x1 - pb.x0, pb.y1 - pb.y0);
     g.clip();
     g.globalCompositeOperation = "source-atop";
-    g.fillStyle = `rgba(22, 15, 10, ${Math.min(0.85, (1 - lit) * 0.9)})`;
+    const { shade, warm } = theme.light;
+    g.fillStyle = `rgba(${shade[0]}, ${shade[1]}, ${shade[2]}, ${Math.min(0.85, (1 - lit) * 0.9)})`;
     g.fillRect(0, 0, W, H);
-    g.fillStyle = `rgba(255, 196, 120, ${0.1 * f.lamp.on * (1 - f.lamp.dawn)})`;
+    g.fillStyle = `rgba(${warm[0]}, ${warm[1]}, ${warm[2]}, ${warm[3] * f.lamp.on * (1 - f.lamp.dawn)})`;
     g.fillRect(0, 0, W, H);
     g.restore();
   }
@@ -356,7 +409,7 @@ function guideThroughBarrel(g: Ctx, f: Frame) {
   const me = f.s.soldiers[a.soldierId];
   const show = aimShow(a);
   const dx = Math.cos(a.angle), dy = Math.sin(a.angle);
-  g.strokeStyle = "rgba(58, 56, 54, 0.5)";
+  g.strokeStyle = lead(theme).guide;
   g.lineCap = "round";
   const step = 14;
   for (let d = 8; d < show; d += step * 1.8) {
@@ -372,7 +425,7 @@ function guideThroughBarrel(g: Ctx, f: Frame) {
 function sheenStrokes(f: Frame) {
   const { s, lamp } = f;
   const out: { i: number; wet: number }[] = [];
-  if (lamp.on <= 0 || f.lean > 0.3) return out;
+  if (lamp.on <= 0 || f.lean > 0.3 || theme.ink.gloss <= 0) return out;
   const last = s.phase === "over" ? s.turn : s.turn - 1;
   for (let i = s.marks.length - 1; i >= 0; i--) {
     const m = s.marks[i];
@@ -401,8 +454,9 @@ function drawSheen(g: Ctx, f: Frame, list: { i: number; wet: number }[], box: Bo
       if (j) g.lineTo(q.x, q.y); else g.moveTo(q.x, q.y);
       box.add(q.x, q.y, 3);
     }
-    g.strokeStyle = `rgba(255, 246, 225, ${0.45 * wet * lightAt(lamp, mid.x, mid.y)})`;
-    g.lineWidth = Math.max(0.6, RULES.inkWidth * 0.3 * v.z);
+    const sh = theme.light.sheen;
+    g.strokeStyle = `rgba(${sh[0]}, ${sh[1]}, ${sh[2]}, ${Math.min(0.9, 0.45 * theme.ink.gloss * wet * lightAt(lamp, mid.x, mid.y))})`;
+    g.lineWidth = Math.max(0.6, RULES.inkWidth * theme.ink.width * 0.3 * v.z);
     g.stroke();
   }
 }

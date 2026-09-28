@@ -120,7 +120,7 @@ export function settingsHtml(row: Row) {
   }
   const names = ["soft", "normal", "keen"];
   const sensRow = (l: Level) => `<p class="sens">${SENS.map((v, i) => `<button data-sens="${l}:${v}" class="${sens[l] === v ? "on" : ""}">${names[i]}</button>`).join("")}</p>`;
-  return `<p class="sub motion">aim with the phone <i>(an experiment)</i></p>
+  return `<h3>Aim with the phone</h3><p class="fine motion">an experiment: each one is off until you switch it on</p>
     ${LEVELS.map((l) => row(`m:${l}`, on[l], ...LABEL[l]) + (on[l] ? sensRow(l) : "")).join("")}
     ${denied ? `<p class="fine">The phone said no to its motion sensors. Reload the page and switch a level on to be asked again.</p>` : ""}`;
 }

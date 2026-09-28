@@ -18,7 +18,7 @@ export interface Orientation { alpha: number; beta: number; gamma: number }
 export interface Motion { rate?: { alpha: number; beta: number; gamma: number } | null; accel?: { x: number; y: number; z: number } | null }
 
 import type { Aim as Pull } from "./flick";
-import type { ActionKind } from "./game";
+import type { Kind } from "./game";
 import { FEEL } from "./rules";
 
 const RAD = Math.PI / 180;
@@ -243,7 +243,7 @@ export function tip<P extends { ax: number; ay: number; az: number }>(p: P, towa
  * `power`. It goes through `release()` like a thumb's pull, so a shot from the
  * phone gets the same hidden release error, and is recorded the same way.
  */
-export function gunPull(soldierId: number, kind: ActionKind, angle: number, power: number, now: number, steady = 1): Pull {
+export function gunPull(soldierId: number, kind: Kind, angle: number, power: number, now: number, steady = 1): Pull {
   const d = FEEL.minPullPx + clamp(power, 0, 1) * (FEEL.maxPullPx - FEEL.minPullPx);
   return { soldierId, kind, ax: 0, ay: 0, x: -Math.cos(angle) * d, y: -Math.sin(angle) * d, t0: now, charged: true, steady };
 }

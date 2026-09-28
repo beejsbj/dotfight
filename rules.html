@@ -69,7 +69,7 @@
 
         <section id="origin" class="origin">
           <p>Dawood made this game up at school. He and Burooj played it in grades 5 and 6, with ballpoint pens, on the back pages of their exercise books. Nobody wrote the rules down. Twenty years on, here they are: remembered, argued over, and written out properly.</p>
-          <p class="aside">This book is Dawood's game with its core rules: everything you need to play. The game on this site still plays the first, simpler version (shoot or move); these rules are next.</p>
+          <p class="aside">This book is Dawood's game with its core rules: everything you need to play, and what the game on this site plays.</p>
         </section>
 
         <section id="page" class="rule" data-no="1">
@@ -81,7 +81,7 @@
           <h2>Setup</h2>
           <ol class="steps">
             <li>Take turns drawing <strong>bases</strong> (circles), one at a time, and jot each one full of soldier dots.</li>
-            <li><strong>Positioning.</strong> Before anyone flicks, each side arranges its soldiers: anywhere inside its bases, or a little outside the walls <span class="lab">lab: 20 units, a dot and a bit</span>. The first player arranges first, and the second gets to see it.</li>
+            <li><strong>Positioning.</strong> Before anyone flicks, each side arranges its soldiers: anywhere inside its bases, or a little outside the walls <span class="lab">20 units, a dot and a bit</span>. The first player arranges first, and the second gets to see it.</li>
           </ol>
           <figure>
             <canvas data-fig="setup" role="img" aria-label="A blue base drawn and jotted full of soldiers; one soldier is placed just outside its wall, inside a dashed pencil limit."></canvas>
@@ -112,7 +112,7 @@
         <section id="snipe" class="rule" data-no="5">
           <h2>Snipe</h2>
           <p>Your soldier stays put and the ink does the work. The line crosses out <strong>every</strong> enemy soldier it crosses. It goes straight through them.</p>
-          <p><strong>Power loss.</strong> The paper fights back. Going through a base wall costs the line a lot of its power; going through a soldier costs less. The line thins and falls short. <i class="tag">to test</i> <span class="lab">lab: 5% a wall and 10% a man were fine; 15% and 25% stalled games</span></p>
+          <p><strong>Power loss.</strong> The paper fights back. Going through a base wall costs the line a lot of its power; going through a soldier costs less. The line thins and falls short. <i class="tag">to test</i> <span class="lab">10% of what's left at a wall, 5% at a man; the wall at your back is free</span></p>
           <figure>
             <canvas data-fig="snipe" role="img" aria-label="A blue line enters a red base, crosses out two soldiers inside, thinning at the wall and at each man, and runs out of ink before the red soldier beyond."></canvas>
             <figcaption>fig. 3 · a snipe tapers through a wall and two men</figcaption>
@@ -124,15 +124,15 @@
           <h2>Lunge <small>formerly “move”</small></h2>
           <p>Your soldier runs along his own ink, as far as a shot can go, and crosses out every enemy he runs through. He stands where the ink stops.</p>
           <ul class="points">
-            <li><strong>Walls shake him.</strong> Crossing a wall shakes his hand; crossing a soldier shakes it a little. It's the snipe's power loss, paid in shake instead. <i class="tag">to test</i></li>
-            <li><strong>Lunge again.</strong> Each kill earns another lunge by the same soldier, a little shakier every time <span class="lab">lab: +0.05 rad, about 3°, a link</span>. You can always stop.</li>
+            <li><strong>Walls shake him.</strong> Crossing a wall shakes his hand; crossing a soldier shakes it a little. It's the snipe's power loss, paid in shake instead. <i class="tag">to test</i> <span class="lab">about 4.6° at a wall, 2.3° at a man</span></li>
+            <li><strong>Lunge again.</strong> Each kill earns another lunge by the same soldier, a little shakier every time <span class="lab">+0.05 rad, about 3°, a link</span>. You can always stop.</li>
           </ul>
           <figure>
             <canvas data-fig="lunge" role="img" aria-label="A blue soldier lunges along his line, crossing out a red soldier in the open, then lunges again with a wider aim, jolts crossing a red base's wall, lands among its soldiers and is crossed out."></canvas>
             <figcaption>fig. 4 · a kill, a shakier lunge, and one step too far</figcaption>
           </figure>
           <ul class="points">
-            <li><strong>Where he lands decides.</strong> Inside an enemy base with enemy soldiers in it, they shoot him on the spot. In an empty enemy ring nothing happens: there's nobody left to shoot him. Off the page, he's gone. Whoever he crossed out on the way stays crossed out.</li>
+            <li><strong>Where he lands decides.</strong> Inside an enemy base with enemy soldiers in it, they shoot him on the spot. In an empty enemy ring nothing happens: there's nobody left to shoot him (and if he crossed out the last man inside on his way in, there's nobody by the time he lands). Off the page, he's gone. Whoever he crossed out on the way stays crossed out.</li>
             <li><strong>Through a base.</strong> He may cut right through an enemy base, crossing out the soldiers inside, as long as he doesn't land in it. He pays shake at both walls and at every man he crosses: costly, but legal.</li>
           </ul>
           <figure>
@@ -148,7 +148,7 @@
 
         <section id="send" class="rule" data-no="7">
           <h2>Send</h2>
-          <p>Once a turn, and free: send <strong>up to 5 soldiers</strong> walking from one of your bases to another. <i class="tag">to test</i></p>
+          <p>Once a turn, and free: send <strong>up to 5 soldiers</strong> walking from one of your bases to another, an empty ring included. Send before your last flick. <i class="tag">to test</i></p>
           <p><strong>On the road for one turn.</strong> The convoy walks out in plain sight as the pen changes hands, a quick time-lapse between turns, and arrives at the start of your next turn. That leaves exactly one enemy turn in which it's on the open paper, and any line that crosses it then crosses them out. <i class="tag">to test</i></p>
           <figure>
             <canvas data-fig="send" role="img" aria-label="Three blue soldiers walk out onto a dashed pencil road between two blue bases; during the enemy's turn a red line crosses one of them out; the other two arrive at the far base at the start of blue's next turn."></canvas>
@@ -221,12 +221,12 @@
           <h2>Still to test</h2>
           <p>Every number in this book is a guess from the rules lab, where a bot played itself a few thousand times. None of them has been felt at a real table yet.</p>
           <ul class="open">
-            <li><b>Snipe power loss</b>, a wall and a man. It's a core rule now, so its strength is the first thing to feel out.</li>
-            <li><b>Two with one bullet, with nothing else holding it back.</b> The lab needed a rising bar to keep turns short (without it, up to 17 flicks in a turn). Does power loss do the job alone?</li>
-            <li><b>Lunge shake</b> at walls and at men, and 3° a link. Is cutting through a base too cheap, or too dear?</li>
+            <li><b>Snipe power loss</b>, 10% a wall and 5% a man. In the lab it keeps snipe streaks short.</li>
+            <li><b>Two with one bullet, with nothing else holding it back.</b> The longest turns (6 or 7 flicks on average, up to 15) come from lunge chains, not snipes.</li>
+            <li><b>Lunge shake</b> at walls and at men, and 3° a link. In the lab, lunges are seven flicks in ten: is cutting through a base too cheap?</li>
             <li><b>How far outside</b> the walls you may stand. Inside only changed nothing; further out turned the game into lunges.</li>
             <li><b>Sends</b>: one enemy turn on the road, and the limit of 5.</li>
-            <li><b>Quick at 3 bases of 8</b>, and whether a war of about 50 turns is a phone game.</li>
+            <li><b>Quick at 3 bases of 8</b>: about 16 turns in the lab; Classic about 28.</li>
           </ul>
         </section>
 
