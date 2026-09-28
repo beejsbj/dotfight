@@ -1,16 +1,24 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { act, newGame, placeBase, preview, type GameState } from "./game";
+import { act, newGame, preview, type Flick, type GameState } from "./game";
+import { CORE, type Size } from "./rules";
 import {
   AMP, FRAME, KEYS, LAST_STAND, LIFE, LIFE_BOX, Life, MOURN, REACH, comrades, inLine, keyAt, lastStand, passes, planFlick, planVolley, span,
   type Reaction, type Scene,
 } from "./life";
 import { RULES } from "./rules";
 
+/** A war past setup and positioning (the core rules): three camps a side, ten men in each. */
 function setup() {
-  const s = newGame(42);
-  for (const [x, y] of [[300, 1200], [300, 200], [700, 1200], [700, 200], [500, 1000], [500, 400]]) placeBase(s, x, y);
+  const spots = [[300, 1200], [300, 200], [700, 1200], [700, 200], [500, 1000], [500, 400]];
+  const size: Size = { name: "custom", bases: spots.length / 2, soldiers: 10 };
+  const s = newGame(size, 42, undefined, { ...CORE });
+  for (const [x, y] of spots) act(s, { t: "base", x, y });
+  act(s, { t: "ready" });
+  act(s, { t: "ready" });
   return s;
 }
+/** A flick in the old words: shoot is a snipe, move a lunge. */
+const flick = (soldier: number, kind: "shoot" | "move", angle: number, length: number): Flick => ({ soldier, kind: kind === "shoot" ? "snipe" : "lunge", angle, length, bend: 0, wob: 0 });
 const scene = (s: GameState, o: Partial<Scene> = {}): Scene => ({ s, up: -Math.PI / 2, ...o });
 const saved = { ...LIFE };
 afterEach(() => Object.assign(LIFE, saved));
@@ -49,7 +57,7 @@ describe("key drawings", () => {
 describe("a soldier's pose", () => {
   it("never takes him out of his box on the boil layer, whatever piles up on him", () => {
     const s = setup();
-    act(s, { soldierId: 0, kind: "shoot", angle: 0.3, length: 3000, bend: 0 });
+    act(s, { t: "flick", ...flick(0, "shoot", 0.3, 3000) });
     const life = new Life();
     const id = s.soldiers.find((x) => x.alive && x.owner === 1)!.id;
     const other = s.soldiers.find((x) => x.alive && x.owner === 1 && x.id !== id)!.id;
@@ -172,9 +180,9 @@ describe("who is in the line", () => {
   it("the ink's passes: who it crosses out, who it only frightens, and which way is away", () => {
     const s = setup();
     const me = s.soldiers.find((x) => x.owner === 0 && Math.hypot(x.x - 300, x.y - 1200) < 70)!;
-    const f = { soldierId: me.id, kind: "shoot" as const, angle: -Math.PI / 2, length: 1800, bend: 0 };
+    const f = flick(me.id, "shoot", -Math.PI / 2, 1800);
     const o = preview(s, f);
-    act(s, f);
+    act(s, { t: "flick", ...f });
     const ps = passes(s.soldiers, o.path, me.id, o.killed);
     expect(ps.filter((p) => p.fatal).map((p) => p.id).sort()).toEqual([...o.killed].sort());
     const near = ps.filter((p) => !p.fatal);
@@ -193,8 +201,7 @@ describe("who is in the line", () => {
 describe("a flick, as the page feels it", () => {
   const shot = (s: GameState, angle: number, kind: "shoot" | "move" = "shoot", length = 1800) => {
     const me = s.soldiers.find((x) => x.owner === 0 && Math.hypot(x.x - 300, x.y - 1200) < 70)!;
-    const f = { soldierId: me.id, kind, angle, length, bend: 0 };
-    const o = act(s, f);
+    const o = act(s, { t: "flick", ...flick(me.id, kind, angle, length) });
     return { me, o, plan: planFlick(s, o, me.id, kind, (i) => 100 + i * 20, 900) };
   };
 
@@ -285,8 +292,7 @@ describe("a flinch, the page's favourite", () => {
   it("a close one makes the men right beside him jump too, a beat later and smaller", () => {
     const s = setup();
     const me = s.soldiers.find((x) => x.owner === 0 && Math.hypot(x.x - 300, x.y - 1200) < 70)!;
-    const f = { soldierId: me.id, kind: "shoot" as const, angle: -Math.PI / 2 + 0.02, length: 1800, bend: 0 };
-    const o = act(s, f);
+    const o = act(s, { t: "flick", ...flick(me.id, "shoot", -Math.PI / 2 + 0.02, 1800) });
     const plan = planFlick(s, o, me.id, "shoot", (i) => 100 + i * 20, 900);
     const direct = new Set(passes(s.soldiers, o.path, me.id, o.killed).map((p) => p.id));
     const sympathy = plan.acts.filter((a) => a.r.kind === "flinch" && !direct.has(a.id));

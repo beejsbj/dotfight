@@ -13,7 +13,8 @@
 // Poses are sampled on the boil's 12 fps grid ("on twos"), so reactions are
 // written as key drawings a frame apart, the way a 2D animator would.
 
-import { type GameState, type Player, type Pt, type Soldier } from "./game";
+import { type Player, type Pt, type Soldier } from "./game";
+import type { AnyState as GameState } from "./record";
 import { inBase } from "./hand";
 import { RULES } from "./rules";
 
@@ -283,12 +284,13 @@ export function comrades(s: GameState, owner: Player, at: Pt, r: number, not?: n
     .sort((a, b) => Math.hypot(a.x - at.x, a.y - at.y) - Math.hypot(b.x - at.x, b.y - at.y));
 }
 
-/** A side down to its last few: they huddle and tremble. */
+/** A side down to its last few: they huddle and tremble (an old page's count; the core rules bring their own). */
 export const LAST_STAND = 3;
 export const lastStand = (s: GameState, p: Player) => {
   if (s.phase !== "play") return false;
   const n = s.soldiers.reduce((a, x) => a + (x.alive && x.owner === p ? 1 : 0), 0);
-  return n > 0 && n <= LAST_STAND;
+  // the core rules' last stand (v2), or the last three on an old page
+  return n > 0 && n <= (s.v === 2 ? s.rules.lastStandAt : LAST_STAND);
 };
 
 export interface Pass {

@@ -1,5 +1,9 @@
 // The room, synthesised: pen on paper, the lamp's switch, the clatter of a
 // pen falling over, a page turned on the desk, birds at dawn. No samples.
+// The pen's scratch takes the theme's timbre: a pencil is gritty and low, a
+// gel pen glides, thin copy paper hisses a little higher.
+
+import { theme } from "./theme";
 
 let ac: AudioContext | null = null;
 let noise: AudioBuffer | null = null;
@@ -73,17 +77,32 @@ function knock(freq: number, dur: number, gain: number, delay = 0, type: Oscilla
   o.stop(t + dur + 0.02);
 }
 
+/** The pen on the paper, in the theme's timbre. */
+export function stroke(dur: number, gain = 0.5, pitch = 2600, delay = 0, q = 0.9) {
+  const t = theme.sound;
+  scratch(dur, gain * t.gain, pitch * t.pitch, delay, q * t.q);
+}
+
 export const tap = () => scratch(0.05, 0.35, 3800);
-export const cross = (delay = 0, gain = 1) => { scratch(0.07, 0.45 * gain, 3000, delay); scratch(0.07, 0.4 * gain, 3300, delay + 0.09); };
-export const circle = () => scratch(0.38, 0.3, 2200);
-export const dot = (delay = 0) => scratch(0.035, 0.22, 4000 + Math.random() * 700, delay);
+export const cross = (delay = 0, gain = 1) => { stroke(0.07, 0.45 * gain, 3000, delay); stroke(0.07, 0.4 * gain, 3300, delay + 0.09); };
+export const circle = () => stroke(0.38, 0.3, 2200);
+export const dot = (delay = 0) => stroke(0.035, 0.22, 4000 + Math.random() * 700, delay);
 /** The pen set down on a dot: a click and the tick of the ball on paper. */
 export const pick = () => { knock(1900, 0.03, 0.18); scratch(0.02, 0.3, 5200, 0.012); };
 export const rustle = () => { scratch(0.32, 0.35, 900); scratch(0.22, 0.2, 1500, 0.12); };
 /** The sheet slid and turned round on the desk. */
 export const turnPage = () => { scratch(0.55, 0.28, 700, 0, 0.6); scratch(0.35, 0.18, 1300, 0.18, 0.7); };
-/** The lamp's push switch. */
-export const lamp = () => { knock(2600, 0.02, 0.35); knock(900, 0.05, 0.25, 0.004, "square"); scratch(0.02, 0.2, 6000); };
+/** The light coming on: the lamp's push switch, a tube light's starter ticking, or nothing (daylight). */
+export const lamp = () => {
+  const kind = theme.light.switch;
+  if (kind === "day") return;
+  if (kind === "tube") {
+    knock(3200, 0.012, 0.18); knock(3000, 0.012, 0.16, 0.07); knock(3400, 0.012, 0.14, 0.16);
+    knock(120, 0.6, 0.06, 0.2, "sawtooth"); // the hum as it catches
+    return;
+  }
+  knock(2600, 0.02, 0.35); knock(900, 0.05, 0.25, 0.004, "square"); scratch(0.02, 0.2, 6000);
+};
 /** The ink snags on a soldier: a hard scratch with a little weight under it. */
 export const snag = (last = false) => {
   scratch(0.06, last ? 0.8 : 0.55, 2400, 0, 1.4);

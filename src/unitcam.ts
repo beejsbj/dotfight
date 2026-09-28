@@ -7,7 +7,8 @@
 //
 // Pure: a timeline and some angles. main.ts moves the camera.
 
-import type { GameState, Pt } from "./game";
+import type { Pt } from "./game";
+import type { AnyState as GameState } from "./record";
 
 export const UNIT_CAM = {
   /** Down to his level, hold there, back up (ms). The camera's own easing does the moving. */

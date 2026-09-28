@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { act, alive, newGame, placeBase } from "./game";
+import { act, alive, newGame, placeBase } from "./legacy";
 import { dotSpots, yellowing } from "./page";
 
 function setup() {

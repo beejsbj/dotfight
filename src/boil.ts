@@ -15,10 +15,13 @@
 // boil that reads leaning in vanishes there: the redrawings stray further
 // the further away the camera stands (BOIL.bold).
 
-import type { GameState, Soldier } from "./game";
+import type { Soldier } from "./game";
+import type { AnyState as GameState } from "./record";
 import { inBase } from "./hand";
+import { inkOp } from "./ink";
 import { dotSpots, drawBase, drawDot, drawMark, type Ink, type Spot } from "./page";
 import { FPS as LIFE_FPS, FRAME as LIFE_FRAME, LIFE_BOX, type Life, type Pose } from "./life";
+import { theme } from "./theme";
 import { RULES } from "./rules";
 
 type Ctx = CanvasRenderingContext2D;
@@ -266,6 +269,7 @@ class BoilCanvas {
   oy = 0;
   private things: Thing[] = [];
   private sig = "";
+  private themeId = "";
   /** The clock grid step and boldness last looked at, and each thing's look when last drawn (null: draw everything). */
   private grid = -1;
   private bold = -1;
@@ -304,6 +308,8 @@ class BoilCanvas {
   set(plan: Plan, s: GameState, S: number) {
     const sig = plan.sig;
     const rings = this.part === "rings";
+    // a new paper is new ink: every sprite is drawn again in its pens
+    if (theme.id !== this.themeId) { this.forget(() => true); this.themeId = theme.id; this.sig = ""; this.shown = null; }
     if (sig === this.sig && S === this.S) return;
     const was = S === this.S && this.shown ? new Map(this.things.map((t, i) => [`${t.key}|${+t.boils}`, { t, look: this.shown![i] }])) : null;
     const geometry = [this.ox, this.oy, this.c.width, this.c.height].join();
@@ -349,13 +355,15 @@ class BoilCanvas {
     for (const { i, boils } of rings ? [] : plan.marks) {
       const m = s.marks[i];
       let x0: number, y0: number, x1: number, y1: number;
-      if (m.t === "stroke") {
-        x0 = Math.min(...m.pts.map((p) => p.x)) - 10; x1 = Math.max(...m.pts.map((p) => p.x)) + 10;
-        y0 = Math.min(...m.pts.map((p) => p.y)) - 10; y1 = Math.max(...m.pts.map((p) => p.y)) + 10;
-      } else {
+      const pts = m.t === "stroke" ? m.pts : m.t === "walk" ? [m.a, m.b] : m.t === "stand" ? m.at : null;
+      if (pts) {
+        const e = m.t === "stand" ? RULES.soldierRadius + 16 : 10;
+        x0 = Math.min(...pts.map((p) => p.x)) - e; x1 = Math.max(...pts.map((p) => p.x)) + e;
+        y0 = Math.min(...pts.map((p) => p.y)) - e; y1 = Math.max(...pts.map((p) => p.y)) + e;
+      } else if (m.t === "cross") {
         const r = RULES.soldierRadius * 3.2 + pad;
         x0 = m.x - r; y0 = m.y - r; x1 = m.x + r; y1 = m.y + r;
-      }
+      } else continue;
       things.push({ key: `m${i}@${m.seed}`, boils, x0, y0, x1, y1, paint: (g, w) => drawMark(g, m, 1, w) });
     }
     this.things = things;
@@ -475,8 +483,8 @@ class BoilCanvas {
       for (const [x, y, w, h] of rects) g.rect(x, y, w, h);
       g.clip();
     }
-    // ink multiplies, on this layer as on the page, so overlaps darken the same way
-    g.globalCompositeOperation = "multiply";
+    // ink multiplies (light ink on dark paper screens), on this layer as on the page, so overlaps build the same way
+    g.globalCompositeOperation = inkOp();
     for (const i of redraw) {
       const t = this.things[i], q = pose[i];
       if (!this.paint(t, now[i] % BOIL.variants, X, Y, q)) steady = false;
@@ -545,7 +553,7 @@ class BoilCanvas {
     const off = typeof OffscreenCanvas !== "undefined";
     const c = off ? new OffscreenCanvas(w, h) : Object.assign(document.createElement("canvas"), { width: w, height: h });
     const g = c.getContext("2d") as Ctx;
-    g.globalCompositeOperation = "multiply";
+    g.globalCompositeOperation = inkOp();
     // each box is padded past its ink, so no clipping is needed
     for (const d of todo) {
       g.setTransform(S, 0, 0, S, d.x - d.px0, d.y - d.py0);

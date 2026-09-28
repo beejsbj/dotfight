@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { newGame, placeBase } from "./game";
+import { act, newGame } from "./game";
+import { CORE } from "./rules";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
 
 const { drop, hold, rise } = UNIT_CAM;
@@ -28,8 +29,10 @@ describe("the unit cam's beat", () => {
 });
 
 describe("where he looks", () => {
-  const s = newGame(42);
-  for (const [x, y] of [[300, 1200], [300, 200], [700, 1200], [700, 200], [500, 1000], [500, 400]]) placeBase(s, x, y);
+  const s = newGame({ name: "custom", bases: 3, soldiers: 10 }, 42, undefined, { ...CORE });
+  for (const [x, y] of [[300, 1200], [300, 200], [700, 1200], [700, 200], [500, 1000], [500, 400]]) act(s, { t: "base", x, y });
+  act(s, { t: "ready" });
+  act(s, { t: "ready" });
   const me = s.soldiers.find((x) => x.owner === 0)!;
 
   it("down the line last pulled on him, if there was one", () => {

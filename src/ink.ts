@@ -3,18 +3,64 @@
 // is the line boil (boil.ts): a few numbered redrawings of the same shape.
 
 import { rng, type Pt } from "./game";
+import { theme, type Theme } from "./theme";
 
+// The colours of the theme in force (src/theme.ts). Read at draw time, so a
+// page drawn after a switch is drawn in the new paper's inks.
 export const INK = {
-  paper: "#f3efe4",
-  grid: "rgba(84, 128, 168, 0.30)", // squared maths paper
-  gridBold: "rgba(84, 128, 168, 0.42)",
-  margin: "rgba(200, 64, 64, 0.5)",
-  pencil: "rgba(58, 56, 54, 0.62)",
-  pens: ["#1b3899", "#c01e2a"] as const, // blue ballpoint, red ballpoint
-  names: ["Blue", "Red"] as const,
+  get paper() { return theme.paper.colour; },
+  get grid() { return theme.paper.line; },
+  get gridBold() { return theme.paper.bold; },
+  get margin() { return theme.paper.margin; },
+  get pencil() { return lead(theme).pencil; },
+  get pens() { return theme.ink.pens; },
+  get names() { return theme.ink.names; },
 };
 
+// The theme's pencil at the strengths the guides use, made once per theme.
+const leads = new WeakMap<Theme, { pencil: string; cone: string; note: string; guide: string }>();
+export function lead(t: Theme) {
+  let v = leads.get(t);
+  if (!v) {
+    const c = t.ink.lead.join(", ");
+    v = { pencil: `rgba(${c}, 0.62)`, cone: `rgba(${c}, 0.09)`, note: `rgba(${c}, 0.85)`, guide: `rgba(${c}, 0.5)` };
+    leads.set(t, v);
+  }
+  return v;
+}
+
 type Ctx = CanvasRenderingContext2D;
+
+/** How marks land on the paper: multiplied, or screened (light ink on dark paper). */
+export const inkOp = (): GlobalCompositeOperation => (theme.ink.blend === "screen" ? "screen" : "multiply");
+
+// Pencil and chalk have tooth: the colour as a pattern with the paper showing
+// through where the lead skipped. Made once per colour; plain ink is a string.
+const tooth = new Map<string, CanvasPattern | string>();
+export function paint(ctx: Ctx, color: string): CanvasPattern | string {
+  const k = theme.ink.grain;
+  if (k <= 0 || typeof document === "undefined") return color;
+  const key = `${color}|${k}`;
+  let p = tooth.get(key);
+  if (p === undefined) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const g = c.getContext("2d")!;
+    g.fillStyle = color;
+    g.fillRect(0, 0, 64, 64);
+    const img = g.getImageData(0, 0, 64, 64);
+    const r = rng(0x9e3779b1);
+    for (let i = 3; i < img.data.length; i += 4) {
+      // mostly solid, with a speckle of skipped paper and a few bare flecks
+      const v = r();
+      img.data[i] = Math.round(255 * (v < k * 0.35 ? 0.15 : 1 - Math.pow(r(), 2.2) * k));
+    }
+    g.putImageData(img, 0, 0);
+    p = ctx.createPattern(c, "repeat") ?? color;
+    tooth.set(key, p);
+  }
+  return p;
+}
 
 // Smooth 1-D noise from a seed: sum of a few sines with random phase.
 function wave(seed: number) {
@@ -58,7 +104,7 @@ export function redrawn(seed: number, wob: number, amt: number) {
 // circle is exactly the start of the finished one.
 export function inkCircle(ctx: Ctx, cx: number, cy: number, r: number, color: string, seed: number, width = 2.6, passes = 2, upTo = 1, wob = 0, amp = 1) {
   const rand = redrawn(seed, wob, REDRAW.circle * amp);
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = paint(ctx, color);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   for (let p = 0; p < passes; p++) {
@@ -104,7 +150,7 @@ export function inkPolygon(ctx: Ctx, corners: Pt[], color: string, seed: number,
   let cx = 0, cy = 0;
   for (const c of corners) { cx += c.x / n; cy += c.y / n; }
   const size = Math.max(...corners.map((c) => Math.hypot(c.x - cx, c.y - cy)));
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = paint(ctx, color);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   for (let p = 0; p < passes; p++) {
@@ -147,7 +193,7 @@ export function inkDot(ctx: Ctx, x: number, y: number, r: number, color: string,
     r *= 0.35 + 0.65 * e;
     alpha *= 0.5 + 0.5 * e;
   }
-  ctx.fillStyle = color;
+  ctx.fillStyle = paint(ctx, color);
   ctx.globalAlpha = 0.9 * alpha;
   ctx.beginPath();
   const n = 10;
@@ -172,7 +218,7 @@ export function inkDot(ctx: Ctx, x: number, y: number, r: number, color: string,
 export function inkCross(ctx: Ctx, x: number, y: number, size: number, color: string, seed: number, width = 2.4, alpha = 1, upTo = 1, wob = 0) {
   if (upTo <= 0) return;
   const rand = redrawn(seed, wob, REDRAW.cross);
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = paint(ctx, color);
   ctx.lineCap = "round";
   ctx.globalAlpha = 0.9 * alpha;
   const rot = (rand() - 0.5) * 0.5;
@@ -211,13 +257,14 @@ export function inkFlick(ctx: Ctx, pts: Pt[], color: string, seed: number, width
   if (upTo <= 0) return;
   const head = n * Math.min(1, upTo);
   const last = Math.ceil(head);
-  ctx.strokeStyle = color;
-  ctx.lineCap = "round";
-  // resting blob
-  ctx.fillStyle = color;
-  ctx.globalAlpha = 0.55 * alpha;
+  const { wet, skip, tool } = theme.ink;
+  ctx.strokeStyle = ctx.fillStyle = paint(ctx, color);
+  // a ballpoint beads where it catches; gel and lead run smooth
+  ctx.lineCap = tool === "ballpoint" ? "round" : "butt";
+  // resting blob: a wet pen pools where it stood, a pencil barely marks
+  ctx.globalAlpha = Math.min(0.9, 0.55 * wet) * alpha;
   ctx.beginPath();
-  ctx.arc(pts[0].x, pts[0].y, width * 1.1, 0, Math.PI * 2);
+  ctx.arc(pts[0].x, pts[0].y, width * (0.7 + 0.4 * wet), 0, Math.PI * 2);
   ctx.fill();
   // sub-sample each segment so width can taper smoothly
   const skipAt = 0.72 + rand() * 0.15; // where the ball starts skipping
@@ -227,7 +274,7 @@ export function inkFlick(ctx: Ctx, pts: Pt[], color: string, seed: number, width
     // jitter perpendicular a hair so it isn't a vector-perfect curve
     const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1;
     const j = w(t * 3) * width * 0.35 + (wb ? wb(t * 7) * width * REDRAW.flick : 0);
-    if (t > skipAt && rand() < (t - skipAt) * 1.6) continue; // dry skip
+    if (t > skipAt && rand() < (t - skipAt) * 1.6 * skip) continue; // dry skip
     const taper = t < 0.08 ? 1.15 : 1 - Math.pow(t, 1.8) * 0.72;
     ctx.globalAlpha = (0.88 - t * 0.25 + (rand() - 0.5) * 0.1) * alpha;
     ctx.lineWidth = width * taper;
@@ -356,15 +403,16 @@ export function handText(
     ctx.clip();
   }
   ctx.globalAlpha = alpha;
-  ctx.fillStyle = color;
+  ctx.fillStyle = paint(ctx, color);
   ctx.textBaseline = "alphabetic";
   ctx.fillText(text, x0, 0);
   ctx.restore();
   return w;
 }
 
-// Grain for the paper, rendered once.
-export function paperGrain(w: number, h: number, seed: number): HTMLCanvasElement {
+// Grain for the paper, rendered once per paper. `tooth` scales the speckle,
+// `foxing` is the colour of the few soft age stains.
+export function paperGrain(w: number, h: number, seed: number, tooth = 1, foxing = "rgba(170, 130, 60, 0.07)"): HTMLCanvasElement {
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
@@ -374,15 +422,15 @@ export function paperGrain(w: number, h: number, seed: number): HTMLCanvasElemen
   for (let i = 0; i < img.data.length; i += 4) {
     const v = r();
     img.data[i] = img.data[i + 1] = img.data[i + 2] = v < 0.5 ? 60 : 255;
-    img.data[i + 3] = Math.floor(Math.pow(r(), 3) * 26);
+    img.data[i + 3] = Math.floor(Math.pow(r(), 3) * 26 * tooth);
   }
   g.putImageData(img, 0, 0);
   // a few soft foxing stains
   for (let k = 0; k < 5; k++) {
     const x = r() * w, y = r() * h, rad = 30 + r() * 90;
     const grad = g.createRadialGradient(x, y, 0, x, y, rad);
-    grad.addColorStop(0, "rgba(170, 130, 60, 0.07)");
-    grad.addColorStop(1, "rgba(170, 130, 60, 0)");
+    grad.addColorStop(0, foxing);
+    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
     g.fillStyle = grad;
     g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
   }
