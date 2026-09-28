@@ -10,7 +10,7 @@
 //   walk-out     convoys walk out onto the road as the pen changes hands (arg: how many soldiers)
 //   arrive       convoys arrive at their base (arg: how many soldiers)
 //
-// Haptics (#7) maps these onto its own events: lunge-death → "thud", last-stand → "stand".
+// main.ts routes lunge-death → haptic("thud") and last-stand → haptic("stand") (#7).
 
 export type Cue = "lunge-death" | "last-stand" | "earned" | "send" | "walk-out" | "arrive";
 

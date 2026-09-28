@@ -6,13 +6,14 @@ import "./style.css";
 
 import { botArrange, botBase, LEVELS, type Level } from "./bot";
 import { Camera } from "./camera";
-import { cue } from "./cues";
+import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
   act, canArrange, canSend, garrison, illegal, newGame, pathLen, sendMax,
   type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
+import { haptic, haptics, Ratchet } from "./haptics";
 import { inkTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
@@ -77,7 +78,7 @@ interface Resolve {
   t0: number; dur: number; snags: Snag[];
   kills: { i: number; at: number; hit: boolean; last: boolean }[];
   first: number; mover?: number; end: number;
-  pen: boolean; cam: boolean; startLean: number; startAngle: number;
+  pen: boolean; cam: boolean; startLean: number; startAngle: number; settled?: boolean;
   /** Moments to cue once the ink gets there: a lunger shot where he lands, a last stand. */
   moments: { at: number; fn: () => void; done?: boolean }[];
   done: () => void;
@@ -105,6 +106,8 @@ const els: Els = {
 };
 const over = $<HTMLCanvasElement>("#over");
 const og = over.getContext("2d")!;
+haptics.install(over); // iOS 26.5+: labels for real taps to land on
+onCue((c) => { if (c === "lunge-death") haptic("thud"); else if (c === "last-stand") haptic("stand"); });
 const cam = new Camera();
 let W = 0, H = 0, dpr = 1, sdpr = 1, dirty = true;
 
@@ -509,7 +512,6 @@ function drawBase(x: number, y: number, quick = 1) {
   hud();
   fx.add(`b${b.id}`, T, 0, 380 * quick, "out");
   sfx.circle();
-  sfx.buzz(10);
   const dots = s.soldiers.slice(-turn.perBase(s));
   jotOrder(dots).forEach((i, k) => {
     const delay = (430 + k * 62) * quick;
@@ -533,6 +535,7 @@ function handOver() {
     cam.turnTo(rotFor(s.current));
     if (slow) cam.snap(); // a struggling phone skips the spin
     sfx.turnPage();
+    haptic("turn");
     after(settings.handoff && s.phase === "play" ? 700 : 900, () => {
       if (settings.handoff && s.phase === "play") showHandoff();
       else { busy = false; next(); }
@@ -620,7 +623,6 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   if (opts.cam ?? true) cam.overview();
   sfx.slip(power);
   sfx.scratch(dur / 1000 / speed + 0.05, f.kind === "snipe" ? 0.6 : 0.45);
-  sfx.buzz(12);
   hud();
 }
 
@@ -663,10 +665,11 @@ function stepResolve() {
     fx.add(`m${k.i}`, T, 0, k.last ? 260 : 150);
     sfx.snag(k.last);
     sfx.cross(0.02, k.last ? 1.2 : 1);
-    sfx.buzz(k.last ? [30, 40, 60] : 16);
-    if (r.cam) cam.shake(k.last ? 9 : 4);
+    // replays are watched, not felt
+    if (r.cam) { cam.shake(k.last ? 9 : 4); haptic(k.last ? "over" : "kill", r.kills.filter((x) => x.hit).length); }
   }
   for (const m of r.moments) if (!m.done && it >= m.at) { m.done = true; m.fn(); }
+  if (!r.settled && it >= r.dur) { r.settled = true; if (r.pen && !isBot(r.owner)) haptic("land"); }
   if (it >= r.end) {
     const done = r.done;
     res = null;
@@ -820,6 +823,7 @@ function closeCover() {
   if (c.hidden) return;
   c.classList.add("open");
   sfx.rustle();
+  haptic("turn");
   setTimeout(() => { if (c.classList.contains("open")) c.hidden = true; }, 700);
 }
 
@@ -863,6 +867,7 @@ function showSettings() {
     ${row("tilt", settings.tilt, "sit down to aim", "the camera drops low behind your soldier")}
     ${row("handoff", settings.handoff, "pause between turns", "pass & play: tap before the next go")}
     ${row("sound", !sfx.muted, "sound", "pen, paper, lamp")}
+    ${haptics.supported ? row("haptics", haptics.enabled, "haptics", "the pen felt under your thumb") : ""}
     <button class="act" data-a="back">done</button>`);
   card.onclick = (e) => {
     const b = (e.target as HTMLElement).closest("button");
@@ -870,24 +875,33 @@ function showSettings() {
     sfx.tap();
     const k = b.dataset.set;
     if (k === "sound") sfx.setMuted(!sfx.muted);
+    else if (k === "haptics") { haptics.setEnabled(!haptics.enabled); haptic("tap"); }
     else if (k === "tilt" || k === "handoff") {
       settings[k] = !settings[k];
       localStorage.setItem(`pft:${k}`, settings[k] ? "1" : "0");
       applyTilt();
     } else if (b.dataset.a === "back") return closeSheet();
-    showSettings();
+    // re-draw after this click has finished: on iPhone the tick is the tapped
+    // label's own default action, which needs its switch still in the page
+    setTimeout(showSettings);
   };
 }
 
 function showHandoff() {
   const nextP = s.current;
+  // a real button, so an iPhone's tap-only haptics have a switch label to land on
   const card = sheet(`
-    <p class="sub">${lastNote}</p>
-    <h2 style="color:${INK.pens[nextP]}">Your pen, ${name(nextP)}</h2>
-    <p class="fine">tap when you've got it</p>`, "handoff");
+    <button type="button" class="handoff-tap">
+      <p class="sub">${lastNote}</p>
+      <h2 style="color:${INK.pens[nextP]}">Your pen, ${name(nextP)}</h2>
+      <p class="fine">tap when you've got it</p>
+    </button>`, "handoff");
   sfx.rustle();
-  card.parentElement!.onclick = () => {
-    card.parentElement!.onclick = null;
+  // only the card goes on: it's the button wearing the iPhone's switch label
+  const go = card.querySelector<HTMLButtonElement>(".handoff-tap")!;
+  go.onclick = () => {
+    go.onclick = null;
+    haptic("tap");
     closeSheet();
     busy = false;
     next();
@@ -1107,7 +1121,7 @@ function ownBaseAt(w: Pt) {
 }
 
 function select(id: number) {
-  if (selected !== id) { sfx.pick(); penDrop = T; }
+  if (selected !== id) { sfx.pick(); haptic("pickup"); penDrop = T; }
   if (!taught("aim") && selected === undefined) fx.add("teach", T, 500, 1100, "linear");
   selected = id;
   sitOn(s.soldiers[id]);
@@ -1236,6 +1250,7 @@ over.addEventListener("pointermove", (e) => {
     if (!aim) {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
+      ratchet.reset();
       acts();
     }
     updateAim(e.clientX, e.clientY);
@@ -1255,12 +1270,11 @@ function updateAim(x: number, y: number) {
   aim.y = -Math.sin(aimAngle) * dist;
   aim.kind = kind;
   const p = pull(aim);
-  if (p.live && !aim.charged) { aim.charged = true; aim.t0 = T; sfx.buzz(6); }
-  // a notch every fifth of full power
-  const notch = Math.floor(p.power * 5 + 1e-6);
-  if (notch !== lastNotch) { if (notch > lastNotch) sfx.buzz(4); lastNotch = notch; }
+  if (p.live && !aim.charged) { aim.charged = true; aim.t0 = T; }
+  // a ratchet: detents as power builds, tightening toward full
+  if (ratchet.step(p.power, p.live) !== null) haptic("notch", p.power);
 }
-let lastNotch = 0;
+const ratchet = new Ratchet();
 
 function up(e: PointerEvent) {
   if (!ptrs.has(e.pointerId)) return;
@@ -1272,6 +1286,7 @@ function up(e: PointerEvent) {
       learn("place");
       fx.clear();
       drawBase(ghost.x, ghost.y);
+      haptic("settle"); // our own camp lands under the thumb; the bot's is only seen
       ghost = undefined;
       afterBase();
     }
@@ -1316,9 +1331,8 @@ function up(e: PointerEvent) {
       const pw = pull(aim).power;
       const lean = penLean(pw);
       aim = null;
-      lastNotch = 0;
       sfx.creak(0);
-      if (f && turn.canFlick(s, f.soldier, f.kind)) { learn("aim"); fire(f, pw, lean); }
+      if (f && turn.canFlick(s, f.soldier, f.kind)) { learn("aim"); haptic("flick", pw); fire(f, pw, lean); }
       else status("too soft: pull back further");
     } else if (tapped && g.tapOn === undefined) {
       standUp(); // tap on empty paper puts the pen down
@@ -1352,7 +1366,7 @@ function bindKind() {
   for (const b of document.querySelectorAll<HTMLButtonElement>("#kind button[data-kind]")) {
     b.onclick = () => {
       if (core()?.chain && b.dataset.kind !== "lunge") return; // an earned lunge is a lunge
-      if (kind !== b.dataset.kind) { sfx.tap(); sfx.buzz(5); }
+      if (kind !== b.dataset.kind) sfx.tap();
       kind = b.dataset.kind as Kind;
       if (aim) aim.kind = kind;
       hud();
@@ -1398,6 +1412,8 @@ $("#menu-btn").onclick = () => {
   if (screen === "view" || screen === "replay") restoreKindBar();
   showTitle();
 };
+// every button, card and toggle: a light tick as it's pressed (never on pan or scroll)
+document.addEventListener("click", (e) => { if (e.isTrusted && (e.target as Element).closest?.("button")) haptic("tap"); }, true);
 window.addEventListener("keydown", (e) => {
   if (e.key === "l" || e.key === "m") $<HTMLButtonElement>('#kind [data-kind="lunge"]')?.click();
   if (e.key === "s") $<HTMLButtonElement>('#kind [data-kind="snipe"]')?.click();
@@ -1445,7 +1461,9 @@ function frame(now: number) {
   wasLive = live;
   if (aim) {
     const p = pull(aim);
-    sfx.creak(p.power, Math.abs(wobble(aim, T)) * 12);
+    const w = wobble(aim, T);
+    sfx.creak(p.power, Math.abs(w) * 12);
+    if (ratchet.shake(w !== 0)) haptic("wobble");
   }
   if (active || dirty) {
     const t0 = performance.now();
@@ -1574,7 +1592,7 @@ showBoot();
 if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
-    get selected() { return selected; }, get res() { return res; }, get lapse() { return lapse; },
+    get selected() { return selected; }, get res() { return res; }, get lapse() { return lapse; }, haptics,
     set speed(v: number) { speed = v; }, get speed() { return speed; },
     poke: () => { dirty = true; },
     frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view }; },
