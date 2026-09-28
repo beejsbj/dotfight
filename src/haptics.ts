@@ -225,6 +225,7 @@ function switchIn(label: HTMLLabelElement, hideLabel = true) {
   input.type = "checkbox";
   input.setAttribute("switch", "");
   input.setAttribute("aria-hidden", "true");
+  input.tabIndex = -1; // an implementation detail, never a keyboard stop
   input.style.cssText = "position:absolute;width:1px;height:1px;margin:0;opacity:0;pointer-events:none";
   // the label forwards its click to the switch; that copy is ours alone
   input.addEventListener("click", (e) => e.stopPropagation());
