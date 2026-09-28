@@ -18,6 +18,7 @@ const STEP = 1000 / FPS;
 
 export default async function (T, out) {
   const { page } = T;
+  page.setDefaultTimeout(120000); // a loaded box takes its time over screenshots
   const frames = +(process.env.FRAMES ?? 12);
   await page.waitForTimeout(1200);
   await page.evaluate(() => { window.pft.slow = false; const r = window.pft.fileWar(7, 12); r.mode = { kind: "pnp" }; window.pft.resumeRecord(r); });
@@ -71,7 +72,7 @@ export default async function (T, out) {
   const home = await page.evaluate((me) => window.pft.s.bases.find((b) => Math.hypot(b.x - me.x, b.y - me.y) <= b.r * 1.05), me);
   const a = await T.world(me.x, me.y);
   await T.tap(a.x, a.y, 40);
-  await page.waitForFunction(() => window.pft.cam.settled, undefined, { timeout: 5000 });
+  await page.waitForFunction(() => window.pft.cam.settled, undefined, { timeout: 60000 });
   await settle();
   await burst("leanin", frames);
   const h = await T.world(home.x, home.y);
