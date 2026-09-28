@@ -204,7 +204,7 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .label .field input.pencil-in::placeholder { color: rgba(74, 71, 68, .38); }
 .menu .note { margin: 0 0 6px 18px; font-family: var(--hand); font-size: 22px; line-height: 1.1; color: #4a4744; }
 .menu .note b { color: var(--blue); }
-.menu .friends { display: flex; flex-wrap: wrap; gap: 0 12px; margin: -2px 0 8px 18px; }
+.menu .friends { display: flex; flex-wrap: wrap; gap: 0 12px; margin: 6px 0 8px 18px; }
 .menu .friends span { width: 100%; font-family: var(--type); font-size: 11px; letter-spacing: .08em; color: #77726c; }
 .menu .friends .pencil { font-size: 21px; }
 .menu button:disabled { opacity: .45; }
