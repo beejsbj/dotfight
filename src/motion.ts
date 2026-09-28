@@ -138,7 +138,8 @@ export class GunHold {
   private raw = 0;
   private zero: Pose | null = null;
   private high = -Infinity; // the highest the barrel has been held
-  private t = -1;
+  private to = -1;
+  private tm = -1;
   private stillAim = 0; // the aim just before any fast movement began
   private burst: { t0: number; peak: number; aim: number } | null = null;
   private lowSince = -1;
@@ -179,9 +180,10 @@ export class GunHold {
   feed(o: Orientation | null, m: Motion | null, t: number) {
     if (!this.zero) { if (o) this.centre(o); return; }
     if (this.over) return; // it fired or was lowered: centre() starts another
-    const dt = this.t < 0 ? 16 : clamp(t - this.t, 0, 200);
-    this.t = t;
+    // orientation and motion arrive as separate events: each keeps its own clock
     if (o) {
+      const dt = this.to < 0 ? 16 : clamp(t - this.to, 0, 200);
+      this.to = t;
       const p = pose(o);
       const turn = -wrap(p.heading - this.zero.heading) + GUN.roll * (p.roll - this.zero.roll);
       this.raw = clamp(turn * this.sens, -2.6, 2.6);
@@ -194,6 +196,8 @@ export class GunHold {
       } else this.lowSince = -1;
     }
     if (!m) return;
+    const dt = this.tm < 0 ? 16 : clamp(t - this.tm, 0, 200);
+    this.tm = t;
     const w = speed(m);
     const a = m.accel ? Math.hypot(m.accel.x ?? 0, m.accel.y ?? 0, m.accel.z ?? 0) : 0;
     const snap = Math.max(w === undefined ? 0 : w / (GUN.fire / this.sens), a / (GUN.accel / this.sens));

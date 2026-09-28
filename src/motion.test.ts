@@ -33,7 +33,9 @@ function drive(gun: GunHold, legs: [Orientation, number, number?][], start: Orie
   gun.feed(start, still, 0);
   for (const [to, ms, noise] of legs) {
     for (const r of sweep(at, to, ms, t, noise)) {
-      gun.feed(r.o, r.m, r.t);
+      // as a phone sends them: an orientation event, then a motion event a moment later
+      gun.feed(r.o, null, r.t);
+      gun.feed(null, r.m, r.t + 1);
       const e = gun.take();
       if (e) events.push({ ...e, t_ms: r.t });
       t = r.t;
