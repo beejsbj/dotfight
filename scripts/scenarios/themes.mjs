@@ -21,14 +21,17 @@ export default async function (T, out) {
     await shot(`${id}-1-cover`);
     // a war some way in, on this paper
     await page.evaluate(() => {
-      const r = window.pft.fileWar(11, +(new URLSearchParams(location.search).get("turns") ?? 34));
+      // a Classic war some turns in, still going
+      const r = window.pft.fileWar(11, 8, "classic");
       r.mode = { kind: "pnp" };
       window.pft.resumeRecord(r);
     });
     await idle(T, 180000);
     await page.waitForTimeout(900);
     await shot(`${id}-2-war`);
-    const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.find((x) => x.alive && x.owner === s.current); });
+    const st = await page.evaluate(() => ({ phase: window.pft.s.phase, turn: window.pft.s.turn, screen: window.pft.screen }));
+    if (st.phase !== "play" || st.screen !== "game") throw new Error(`${id}: expected a war in play, got ${JSON.stringify(st)}`);
+    const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.find((x) => x.alive && x.owner === s.current && x.convoy === undefined); });
     const a = await T.world(me.x, me.y);
     await T.tap(a.x, a.y, 40);
     await T.wait(() => window.pft.cam.settled, undefined, 60000);

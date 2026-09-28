@@ -6,7 +6,7 @@
 
 import type { Pose } from "./camera";
 import { project, type View } from "./projection";
-import { theme } from "./theme";
+import { luma, theme } from "./theme";
 
 export interface Lamp {
   /** Where the lamp stands, in page units, and how high. */
@@ -126,7 +126,8 @@ export function paintHaze(g: CanvasRenderingContext2D, w: number, h: number, k: 
       const a0 = i * 0.5 + gap, a1 = i * 0.5 + 0.5 - gap, b0 = j * 0.5 + gap, b1 = j * 0.5 + 0.5 - gap;
       const P = (a: number, b: number) => project(v, O.x + u.x * a + vv.x * b, O.y + u.y * a + vv.y * b);
       const c = [P(a0, b0), P(a1, b0), P(a1, b1), P(a0, b1)];
-      g.fillStyle = `rgba(255, 244, 222, ${0.3 * dawn})`;
+      // on dark paper (a blueprint) the panes would glare: they fade with the paper's darkness
+      g.fillStyle = `rgba(255, 244, 222, ${0.3 * dawn * Math.min(1, 0.25 + luma(theme.paper.colour) * 1.2)})`;
       g.beginPath();
       c.forEach((q, n) => (n ? g.lineTo(q.x * k, q.y * k) : g.moveTo(q.x * k, q.y * k)));
       g.closePath();

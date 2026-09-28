@@ -8,6 +8,8 @@ export default async function (T, out) {
   const { page } = T;
   const log = async (m) => console.log(m, JSON.stringify(await T.state()), await page.evaluate(() => document.querySelector("#status").textContent));
   await page.waitForTimeout(1200);
+  // THEME=<id>: play it on that paper
+  if (process.env.THEME) { await page.evaluate((id) => { window.pft.theme.choose(id); window.pft.showTitle(); }, process.env.THEME); await page.waitForTimeout(800); }
   await page.click("[data-size=classic]");
   await page.evaluate(() => document.querySelector("[data-a=pnp]").click());
   await page.waitForTimeout(900);
