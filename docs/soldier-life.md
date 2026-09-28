@@ -135,6 +135,12 @@ In `docs/shots/soldier-life/`, as GIF and WebM. Time is stepped by hand (`pft.ha
 
 Start with these:
 
+0. **`voices/busy-before-then-after.mp3`**: a pick-up and a shot through a full camp, voiced as before (13 lines: hup, murmur, 2 gasps, 3 eeps, 3 cheers, phew, 2 ohs, at the old level), a pause, then as now (the hup and one gasp, quieter; now and then a second voice).
+0. **`bubble-ready`**, **`bubble-idle`**, **`bubble-birdseye`**: "I'm ready" pencilled and ringed as he's picked up; "for Dawood!" on a torn scrap; "close one" from bird's-eye. (The capture takes the first chance that's offered; in play most pass.)
+0. **`aiming-streaks-before-after.jpg`**: the stale pencil streaks beside the camps while aiming (left, main) and gone (right). See PR #5.
+
+The captures below were made on the first, drawn boil (dots scribbled round); the motion is the same on the swap boil.
+
 1. **`flinch`**: a shot grazing just outside a camp, close up at 24 fps. The near side sees it coming, is flattened away as it passes, shakes, and breathes out. Nobody's hit.
 2. **`bot-lines-up-on-you`**: one of your camps while Dawood-bot takes its turn (from bird's-eye, cropped). Your men cower and tremble while its pen points their way, and the camp's pen hurries round. Then the ink comes through: the men in its way gasp and are crossed out, and the rest hold still. (The bot's clock-seeded aim is pinned so the capture repeats.)
 3. **`volley`**: a man flicked into the middle of a full enemy camp, then `pft.volley`. Nine defenders round on him, a ripple of jabs goes in, and he's crossed out.
