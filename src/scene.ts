@@ -29,6 +29,8 @@ export interface Aim {
   kind: "shoot" | "move";
   /** Pen falcon: a sight at the end of the guide, drawn closed as the hand holds still (0..1). */
   sight?: number;
+  /** How far out the sight sits (page units), kept on screen. */
+  sightAt?: number;
 }
 
 export interface Frame {
@@ -244,7 +246,7 @@ function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
 }
 
 const aimShow = (a: Aim) =>
-  a.sight !== undefined ? 560 // the pen falcon's sight sits out past the standing pen, where you can see it
+  a.sight !== undefined ? a.sightAt ?? 560 // the pen falcon's sight: out past the standing pen, where you can see it
   : a.kind === "move" ? a.reach * 0.55 : Math.min(a.reach, 110 + a.reach * 0.2);
 
 function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {

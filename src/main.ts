@@ -1215,7 +1215,13 @@ function currentFrame(): Frame {
     } else if (motion.gun) {
       // the pen points where the phone does; the sight closes as you hold still
       const ang = gunFwd + motion.gun.delta, pw = 0.6;
-      f.aim = { soldierId: selected, angle: ang, power: pw, spread: sigma(pw) * 2, reach: reach(kind, pw), kind, sight: motion.gun.armed };
+      // the sight sits well out past the pen, but pulled in to stay on screen when you point wide
+      let at = 560;
+      for (; at > 200; at -= 40) {
+        const q = cam.toScreen(me.x + Math.cos(ang) * at, me.y + Math.sin(ang) * at);
+        if (q && q.x > 50 && q.x < W - 50 && q.y > 150 && q.y < H - 190) break;
+      }
+      f.aim = { soldierId: selected, angle: ang, power: pw, spread: sigma(pw) * 2, reach: reach(kind, pw), kind, sight: motion.gun.armed, sightAt: at };
       f.pen = leaning(me.x, me.y, ang, 0.2 + 0.15 * motion.gun.armed, owner, ink);
     } else {
       // set down on the dot: drops in, then stands
