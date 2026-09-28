@@ -6,7 +6,7 @@
 // Env: FILM=docs/shots/rulebook-flip (where the films go), PERF=0 to skip timing,
 //      THROTTLE (CPU slowdown for the timing, default 4).
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync } from "node:fs";
 
 const FPS = 30;
 const failures = [];
@@ -60,7 +60,8 @@ export default async function (T, out) {
         mkdirSync(film, { recursive: true });
         const ff = (args) => execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-framerate", String(FPS), "-i", `${dir}/%03d.jpg`, ...args], { stdio: "inherit" });
         ff(["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "34", "-pix_fmt", "yuv420p", `${film}/${name}.webm`]);
-        ff(["-vf", `scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160[p];[b][p]paletteuse=dither=bayer:bayer_scale=4`, `${film}/${name}.gif`]);
+        // the gif is a preview: half the frames, fewer colours; the webm is the real thing
+        ff(["-vf", `fps=15,scale=${width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`, `${film}/${name}.gif`]);
       },
     };
   }
@@ -155,7 +156,7 @@ export default async function (T, out) {
     await B.touchAt("touchEnd", []);
     for (let i = 0; i < 22; i++) { await B.step(); await B.shot(R.next()); }
     await B.thaw();
-    R.cut(390);
+    R.cut(300);
     console.log(`     phone-turn: ${R.count} frames`);
     await B.ctx.close();
   }
@@ -177,7 +178,7 @@ export default async function (T, out) {
     const s = await B.book();
     const onPage = await B.page.evaluate(() => { const r = document.getElementById("snipe").getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; });
     check(onPage && s.hash === "#snipe", `the contents slip opens Snipe's page (${s.hash}, on screen: ${onPage})`);
-    R.cut(390);
+    R.cut(300);
     await B.ctx.close();
   }
 
@@ -233,7 +234,7 @@ export default async function (T, out) {
     await B.page.mouse.wheel(0, -100);
     for (let i = 0; i < 28; i++) { await B.step(); await B.shot(R.next()); }
     await B.thaw();
-    R.cut(720);
+    R.cut(560);
     console.log(`     desk-turn: ${R.count} frames`);
     await B.ctx.close();
   }
@@ -356,6 +357,10 @@ export default async function (T, out) {
       await B.ctx.close();
     }
   }
+
+  // the stills worth a look, beside the films
+  if (film) for (const f of ["phone-hold-30", "phone-hold-60", "desk-trackpad-mid", "desk-cover", "desk-spread-1"]) copyFileSync(`${out}/${f}.jpg`, `${film}/${f}.jpg`);
+  if (film) copyFileSync(`${out}/phone-turn/040.jpg`, `${film}/phone-turn-frame-040.jpg`);
 
   check(!errors.length, `no page errors ${errors.slice(0, 3).join(" | ")}`);
   if (failures.length) throw new Error(`${failures.length} rulebook checks failed:\n  ${failures.join("\n  ")}`);
