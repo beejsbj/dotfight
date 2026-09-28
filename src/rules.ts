@@ -1,6 +1,12 @@
-// Every tunable rule lives here. Most are guesses from Burooj's memory of
-// Dawood's game (2026-06-07 transcript); the ones marked ASK DAWOOD are open
-// questions tracked in RULES.md / BJS-128. Change them here, not in logic.
+// Every tunable rule lives here. Change numbers here, not in logic.
+//
+// - RULES: the page's geometry (shared by every game, never change it: saved
+//   pages replay against it), plus the June prototype's rules, which old saves
+//   and drawer pages still play and replay by (src/legacy.ts).
+// - CORE: the core rules (Quick battle, RULES.md). A new game copies these
+//   numbers into its own state, so tuning them later never changes how an
+//   older page replays.
+// - SIZES: the Quick battle sizes.
 
 export const RULES = {
   // The page, in world units. A tall pocket-notebook page, to suit a phone.
@@ -53,3 +59,52 @@ export const FEEL = {
 };
 
 export type RulesT = typeof RULES;
+
+/**
+ * The core rules' numbers (RULES.md, "Core rules"). Values marked (to test)
+ * are lab guesses nobody has felt at a real table; round 3 of the rules lab
+ * (docs/rules-lab/round-3.md) measured these exact numbers.
+ */
+export const CORE = {
+  /** Bumped when a rule's *logic* changes, so old records can be told apart. */
+  version: 1,
+  /** Line length from the softest to the hardest flick. A lunge goes as far as a shot. */
+  reach: { min: 300, max: 1800 },
+  /** Snipe power loss (to test): the share of what's left of the line lost at each wall it passes, and at each soldier it crosses out. Walls cost more. */
+  snipeWallLoss: 0.1,
+  snipeKillLoss: 0.05,
+  /** A snipe that crosses out at least this many earns another flick ("two with one bullet"). */
+  snipeEarnAt: 2,
+  /** Lunge shake (to test): radians (1 sd) the lunger's heading jolts at each wall he crosses, and at each soldier he crosses out. */
+  lungeWallShake: 0.08,
+  lungeKillShake: 0.04,
+  /** Each link of a lunge chain adds this much aim error (radians, 1 sd), however soft the flick. */
+  lungeLinkTremor: 0.05,
+  /** Most soldiers in one send (to test). */
+  sendMax: 5,
+  /** How far outside its own base's wall a soldier may be arranged (to test). */
+  positionReach: 20,
+  /** Last stand: at this many soldiers left, that side flicks this many times a turn, with its hand error multiplied by `lastStandSteady`. */
+  lastStandAt: 4,
+  lastStandFlicks: 2,
+  lastStandSteady: 0.6,
+};
+
+export type CoreRules = typeof CORE;
+
+/** A Quick battle's size: bases a side and soldiers in each. */
+export interface Size {
+  name: "quick" | "classic" | "custom";
+  bases: number;
+  soldiers: number;
+}
+
+export const SIZES = {
+  /** (to test) */
+  quick: { name: "quick", bases: 3, soldiers: 8 },
+  /** Dawood's own. */
+  classic: { name: "classic", bases: 5, soldiers: 10 },
+} as const satisfies Record<string, Size>;
+
+/** What Custom lets you pick. */
+export const CUSTOM = { bases: { min: 1, max: 6 }, soldiers: { min: 3, max: 12 } };

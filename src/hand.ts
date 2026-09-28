@@ -1,7 +1,14 @@
 // How a hand does things on the page: which soldier it means when it taps,
 // and the order it jots dots into a fresh base. Pure, so it can be tested.
 
-import { type GameState, type Pt } from "./game";
+import type { Player, Pt } from "./game";
+
+/** What a tap needs to know about a page: either rules' state fits. */
+export interface Tappable {
+  current: Player;
+  soldiers: { id: number; owner: Player; x: number; y: number; alive: boolean }[];
+  bases: { id: number; owner: Player; x: number; y: number; r: number }[];
+}
 
 export interface PickTol {
   /** A tap within this many world units of a soldier means that soldier. */
@@ -16,8 +23,8 @@ export interface PickTol {
  * of your bases picks the living soldier of that base nearest the tap, so at
  * full-page zoom you only need to hit the circle, not a 5px dot.
  */
-export function pickSoldier(s: GameState, w: Pt, tol: PickTol): number | undefined {
-  const mine = s.soldiers.filter((x) => x.alive && x.owner === s.current);
+export function pickSoldier(s: Tappable, w: Pt, tol: PickTol, can: (id: number) => boolean = () => true): number | undefined {
+  const mine = s.soldiers.filter((x) => x.alive && x.owner === s.current && can(x.id));
   let best: number | undefined, bd = tol.soldier;
   for (const x of mine) {
     const d = Math.hypot(x.x - w.x, x.y - w.y);
@@ -25,7 +32,7 @@ export function pickSoldier(s: GameState, w: Pt, tol: PickTol): number | undefin
   }
   if (best !== undefined || tol.base <= 0) return best;
 
-  let base: GameState["bases"][number] | undefined, bb = Infinity;
+  let base: Tappable["bases"][number] | undefined, bb = Infinity;
   for (const b of s.bases) {
     if (b.owner !== s.current) continue;
     const d = Math.hypot(b.x - w.x, b.y - w.y);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alive, newGame, placeBase, type GameState } from "./game";
+import { alive, newGame, placeBase, type LegacyState as GameState } from "./legacy";
 import { jotOrder, pickSoldier } from "./hand";
 import { RULES } from "./rules";
 import { Timeline, reachFraction } from "./timeline";

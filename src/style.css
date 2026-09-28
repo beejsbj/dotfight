@@ -121,6 +121,25 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   transform: rotate(-4deg); opacity: .85;
 }
 #kind.off { opacity: .3; pointer-events: none; }
+#kind button.barred { opacity: .25; }
+#kind button.barred b { text-decoration: line-through; text-decoration-thickness: 2px; }
+
+/* send, stop, done: pencilled on the desk above the cards */
+#acts { display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; margin: -2px auto 8px; min-height: 0; }
+#acts:empty { display: none; }
+#acts button, #acts span {
+  font-family: var(--hand); font-size: 23px; line-height: 1.1; color: rgba(243, 236, 220, calc(.45 + .5 * var(--lamp)));
+  text-shadow: 0 1px 3px rgba(0,0,0,.8); padding: 2px 6px;
+}
+#acts button { text-decoration: underline; text-decoration-color: rgba(243, 236, 220, .35); text-underline-offset: 4px; }
+#acts button small { font-size: 16px; opacity: .7; }
+#acts button.go { color: var(--paper); text-decoration: none; border: 2px solid rgba(243, 236, 220, .55); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; padding: 3px 14px; }
+#acts button[data-n] { min-width: 38px; text-decoration: none; border: 2px solid rgba(243, 236, 220, .45); border-radius: 50%; }
+#acts button.x { opacity: .7; }
+#acts button:active { transform: translateY(1px) scale(.97); }
+
+.tag.stand .count { color: var(--red); font-weight: 700; }
+.tag[data-p="0"].stand .count { color: var(--blue); }
 #bottom.view #kind button { opacity: 1; }
 #bottom.view #kind button b { color: var(--pencil); }
 
@@ -191,6 +210,17 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .menu .levels { display: flex; gap: 4px; margin: -2px 0 8px 18px; }
 .menu .levels button { font-family: var(--hand); font-size: 21px; padding: 2px 8px; color: #6d6863; border-radius: 50%; }
 .menu .levels button.on { color: var(--red); box-shadow: inset 0 0 0 2px var(--red); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
+.menu .head { font-family: var(--hand); font-size: 19px; color: var(--pencil); margin: 6px 0 0 18px; letter-spacing: .02em; }
+.menu .sizes { display: flex; gap: 2px; margin: 0 0 4px 12px; }
+.menu .sizes button { font-family: var(--hand); text-align: center; padding: 2px 8px 3px; color: #6d6863; border-radius: 50%; }
+.menu .sizes button b { display: block; font-size: 23px; font-weight: 700; line-height: 1; }
+.menu .sizes button small { display: block; font-size: 15px; line-height: 1; }
+.menu .sizes button.on { color: var(--blue); box-shadow: inset 0 0 0 2px var(--blue); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
+.menu .custom { display: flex; gap: 16px; margin: 0 0 6px 20px; font-family: var(--hand); }
+.menu .custom .step { display: inline-flex; align-items: baseline; gap: 4px; }
+.menu .custom .step b { font-size: 24px; min-width: 18px; text-align: center; color: var(--blue); }
+.menu .custom .step small { font-size: 16px; color: var(--pencil); }
+.menu .custom .step button { font-size: 24px; width: 28px; color: var(--pencil); }
 .menu .row { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 8px 0 0 18px; }
 .menu .pencil { font-family: var(--hand); font-size: 22px; color: var(--pencil); text-decoration: underline; text-decoration-color: rgba(63,60,57,.35); text-underline-offset: 3px; }
 .card a.act { text-decoration: none; }

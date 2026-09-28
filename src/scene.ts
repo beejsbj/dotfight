@@ -9,7 +9,8 @@
 // pen lives on the untilted overlay. A camera move therefore costs a few
 // style writes and a couple of hundred pixels of gradient, not a repaint.
 
-import type { GameState, Pt } from "./game";
+import type { Pt } from "./game";
+import type { AnyState as GameState } from "./record";
 import { INK, handText, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
@@ -26,7 +27,7 @@ export interface Aim {
   power: number;
   spread: number;
   reach: number;
-  kind: "shoot" | "move";
+  kind: "snipe" | "lunge";
 }
 
 export interface Frame {
@@ -49,7 +50,19 @@ export interface Frame {
   mover?: { id: number; at: Pt };
   pen?: PenPose;
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] };
-  teach?: { kind: "aim" | "place"; at: Pt; p: number; rot: number };
+  /** Convoys walking (the time-lapse between turns): each soldier from where he stood to where he'll stand. */
+  walkers?: { id: number; from: Pt; to: Pt; p: number }[];
+  /** Positioning: how far each of your bases' soldiers may stand, in pencil. */
+  zones?: { x: number; y: number; r: number }[];
+  /** Positioning: the soldier under your finger. */
+  drag?: { id: number; at: Pt; ok: boolean };
+  /** A send being drawn, base to base, in pencil. */
+  sendArrow?: { from: Pt; to: Pt; ok: boolean };
+  /** Sends ordered this turn: the road in pencil, the ones going ringed. */
+  orders?: { a: Pt; b: Pt; at: Pt[] }[];
+  /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
+  danger?: { x: number; y: number; r: number }[];
+  teach?: { kind: "aim" | "place" | "arrange"; at: Pt; p: number; rot: number; note?: string };
   sig?: Signature;
 }
 
@@ -139,13 +152,26 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     if (page.has(k) || !ink.live.has(k)) return;
     drawMark(g, m, ink.p(k));
     if (m.t === "stroke") for (const p of m.pts) box.add(p.x, p.y, 8);
+    else if (m.t === "walk") { box.add(m.a.x, m.a.y, 10); box.add(m.b.x, m.b.y, 10); }
+    else if (m.t === "stand") for (const p of m.at) box.add(p.x, p.y, 24);
     else box.add(m.x, m.y, 20);
   });
+  const walking = new Set(f.walkers?.map((w) => w.id));
   for (const x of s.soldiers) {
     const jot = `d${x.id}`;
-    if (ink.live.has(jot)) { drawDot(g, x, 1, ink.p(jot)); box.add(x.x, x.y, 12); }
+    if (ink.live.has(jot) && !walking.has(x.id) && f.drag?.id !== x.id) { drawDot(g, x, 1, ink.p(jot)); box.add(x.x, x.y, 12); }
   }
   if (f.mover) { drawDot(g, s.soldiers[f.mover.id], 1, 1, f.mover.at); box.add(f.mover.at.x, f.mover.at.y, 12); }
+  for (const w of f.walkers ?? []) {
+    if (w.p <= 0) continue; // held: still standing where the page shows him
+    const e = w.p * w.p * (3 - 2 * w.p);
+    const at = { x: w.from.x + (w.to.x - w.from.x) * e, y: w.from.y + (w.to.y - w.from.y) * e };
+    // a little bob as he marches
+    at.y -= Math.abs(Math.sin(w.p * Math.PI * 7)) * 2.5 * (1 - w.p);
+    drawDot(g, s.soldiers[w.id], 1, 1, at);
+    box.add(at.x, at.y, 12);
+  }
+  if (f.drag) { drawDot(g, s.soldiers[f.drag.id], f.drag.ok ? 1 : 0.45, 1, f.drag.at); box.add(f.drag.at.x, f.drag.at.y, 14); }
   if (f.sig && !page.isSigned && ink.live.has("sign")) {
     drawSignature(g, f.sig, ink.p("sign"));
     box.add(0, RULES.pageH - 110); box.add(RULES.pageW, RULES.pageH);
@@ -200,6 +226,28 @@ function renderAir(els: Els, f: Frame) {
 function drawGuides(g: Ctx, f: Frame, box: Box) {
   const { s, view: v } = f;
   const px = 1 / v.z;
+  for (const z of f.zones ?? []) {
+    // dashed pencil: how far out his men may stand
+    const n = 36;
+    for (let i = 0; i < n; i += 2) {
+      const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
+      pencilLine(g, { x: z.x + Math.cos(a0) * z.r, y: z.y + Math.sin(a0) * z.r }, { x: z.x + Math.cos(a1) * z.r, y: z.y + Math.sin(a1) * z.r }, Math.max(1.4, px), 300 + i, false);
+    }
+    box.add(z.x, z.y, z.r + 6);
+  }
+  for (const d of f.danger ?? []) { pencilHatchRing(g, d.x, d.y, d.r, px); box.add(d.x, d.y, d.r + 6); }
+  for (const o of f.orders ?? []) {
+    pencilArrow(g, o.a, o.b, 0.08, 611, Math.max(1.8, px * 1.2), 1, 0.85);
+    for (const q of o.at) pencilLoop(g, q.x, q.y, RULES.soldierRadius + 7, 71 + Math.round(q.x), Math.max(1.4, px), 1, 0.8);
+    box.add(o.a.x, o.a.y, 30); box.add(o.b.x, o.b.y, 30);
+    for (const q of o.at) box.add(q.x, q.y, 20);
+  }
+  if (f.sendArrow) {
+    g.globalAlpha = f.sendArrow.ok ? 1 : 0.45;
+    pencilArrow(g, f.sendArrow.from, f.sendArrow.to, 0.08, 612, Math.max(2, px * 1.4), 1, 0.9);
+    g.globalAlpha = 1;
+    box.add(f.sendArrow.from.x, f.sendArrow.from.y, 30); box.add(f.sendArrow.to.x, f.sendArrow.to.y, 30);
+  }
   if (f.keepOut) {
     for (const k of f.keepOut) { pencilHatchRing(g, k.x, k.y, k.r, px); box.add(k.x, k.y, k.r + 6); }
   }
@@ -241,7 +289,7 @@ function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
   g.globalAlpha = 1;
 }
 
-const aimShow = (a: Aim) => (a.kind === "move" ? a.reach * 0.55 : Math.min(a.reach, 110 + a.reach * 0.2));
+const aimShow = (a: Aim) => (a.kind === "lunge" ? Math.min(a.reach * 0.55, 110 + a.reach * 0.3) : Math.min(a.reach, 110 + a.reach * 0.2));
 
 function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   const me = s.soldiers[a.soldierId];
@@ -274,7 +322,10 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   const pencil = "rgba(52, 50, 48, 0.85)";
   if (t.kind === "place") {
     handText(g, "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
-    handText(g, "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
+    handText(g, t.note ?? "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
+  } else if (t.kind === "arrange") {
+    handText(g, "drag your men where you want them", 0, 0, 40, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
+    handText(g, "(in camp, or just outside the wall)", 0, 42, 32, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
   } else {
     // under the soldier, toward you: the way your thumb pulls
     pencilArrow(g, { x: 6, y: 34 }, { x: 14, y: 128 }, 0.12, 77, 2.4, Math.min(1, p * 1.6), 0.9);
