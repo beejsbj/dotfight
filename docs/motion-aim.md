@@ -15,7 +15,7 @@ Each level has its own **soft / normal / keen** sensitivity.
 
 ## The three levels
 
-**Tilt to fine-tune.** Pull back as usual, then, keeping your thumb down, tip the phone's right edge down a little. The aim swings clockwise by a few degrees (about 5° for a 14° tilt at normal, capped at 7°), and the pen leans that way. Whatever angle you're holding the phone at when the pull starts counts as level.
+**Tilt to fine-tune.** Pull back as usual, then, keeping your thumb down, tip the phone's right edge down a little. The aim swings clockwise by a few degrees (about 5° for a 14° tilt at normal, capped at 7°), and the pen leans a little that way. Whatever angle you're holding the phone at when the pull starts counts as level.
 
 **Steady hand.** Hold a hard pull for over half a second and the pen starts to wobble, as it always has. With this level on, the gyro sets how much: rest the phone on the table and the wobble drops to a quarter of today's, and a shaking hand gets up to 2.5 times as much.
 

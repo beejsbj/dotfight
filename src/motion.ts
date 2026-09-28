@@ -55,7 +55,7 @@ export type Pose = ReturnType<typeof pose>;
 export const NUDGE = {
   max: 7 * RAD, // most the phone can turn the aim, at normal sensitivity
   soft: 14 * RAD, // phone roll that gives ~76% of it (tanh knee)
-  lean: 0.18, // most the pen leans sideways, radians
+  lean: 0.08, // most the pen leans sideways, radians: a hint, so it still reads as pointing where you aim
 };
 
 /**
