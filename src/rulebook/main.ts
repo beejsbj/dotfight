@@ -31,6 +31,8 @@ interface Live {
   fig: Figure;
   t: number;
   from?: number;
+  /** in a book, the finished drawing as a picture on its page */
+  img?: HTMLImageElement;
 }
 
 const lives: Live[] = [];
@@ -50,13 +52,49 @@ function paint(l: Live) {
   l.fig.draw(g, l.t);
 }
 
+// In a book, a finished drawing is swapped for a picture of itself. A canvas is
+// a compositor layer of its own and a picture isn't, so a turning leaf moves as
+// one piece: on a throttled phone that about halves the time a turning frame takes.
+function freeze(l: Live) {
+  // (a drawing not yet drawn is a blank picture until its page opens)
+  if (!paged || l.from !== undefined || (l.t > 0 && l.t < 1)) return;
+  l.el.toBlob((b) => {
+    if (!b || l.from !== undefined) return;
+    let img = l.img;
+    if (!img) {
+      img = l.img = document.createElement("img");
+      img.className = "fig";
+      img.alt = l.el.getAttribute("aria-label") ?? "";
+      img.style.aspectRatio = l.el.style.aspectRatio;
+      if (!still) { img.title = "tap to draw it again"; img.addEventListener("click", () => again(l)); }
+      l.el.after(img);
+    } else URL.revokeObjectURL(img.src);
+    const done = img;
+    done.hidden = true;
+    done.src = URL.createObjectURL(b);
+    done.decode().then(() => { if (l.from === undefined) { done.hidden = false; l.el.hidden = true; } }, () => {});
+  });
+}
+function thaw(l: Live) {
+  if (!l.img || !l.el.hidden) return;
+  l.el.hidden = false;
+  l.img.hidden = true;
+}
+function again(l: Live) {
+  if (l.from !== undefined) return;
+  thaw(l);
+  l.t = 0;
+  play(l);
+}
+
 function fit(l: Live) {
-  const w = l.el.clientWidth;
+  const w = l.el.hidden && l.img ? l.img.clientWidth : l.el.clientWidth;
   if (!w) return;
   const dpr = Math.min(2.5, window.devicePixelRatio || 1);
   const pw = Math.round(w * dpr), ph = Math.round((w * dpr * l.fig.h) / l.fig.w);
   if (l.el.width !== pw || l.el.height !== ph) { l.el.width = pw; l.el.height = ph; }
   paint(l);
+  freeze(l);
 }
 
 let running = false;
@@ -67,13 +105,14 @@ function tick() {
     if (l.from === undefined) continue;
     l.t = Math.min(1, (now - l.from) / l.fig.dur);
     paint(l);
-    if (l.t >= 1) l.from = undefined;
+    if (l.t >= 1) { l.from = undefined; freeze(l); }
     else running = true;
   }
   if (running) requestAnimationFrame(tick);
 }
 function play(l: Live) {
   if (still) return;
+  thaw(l);
   l.from = clock.now();
   if (!running) { running = true; requestAnimationFrame(tick); }
 }
@@ -89,6 +128,15 @@ function ghost(el: HTMLCanvasElement) {
   const g = el.getContext("2d")!;
   g.setTransform(el.width / fig.w, 0, 0, el.width / fig.w, 0, 0);
   fig.draw(g, 1);
+  el.toBlob((b) => {
+    if (!b) return;
+    const img = document.createElement("img");
+    img.className = "fig";
+    img.alt = "";
+    img.style.aspectRatio = el.style.aspectRatio;
+    img.src = URL.createObjectURL(b);
+    img.decode().then(() => el.replaceWith(img), () => {});
+  });
 }
 
 function book() {
@@ -135,7 +183,7 @@ Promise.all(fonts.map((f) => document.fonts.load(f))).finally(() => {
   for (const l of lives) {
     if (still) continue;
     l.el.title = "tap to draw it again";
-    l.el.addEventListener("click", () => { if (l.from === undefined) { l.t = 0; play(l); } });
+    l.el.addEventListener("click", () => again(l));
   }
   document.body.classList.add("drawn");
 });

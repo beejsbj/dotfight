@@ -202,7 +202,8 @@ ul.points > li { position: relative; padding-left: 24px; margin-bottom: 8px; }
 ul.points > li::before { content: "–"; position: absolute; left: 4px; top: -3px; font-family: var(--hand); font-weight: 700; font-size: 26px; color: var(--blue); }
 
 figure { margin: 14px -10px 12px -24px; }
-figure canvas { display: block; width: 100%; mix-blend-mode: multiply; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+figure canvas, figure img.fig { display: block; width: 100%; mix-blend-mode: multiply; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+figure canvas[hidden], figure img.fig[hidden] { display: none; }
 figcaption { margin-top: 2px; font-family: var(--hand); font-size: 17px; color: var(--lead); text-align: right; transform: rotate(-0.6deg); }
 
 /* page one opens with a note, written more quickly */
