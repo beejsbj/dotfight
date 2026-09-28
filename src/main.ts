@@ -18,7 +18,7 @@ import { inkTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
-import { drawYellow, PageLayer, SETTLED, type Ink } from "./page";
+import { drawPaper, drawYellow, PageLayer, SETTLED, type Ink } from "./page";
 import { leaning, PEN, type PenPose } from "./pen";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
@@ -26,6 +26,7 @@ import { GAME } from "./name";
 import { CUSTOM, RULES, SIZES, type Size } from "./rules";
 import { page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
+import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
 import { Timeline, reachFraction } from "./timeline";
 import * as turn from "./turn";
 
@@ -121,6 +122,8 @@ function save() {
   localStorage.setItem("pft:save", JSON.stringify({ s, mode } satisfies Save));
 }
 const load = () => readSave(localStorage.getItem("pft:save"));
+/** The paper a page was started on (pages from before themes were Lamplight). */
+const paperOf = (p?: GameState["page"]) => themeOf(p?.theme).id;
 const drawer = () => readDrawer(localStorage.getItem("pft:drawer"));
 
 // --- layout -----------------------------------------------------------------
@@ -195,7 +198,7 @@ function hud() {
       : stand ? `last ${n} · two flicks` : `${n} standing`;
     el.style.setProperty("--ink-left", inkLeft(p).toFixed(3));
   }
-  document.documentElement.style.setProperty("--ink", INK.pens[s.current]);
+  document.documentElement.style.setProperty("--ink", hudPen(s.current));
   const chain = !!c0?.chain;
   for (const b of document.querySelectorAll<HTMLButtonElement>("#kind button[data-kind]")) {
     const k = b.dataset.kind as Kind;
@@ -272,7 +275,7 @@ function pageStamp() {
   const no = +(localStorage.getItem("pft:pageNo") ?? 0) + 1;
   localStorage.setItem("pft:pageNo", String(no));
   const d = new Date();
-  return { no, date: `${d.getDate()} ${d.toLocaleString("en-GB", { month: "short" })} ${d.getFullYear()}` };
+  return { no, date: `${d.getDate()} ${d.toLocaleString("en-GB", { month: "short" })} ${d.getFullYear()}`, theme: currentTheme() };
 }
 
 const taught = (k: string) => localStorage.getItem(`pft:taught:${k}`) === "1";
@@ -319,6 +322,7 @@ function start(m: Mode, size: Size = pickedSize()) {
 
 function resume(v: Save) {
   reset();
+  applyTheme(paperOf(v.s.page)); // back on the paper it was started on
   restoreKindBar();
   s = v.s;
   mode = v.mode;
@@ -622,7 +626,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   // straight back up to a bird's-eye view to watch the ink land
   if (opts.cam ?? true) cam.overview();
   sfx.slip(power);
-  sfx.scratch(dur / 1000 / speed + 0.05, f.kind === "snipe" ? 0.6 : 0.45);
+  sfx.stroke(dur / 1000 / speed + 0.05, f.kind === "snipe" ? 0.6 : 0.45);
   hud();
 }
 
@@ -716,7 +720,7 @@ function finish() {
     dawn.go(1, 2600);
     sfx.birds();
   });
-  after(1500, () => { fx.add("sign", T, 0, 1500, "linear"); sfx.scratch(1.2, 0.3, 2800); });
+  after(1500, () => { fx.add("sign", T, 0, 1500, "linear"); sfx.stroke(1.2, 0.3, 2800); });
   after(3400, () => { busy = false; if (screen === "game") { viewBar(); showOver(); } });
   void w;
 }
@@ -742,25 +746,43 @@ function sizeRow() {
     ${sizeName === "custom" ? `<p class="custom">${step("bases", "camps")}${step("soldiers", "men each")}</p>` : ""}`;
 }
 
+// The desk under the cover: the page you're on if it's on today's paper, or a clean sheet of it.
+function titleDesk(saved = load()) {
+  if (saved && paperOf(saved.s.page) === currentTheme()) { s = saved.s; mode = saved.mode; } else { s = newGame(SIZES.quick, 1); mode = { kind: "pnp" }; }
+  cam.overview(rotFor(s.current));
+  cam.snap();
+  dirty = true;
+}
+
 function showTitle() {
   screen = "title";
   reset();
+  applyTheme(homeTheme());
   closeSheet();
   restoreKindBar();
+  dawn.set(0);
+  coverMenu();
+  const cover = $("#cover");
+  cover.hidden = false;
+  cover.classList.remove("open");
+  // the lamp comes on
+  if (lampOn.to < 1) after(450, switchOn);
+}
+
+// The slip tucked in the cover, and the page on the desk under it.
+function coverMenu() {
   const saved = load();
   const d = drawer();
-  // the desk shows the page you're on, or a clean one
-  if (saved) { s = saved.s; mode = saved.mode; } else { s = newGame(SIZES.quick, 1); mode = { kind: "pnp" }; }
-  cam.overview(rotFor(s.current));
-  cam.snap();
-  dawn.set(0);
+  titleDesk(saved);
   hud();
   const canResume = saved && saved.s.phase !== "over";
+  // a page started on another paper says so
+  const elsewhere = saved && paperOf(saved.s.page) !== currentTheme() ? ` · ${themeOf(saved.s.page?.theme).name.toLowerCase()}` : "";
   const menu = $("#cover .menu");
   const where = (x: AnyState) => x.phase === "setup" ? "still drawing camps" : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
   const draw = () => {
     menu.innerHTML = `
-    ${canResume ? `<button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}</small></button>` : ""}
+    ${canResume ? `<button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>` : ""}
     <p class="head">quick battle</p>
     ${sizeRow()}
     <button data-a="bot" class="ink red">play Dawood-bot</button>
@@ -774,9 +796,6 @@ function showTitle() {
     </p>`;
   };
   draw();
-  const cover = $("#cover");
-  cover.hidden = false;
-  cover.classList.remove("open");
   menu.onclick = (e) => {
     const b = (e.target as HTMLElement).closest("button");
     if (!b) return;
@@ -805,16 +824,25 @@ function showTitle() {
       draw();
     }
   };
-  // the lamp comes on
-  if (lampOn.to < 1) after(450, switchOn);
 }
 
 function switchOn() {
   sfx.lamp();
-  // a flicker: on, off, on
-  lampOn.go(0.75, 40);
-  after(70, () => lampOn.go(0.15, 50));
-  after(160, () => lampOn.go(1, 180));
+  const kind = theme.light.switch;
+  if (kind === "day") lampOn.go(1, 700); // daylight: the room just brightens
+  else if (kind === "tube") {
+    // a tube light: blinks twice on its starter, then catches
+    lampOn.go(0.55, 30);
+    after(60, () => lampOn.go(0.08, 40));
+    after(210, () => lampOn.go(0.65, 30));
+    after(270, () => lampOn.go(0.12, 50));
+    after(430, () => lampOn.go(1, 80));
+  } else {
+    // a lamp's flicker: on, off, on
+    lampOn.go(0.75, 40);
+    after(70, () => lampOn.go(0.15, 50));
+    after(160, () => lampOn.go(1, 180));
+  }
   document.body.classList.add("lit");
 }
 
@@ -859,22 +887,69 @@ function showHow() {
   };
 }
 
+// A swatch of a theme's paper: a corner of the sheet with a camp and a flick on it.
+function swatch(id: string, w = 66, h = 88) {
+  const c = document.createElement("canvas");
+  const k = Math.min(2, dpr);
+  c.width = Math.round(w * k);
+  c.height = Math.round(h * k);
+  const g = c.getContext("2d")!;
+  withTheme(id, () => {
+    const sc = (w * k) / 300;
+    g.setTransform(sc, 0, 0, sc, -20 * sc, -10 * sc);
+    drawPaper(g, newGame(SIZES.quick, 1, { no: 1, date: "" }));
+    g.globalCompositeOperation = inkLib.inkOp();
+    const t = theme;
+    inkLib.inkCircle(g, 190, 250, 58, t.ink.pens[0], 11, 3.4 * t.ink.width);
+    for (let i = 0; i < 6; i++) inkLib.inkDot(g, 172 + (i % 3) * 18, 236 + Math.floor(i / 3) * 26, 8, t.ink.pens[0], 40 + i);
+    inkLib.inkFlick(g, [{ x: 250, y: 380 }, { x: 222, y: 300 }, { x: 196, y: 238 }], t.ink.pens[1], 5, 4.4 * t.ink.width);
+    inkLib.inkCross(g, 190, 250, 16, t.ink.pens[1], 3, 3.2 * t.ink.width);
+  });
+  return c;
+}
+
 function showSettings() {
   const row = (k: string, on: boolean, label: string, hint: string) =>
     `<button class="toggle ${on ? "on" : ""}" data-set="${k}"><b>${label}</b><i>${hint}</i></button>`;
+  const chosen = chosenTheme();
+  const room = roomTheme();
   const card = sheet(`
     <h2>Settings</h2>
     ${row("tilt", settings.tilt, "sit down to aim", "the camera drops low behind your soldier")}
     ${row("handoff", settings.handoff, "pause between turns", "pass & play: tap before the next go")}
     ${row("sound", !sfx.muted, "sound", "pen, paper, lamp")}
     ${haptics.supported ? row("haptics", haptics.enabled, "haptics", "the pen felt under your thumb") : ""}
-    <button class="act" data-a="back">done</button>`);
+    <h3>Paper</h3>
+    ${row("surprise", !chosen, "a surprise each time", chosen ? `always the ${themeOf(chosen).name.toLowerCase()}` : "a different book every time you open it")}
+    <div class="papers" role="radiogroup" aria-label="Paper"></div>
+    ${room ? `<p class="fine">This room is on the ${themeOf(room).name.toLowerCase()}: a room is one sheet, so its paper wins. Your pick is kept for later.</p>` : ""}
+    <button class="act" data-a="back">done</button>`, "settings");
+  const papers = card.querySelector(".papers")!;
+  for (const t of THEMES) {
+    const b = document.createElement("button");
+    b.className = `paper${t.id === chosen ? " on" : ""}${t.id === currentTheme() ? " here" : ""}`;
+    b.dataset.theme = t.id;
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", String(t.id === chosen));
+    b.title = t.blurb;
+    b.appendChild(swatch(t.id));
+    const cap = document.createElement("span");
+    cap.textContent = t.name;
+    b.appendChild(cap);
+    papers.appendChild(b);
+  }
   card.onclick = (e) => {
     const b = (e.target as HTMLElement).closest("button");
     if (!b) return;
     sfx.tap();
     const k = b.dataset.set;
-    if (k === "sound") sfx.setMuted(!sfx.muted);
+    if (b.dataset.theme || k === "surprise") {
+      const id = b.dataset.theme ?? null;
+      // tapping your pick again, or "surprise", goes back to a surprise each load
+      chooseTheme(id && id !== chosen ? id : null);
+      if (screen === "title") coverMenu(); // the desk and the slip follow the new paper
+      sfx.rustle();
+    } else if (k === "sound") sfx.setMuted(!sfx.muted);
     else if (k === "haptics") { haptics.setEnabled(!haptics.enabled); haptic("tap"); }
     else if (k === "tilt" || k === "handoff") {
       settings[k] = !settings[k];
@@ -893,7 +968,7 @@ function showHandoff() {
   const card = sheet(`
     <button type="button" class="handoff-tap">
       <p class="sub">${lastNote}</p>
-      <h2 style="color:${INK.pens[nextP]}">Your pen, ${name(nextP)}</h2>
+      <h2 style="color:${hudPen(nextP)}">Your pen, ${name(nextP)}</h2>
       <p class="fine">tap when you've got it</p>
     </button>`, "handoff");
   sfx.rustle();
@@ -916,8 +991,8 @@ function showOver() {
   const crossed = (p: Player) => s.marks.filter((m) => m.t === "cross" && m.kind === "kill" && m.owner === p).length;
   sheet(`
     <p class="sub">morning. page ${s.page?.no ?? ""} is done.</p>
-    <h2 style="color:${INK.pens[w]}">${name(w)} held the page.</h2>
-    <p class="stats">${s.turn} turns · ${metres.toFixed(1)} metres of ink · ${([0, 1] as Player[]).map((p) => `<span style="color:${INK.pens[p]}">${name(p)} crossed out ${crossed(p)}</span>`).join(" · ")}</p>
+    <h2 style="color:${hudPen(w)}">${name(w)} held the page.</h2>
+    <p class="stats">${s.turn} turns · ${metres.toFixed(1)} ${theme.ink.tool === "pencil" ? "metres of lead" : "metres of ink"} · ${([0, 1] as Player[]).map((p) => `<span style="color:${hudPen(p)}">${name(p)} crossed out ${crossed(p)}</span>`).join(" · ")}</p>
     <button class="act" data-a="replay">watch the war again</button>
     <button class="act" data-a="keep">keep the page (image)</button>
     <button class="act" data-a="look">look at it</button>
@@ -939,7 +1014,8 @@ function thumb(r: Filed, w: number) {
   const sc = (w * Math.min(2, dpr)) / RULES.pageW;
   c.width = Math.round(RULES.pageW * sc);
   c.height = Math.round(RULES.pageH * sc);
-  drawPageInto(c.getContext("2d")!, st, sc, r);
+  // on its own paper, whatever today's is
+  withTheme(paperOf(r.page), () => drawPageInto(c.getContext("2d")!, st, sc, r));
   return c;
 }
 
@@ -956,9 +1032,10 @@ function showDrawer() {
     b.className = "page";
     b.dataset.i = String(i);
     b.appendChild(thumb(r, 130));
-    const who = r.mode.kind === "bot" ? ["Blue", "Dawood-bot"] : ["Blue", "Red"];
+    const names = themeOf(r.page?.theme).ink.names;
+    const who = r.mode.kind === "bot" ? [names[0], "Dawood-bot"] : names;
     const cap = document.createElement("span");
-    cap.innerHTML = `No. ${r.page?.no ?? "?"} · ${r.page?.date ?? ""}<br><b style="color:${INK.pens[r.winner ?? 0]}">${r.winner !== undefined ? who[r.winner] : "unfinished"}</b> · ${r.turns} turns`;
+    cap.innerHTML = `No. ${r.page?.no ?? "?"} · ${r.page?.date ?? ""}<br><b style="color:${hudPen(r.winner ?? 0)}">${r.winner !== undefined ? who[r.winner] : "unfinished"}</b> · ${r.turns} turns`;
     b.appendChild(cap);
     grid.appendChild(b);
   });
@@ -973,6 +1050,7 @@ function showDrawer() {
 
 function viewPage(r: Filed) {
   reset();
+  applyTheme(paperOf(r.page));
   closeSheet();
   closeCover();
   viewing = r;
@@ -1007,6 +1085,7 @@ function restoreKindBar() {
 let replayQueue: Step[] = [];
 function replay(r: Filed) {
   reset();
+  applyTheme(paperOf(r.page));
   closeSheet();
   viewing = r;
   mode = r.mode;
@@ -1580,6 +1659,9 @@ function renderNow() {
 }
 
 function showBoot() {
+  applyTheme(homeTheme());
+  // a new paper re-inks the page and repaints the desk and the light (they key on the theme)
+  onTheme(() => { dirty = true; hud(); });
   resize();
   hud();
   document.fonts?.ready.then(() => { pageState.epoch++; dirty = true; });
@@ -1633,6 +1715,7 @@ if (import.meta.env.DEV) {
       return r;
     },
     view: (r: Filed) => viewPage(r), replayRecord: (r: Filed) => replay(r),
+    theme: { apply: applyTheme, choose: chooseTheme, room: setRoomTheme, get current() { return currentTheme(); }, list: THEMES.map((t) => t.id) },
     resumeRecord: (r: Filed) => resume({ s: unfile(r), mode: r.mode }),
   };
 }

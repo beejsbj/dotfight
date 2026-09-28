@@ -167,7 +167,7 @@ export interface GameState {
   marks: Mark[];
   actions: Action[];
   winner?: Player;
-  page?: { no: number; date: string };
+  page?: { no: number; date: string; theme?: string }; // written in the header, and the paper it was on; optional so older saves still load
 }
 
 export const other = (p: Player): Player => (p === 0 ? 1 : 0);

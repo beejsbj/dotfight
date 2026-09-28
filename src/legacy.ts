@@ -43,7 +43,7 @@ export interface LegacyState {
   marks: Mark[];
   flicks: LegacyFlick[]; // history, enough to replay the page
   winner?: Player;
-  page?: { no: number; date: string }; // written in the header; optional so older saves still load
+  page?: { no: number; date: string; theme?: string }; // written in the header, and the paper it was on; optional so older saves still load
 }
 
 const other = (p: Player): Player => (p === 0 ? 1 : 0);

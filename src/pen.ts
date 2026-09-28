@@ -1,4 +1,5 @@
-// The pen: a clear hexagonal ballpoint, balanced upright on a soldier's dot.
+// The pen: a clear hexagonal ballpoint (or a gel pen, or a pencil, as the
+// theme has it), balanced upright on a soldier's dot.
 // It's modelled as a line in 3D above the page, projected through the same
 // camera as the desk, so it stands up out of the tilted page. Its shadow is
 // cast by the lamp onto the paper.
@@ -6,6 +7,7 @@
 import { INK } from "./ink";
 import type { Lamp } from "./light";
 import { project, type View } from "./projection";
+import { theme } from "./theme";
 
 export const PEN = { L: 430, R: 12.5 };
 
@@ -44,7 +46,7 @@ export function drawPenShadow(g: CanvasRenderingContext2D, p: PenPose, lamp: Lam
   const lift = Math.min(1, p.h / 120);
   const strength = p.alpha * (1 - lift * 0.7) * lamp.on;
   // round-ended soft strokes: a darker core inside a wide, faint penumbra
-  g.strokeStyle = g.fillStyle = "rgb(40, 28, 20)";
+  g.strokeStyle = g.fillStyle = `rgb(${theme.light.shadow.join(", ")})`;
   g.lineCap = "round";
   for (const [w, al] of [[1.7, 0.14], [3, 0.07], [4.6, 0.04]] as const) {
     g.globalAlpha = al * strength;
@@ -68,7 +70,8 @@ export function drawPen(g: CanvasRenderingContext2D, p: PenPose, v: View) {
   const P = (t: number) => { const q = at(p, t); return project(v, q.x, q.y, q.h); };
   const tip = P(0), cone = P(0.085), capA = P(0.7), top = P(1);
   const dx = top.x - tip.x, dy = top.y - tip.y, sl = Math.hypot(dx, dy);
-  const ink = INK.pens[p.owner];
+  const ink = theme.ink.body[p.owner]; // the cap, or a pencil's paint
+  const mark = INK.pens[p.owner]; // what it writes
   g.save();
   g.globalAlpha = p.alpha;
   g.lineJoin = "round";
@@ -76,7 +79,7 @@ export function drawPen(g: CanvasRenderingContext2D, p: PenPose, v: View) {
 
   // Seen end-on (standing straight up under a flat camera): just the cap's face.
   if (sl < PEN.R * top.k * 1.2) {
-    endFace(g, p, v, 1, ink, 1);
+    endFace(g, p, v, 1, theme.ink.tool === "pencil" ? "#e39a9a" : ink, theme.ink.tool === "pencil" ? 0.8 : 1);
     g.restore();
     return;
   }
@@ -90,6 +93,11 @@ export function drawPen(g: CanvasRenderingContext2D, p: PenPose, v: View) {
     g.closePath();
   };
   const R = PEN.R;
+  if (theme.ink.tool === "pencil") {
+    drawPencil(g, P, quad, nx, ny, mark, ink);
+    g.restore();
+    return;
+  }
 
   // barrel: clear plastic, faceted. A gradient across its width does the hexagon.
   const mid = P(0.4);
@@ -110,7 +118,7 @@ export function drawPen(g: CanvasRenderingContext2D, p: PenPose, v: View) {
   g.strokeStyle = "rgba(235,235,230,0.8)";
   g.lineWidth = R * 0.34 * mid.k;
   g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeTop.x, tubeTop.y); g.stroke();
-  g.strokeStyle = ink;
+  g.strokeStyle = mark;
   g.lineWidth = R * 0.26 * mid.k;
   g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeEnd.x, tubeEnd.y); g.stroke();
   // facet edges
@@ -124,6 +132,25 @@ export function drawPen(g: CanvasRenderingContext2D, p: PenPose, v: View) {
   g.lineWidth = Math.max(0.6, 0.08 * R * mid.k);
   quad(cone, capA, R, R);
   g.stroke();
+  if (theme.ink.tool === "gel") {
+    // a gel pen's rubber grip, ribbed, in a smoky tint of its ink
+    const gA = P(0.1), gB = P(0.3), gm = P(0.2);
+    quad(gA, gB, R * 1.08, R * 1.08);
+    const gg = g.createLinearGradient(gm.x - nx * R * gm.k, gm.y - ny * R * gm.k, gm.x + nx * R * gm.k, gm.y + ny * R * gm.k);
+    gg.addColorStop(0, shade(ink, -0.6));
+    gg.addColorStop(0.3, shade(ink, -0.1));
+    gg.addColorStop(1, shade(ink, -0.7));
+    g.globalAlpha = p.alpha * 0.85;
+    g.fillStyle = gg;
+    g.fill();
+    g.globalAlpha = p.alpha;
+    g.strokeStyle = "rgba(0,0,0,0.25)";
+    g.lineWidth = Math.max(0.5, 0.06 * R * gm.k);
+    for (let i = 1; i < 8; i++) {
+      const q = P(0.1 + i * 0.025);
+      g.beginPath(); g.moveTo(q.x + nx * R * 1.06 * q.k, q.y + ny * R * 1.06 * q.k); g.lineTo(q.x - nx * R * 1.06 * q.k, q.y - ny * R * 1.06 * q.k); g.stroke();
+    }
+  }
 
   // the cap, posted on the back: opaque coloured plastic with a clip
   quad(capA, top, R * 1.12, R * 1.12);
@@ -182,6 +209,42 @@ function endFace(g: CanvasRenderingContext2D, p: PenPose, v: View, t: number, in
   g.strokeStyle = shade(ink, -0.4);
   g.lineWidth = 1;
   g.stroke();
+}
+
+type Proj = { x: number; y: number; k: number };
+
+// A hexagonal pencil: painted barrel, a sharpened cone of bare wood with the
+// lead at its point, and a brass ferrule holding a pink eraser at the top.
+function drawPencil(
+  g: CanvasRenderingContext2D, P: (t: number) => Proj,
+  quad: (a: Proj, b: Proj, ra: number, rb: number) => void, nx: number, ny: number, mark: string, paintC: string,
+) {
+  const R = PEN.R * 0.82;
+  const tip = P(0), lead = P(0.035), cone = P(0.13), fer = P(0.86), rub = P(0.93), top = P(1);
+  const across = (m: Proj, r: number, stops: [number, string][]) => {
+    const gr = g.createLinearGradient(m.x - nx * r * m.k, m.y - ny * r * m.k, m.x + nx * r * m.k, m.y + ny * r * m.k);
+    for (const [o, c] of stops) gr.addColorStop(o, c);
+    return gr;
+  };
+  // the painted barrel: three visible facets
+  const mid = P(0.5);
+  quad(cone, fer, R, R);
+  g.fillStyle = across(mid, R, [[0, shade(paintC, -0.45)], [0.33, shade(paintC, -0.1)], [0.34, shade(paintC, 0.3)], [0.66, paintC], [0.67, shade(paintC, -0.25)], [1, shade(paintC, -0.5)]]);
+  g.fill();
+  // the wood cone and the lead
+  quad(lead, cone, R * 0.22, R);
+  g.fillStyle = across(P(0.08), R, [[0, "#b08a5a"], [0.4, "#ecd2a8"], [1, "#a47c4c"]]);
+  g.fill();
+  quad(tip, lead, R * 0.04, R * 0.22);
+  g.fillStyle = shade(mark, -0.2);
+  g.fill();
+  // ferrule and eraser
+  quad(fer, rub, R * 1.04, R * 1.04);
+  g.fillStyle = across(P(0.9), R, [[0, "#8a7a4a"], [0.3, "#efe2b0"], [0.6, "#b9a468"], [1, "#6e5f34"]]);
+  g.fill();
+  quad(rub, top, R * 0.98, R * 0.95);
+  g.fillStyle = across(P(0.96), R, [[0, "#b8686a"], [0.35, "#f2a4a2"], [1, "#9c5054"]]);
+  g.fill();
 }
 
 /** Lighten (k>0) or darken (k<0) a hex colour. */
