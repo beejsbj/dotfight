@@ -31,12 +31,13 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 - `src/pen.ts`, `src/ink.ts`, `src/textures.ts`: the ballpoint, seeded ink and pencil primitives, desk and paper
 - `src/timeline.ts`, `src/hand.ts`: draw-on timing, which soldier a tap means (pure, tested)
 - `src/sound.ts`: synthesised pen, paper and lamp sounds
+- `src/haptics.ts`: the pen felt under the thumb: `navigator.vibrate` on Android, the tick of a hidden checkbox switch on iPhone (from script up to iOS 26.4, only under real taps from 26.5). Pure parts tested
 - `src/main.ts`: turn flow, input, HUD, cover, cards, drawer, replay
 - `rules.html`, `rules/advanced.html`, `src/rulebook/`: the two rulebooks; `figures.ts` draws each mechanic with the game's ink
 
 ## Seeing it work
 
-- `npm run dev`, then drive it in headless Chrome at phone size: `node scripts/playtest.mjs <scenario> http://localhost:5173/ /tmp/out`. It uses playwright-core with `/usr/bin/google-chrome` and real CDP touch events, and takes `W`, `H`, `DPR`, `THROTTLE` and `TAUGHT=0` from the environment. Scenarios are in `scripts/scenarios/` (`first`, `pnp`, `tour`, `sizes`, `fog`, `perf`, …).
+- `npm run dev`, then drive it in headless Chrome at phone size: `node scripts/playtest.mjs <scenario> http://localhost:5173/ /tmp/out`. It uses playwright-core with `/usr/bin/google-chrome` and real CDP touch events, and takes `W`, `H`, `DPR`, `THROTTLE` and `TAUGHT=0` from the environment. Scenarios are in `scripts/scenarios/` (`first`, `pnp`, `tour`, `sizes`, `fog`, `perf`, `haptics`, …). The haptics scenario reads what was felt from `pft.haptics.felt`; add `?haptics=tap` or `?haptics=script` to the URL to run the iPhone rigs.
 - In dev builds, `window.pft` exposes state, camera, timelines, `speed`, `frames()`, `renderNow`, and helpers that file, resume and replay seeded bot-v-bot wars (`fileWar`, `resumeRecord`).
 - `npm run phone` serves on bjslab's Tailscale address for testing on a real phone.
 - **Share art:** after changing the title, cover or rulebook look, regenerate with `npm run share-art -- <devurl>` and `npm run rules-art -- <devurl> --og`, and look at the images.
