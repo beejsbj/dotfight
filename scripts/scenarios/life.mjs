@@ -68,7 +68,8 @@ export default async function (T, out) {
     }
     return best;
   }, side);
-  const menIn = (b) => page.evaluate((b) => window.pft.s.soldiers.filter((x) => x.alive && x.owner === b.owner && Math.hypot(x.x - b.x, x.y - b.y) <= b.r * 1.05), b);
+  // his side's living men nearest the camp, nearest first (under the core rules some stand outside it)
+  const menIn = (b) => page.evaluate((b) => window.pft.s.soldiers.filter((x) => x.alive && x.owner === b.owner).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y)).slice(0, 10), b);
 
   // --- idle ---------------------------------------------------------------------
   if (want("idle")) {
