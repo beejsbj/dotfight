@@ -20,6 +20,8 @@ export default async function (T, out) {
   const only = process.env.ONLY?.split(",");
   const want = (n) => !only || only.includes(n);
   await page.waitForTimeout(1000);
+  // one paper, not whichever the load drew: THEME=<id> (lamplight by default)
+  await page.evaluate((id) => window.pft.theme?.apply(id), process.env.THEME ?? "lamplight");
 
   const war = async (seed, turns, mode = "pnp") => {
     await page.evaluate(({ seed, turns, mode }) => {
