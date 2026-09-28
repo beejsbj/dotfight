@@ -71,7 +71,8 @@ export default async function (T, out) {
 
   // leaning in over one of the current side's men
   const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).sort((a, b) => b.y - a.y)[0]; });
-  const home = await page.evaluate((me) => window.pft.s.bases.find((b) => Math.hypot(b.x - me.x, b.y - me.y) <= b.r * 1.05), me);
+  // his camp: the nearest of his side's (he may stand outside it)
+  const home = await page.evaluate((me) => window.pft.s.bases.filter((b) => b.owner === me.owner).sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0], me);
   const a = await T.world(me.x, me.y);
   await T.tap(a.x, a.y, 40);
   await page.waitForFunction(() => window.pft.cam.settled, undefined, { timeout: 60000 });

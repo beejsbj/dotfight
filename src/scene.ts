@@ -185,6 +185,9 @@ function onScreen(f: Frame) {
  * Dev check: forget every layer's dirty rectangles, so the next render draws
  * each whole. An incremental frame must match that full redraw (pft.redrawCheck).
  */
+/** Dev: the part of the page the boil keeps up to date (page units), or undefined for all of it. Off it, a thing keeps its last look until it's seen. */
+export const boilSeen = () => seen;
+
 export function forgetDrawn() {
   liveDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   inked = { x: 0, y: 0, w: 1e6, h: 1e6 };
