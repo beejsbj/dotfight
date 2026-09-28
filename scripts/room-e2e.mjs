@@ -9,12 +9,14 @@
 // double-tap is refused. Screenshots of both phones side by side go to outdir.
 import { mkdirSync } from "node:fs";
 import { chromium } from "playwright-core";
+import { browserOpts, guardBrowserJob } from "./lib/guarded-browser.mjs";
 import { flickAt, phone, placeAt } from "./lib/phone.mjs";
+await guardBrowserJob();
 
 const url = process.argv[2] ?? "http://localhost:5173/";
 const out = process.argv[3] ?? "docs/shots/room-link";
 mkdirSync(out, { recursive: true });
-const browser = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
+const browser = await chromium.launch({ ...browserOpts, executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
 const opts = { w: 390, h: 844, dpr: 1, browser };
 
 const checks = [];
