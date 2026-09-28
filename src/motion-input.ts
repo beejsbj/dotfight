@@ -173,7 +173,7 @@ export function simulator() {
       acceleration: { x: accel[0], y: accel[1], z: accel[2] }, interval: 16,
     }));
   const tick = () => new Promise((r) => setTimeout(r, 16));
-  let seed = 1;
+  let seed = 1, halted = false;
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
   return {
     get at() { return at; },
@@ -192,13 +192,16 @@ export function simulator() {
     },
     /** Hold where it is for `ms`, with `noise` deg/s of tremor: a steady hand is under 1, a shaky one 30+. */
     async hold(ms: number, noise = 0.6) {
-      for (let t = 0; t < ms; t += 16) {
+      halted = false;
+      for (let t = 0; t < ms && !halted; t += 16) {
         const j = noise / 25; // the tremor moves the phone a little, too
         orient({ alpha: at.alpha + rand() * j, beta: at.beta + rand() * j, gamma: at.gamma + rand() * j });
         move([rand() * noise, rand() * noise, rand() * noise]);
         await tick();
       }
     },
+    /** Cut a long hold short. */
+    halt() { halted = true; },
     /** A wrist snap peaking at `peak` deg/s over about 110 ms: the phone pitches forward and back. */
     async snap(peak = 600) {
       const base = at;
