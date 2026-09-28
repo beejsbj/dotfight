@@ -262,7 +262,8 @@ export default async function (T, out) {
       check(Math.abs(wrap(f.angle - (fwd + g1.delta))) < 0.1, "the shot went where the sight was, not where the snap swung", `flick ${deg(f.angle)}°, sight ${deg(fwd + g1.delta)}°`);
       const k = (await crossed()) - k0;
       // ink on the page, passing the enemy it was aimed at. A hit isn't guaranteed: a
-      // flick's hidden release error (1-3°) is the game's rule, sensor or thumb.
+      // flick's hidden release error (1 sd is 1-3.5°, by power) is the game's rule, sensor
+      // or thumb. So this allows the same 0.1 rad as the angle check above.
       const ink = await ev(([id, fx, fy]) => {
         const st = window.pft.s.marks.filter((m) => m.t === "stroke").at(-1);
         const me = window.pft.s.soldiers[id];
@@ -274,7 +275,7 @@ export default async function (T, out) {
         }
         return { miss, d: Math.hypot(fx - me.x, fy - me.y) };
       }, [f.soldier, foe.x, foe.y]);
-      check(ink.miss < ink.d * 0.06, "the shot landed ink, passing close to the enemy it was aimed at",
+      check(ink.miss < ink.d * 0.1, "the shot landed ink, within the release cone of the enemy it was aimed at",
         `${ink.miss.toFixed(0)} units off a soldier ${ink.d.toFixed(0)} away (a hit is within ~10); crossed out ${k}`);
       await shot("3e-landed");
       await idle(T);
