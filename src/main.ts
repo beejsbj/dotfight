@@ -30,7 +30,7 @@ import * as voice from "./voice";
 import { Bubbles, bubbleAt, type BubbleKind } from "./bubble";
 import { feel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
-import { boil, boilTick, forgetDrawn, life, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { boil, boilSeen, boilTick, forgetDrawn, life, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
 import { Timeline, reachFraction } from "./timeline";
@@ -1892,15 +1892,16 @@ function leanOf() {
 }
 
 // Dev: how two drawings of a layer differ, beyond antialiasing (a channel off by more than 24).
-function differ(a: ImageData | null, b: ImageData | null) {
+function differ(a: ImageData | null, b: ImageData | null, only?: (x: number, y: number) => boolean) {
   if (!a || !b) return { bad: a === b ? 0 : -1, box: null };
   if (a.width !== b.width || a.height !== b.height) return { bad: -1, box: null };
   let bad = 0, x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
   const p = a.data, q = b.data;
   for (let i = 0; i < p.length; i += 4) {
     if (Math.abs(p[i] - q[i]) <= 24 && Math.abs(p[i + 1] - q[i + 1]) <= 24 && Math.abs(p[i + 2] - q[i + 2]) <= 24 && Math.abs(p[i + 3] - q[i + 3]) <= 24) continue;
-    bad++;
     const x = (i >> 2) % a.width, y = Math.floor((i >> 2) / a.width);
+    if (only && !only(x, y)) continue;
+    bad++;
     x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
   }
   return { bad, of: a.width * a.height, box: bad ? [x0, y0, x1, y1] : null };
@@ -1969,7 +1970,15 @@ if (import.meta.env.DEV) {
       forgetDrawn();
       renderNow(); renderNow(); // the boil draws one of its two canvases a render
       const b = grab();
-      return Object.fromEntries(Object.keys(layers).map((k) => [k, differ(a[k], b[k])]));
+      // the boil leaves what's off screen at its last look until it comes into view: compare what's on it
+      const on = boilSeen(), S = pageState.S;
+      const mask = (k: string) => {
+        const i = k === "rings" ? 0 : k === "rest" ? 1 : -1;
+        if (i < 0 || !on) return undefined;
+        const p = boil.parts[i];
+        return (x: number, y: number) => { const u = p.ox + x / S, w = p.oy + y / S; return u >= on.x0 && u <= on.x1 && w >= on.y0 && w <= on.y1; };
+      };
+      return Object.fromEntries(Object.keys(layers).map((k) => [k, differ(a[k], b[k], mask(k))]));
     },
     frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view }; },
     frames: (reset = false) => {
