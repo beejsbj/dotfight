@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { BOIL, BOILS, boilFrame, boldAt, lookAt, planBoil, spotKey, variantAt } from "./boil";
-import { act, alive, newGame, placeBase, rng, type GameState } from "./game";
+import { act, alive, newGame, rng, type GameState } from "./game";
+import { CORE, type Size } from "./rules";
 import { redrawn } from "./ink";
 import { SETTLED, type Ink } from "./page";
 
+/** A war past setup and positioning: three camps a side, ten men in each. */
 function setup() {
-  const s = newGame(42);
-  for (const [x, y] of [[300, 1200], [300, 200], [700, 1200], [700, 200], [500, 1000], [500, 400]]) placeBase(s, x, y);
+  const spots = [[300, 1200], [300, 200], [700, 1200], [700, 200], [500, 1000], [500, 400]];
+  const size: Size = { name: "custom", bases: spots.length / 2, soldiers: 10 };
+  const s = newGame(size, 42, undefined, { ...CORE });
+  for (const [x, y] of spots) act(s, { t: "base", x, y });
+  act(s, { t: "ready" });
+  act(s, { t: "ready" });
   return s;
 }
 
@@ -14,7 +20,7 @@ function setup() {
 const drawing = (p: Record<string, number>): Ink => ({ p: (k) => p[k] ?? 1, live: new Set(Object.keys(p)) });
 
 const shootAt = (s: GameState, me: { id: number; x: number; y: number }, foe: { x: number; y: number }) =>
-  act(s, { soldierId: me.id, kind: "shoot", angle: Math.atan2(foe.y - me.y, foe.x - me.x), length: 3000, bend: 0 });
+  act(s, { t: "flick", soldier: me.id, kind: "snipe", angle: Math.atan2(foe.y - me.y, foe.x - me.x), length: 3000, bend: 0, wob: 0 });
 
 describe("which side boils", () => {
   it("is the living, as Burooj asked", () => {
@@ -141,7 +147,7 @@ describe("the living boil", () => {
     const s = setup();
     const me = alive(s, 0)[0];
     const from = spotKey(me);
-    act(s, { soldierId: me.id, kind: "move", angle: -Math.PI / 2, length: 150, bend: 0 });
+    act(s, { t: "flick", soldier: me.id, kind: "lunge", angle: me.owner ? Math.PI / 2 : -Math.PI / 2, length: 150, bend: 0, wob: 0 });
     const now = spotKey(s.soldiers[me.id]);
     expect(now).not.toBe(from);
     const p = planBoil(s, SETTLED, { on: true });
@@ -152,7 +158,7 @@ describe("the living boil", () => {
   it("while he rides his ink he is held off the page but not drawn by the boil", () => {
     const s = setup();
     const me = alive(s, 0)[0];
-    act(s, { soldierId: me.id, kind: "move", angle: -Math.PI / 2, length: 150, bend: 0 });
+    act(s, { t: "flick", soldier: me.id, kind: "lunge", angle: me.owner ? Math.PI / 2 : -Math.PI / 2, length: 150, bend: 0, wob: 0 });
     const now = spotKey(s.soldiers[me.id]);
     for (const on of [true, false]) {
       const p = planBoil(s, SETTLED, { on, moving: me.id });

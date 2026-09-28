@@ -7,13 +7,15 @@
 // BOIL=on pins the boil on and stops the slow-device probe (headless Chrome
 // has no GPU and always looks slow, which would switch the boil off);
 // BOIL=off pins it off with the probe stopped too, for a like-for-like baseline.
-// THROTTLE=6 node scripts/playtest.mjs perf <url>
+// THROTTLE=6 [THEME=lamplight] node scripts/playtest.mjs perf <url>
 import { idle } from "../lib/phone.mjs";
 
 export default async function (T, out) {
   const { page, cdp } = T;
   await page.waitForTimeout(1200);
   const turns = +(process.env.TURNS ?? 70);
+  // THEME=<id> measures one paper (otherwise it's whichever the load drew)
+  if (process.env.THEME) await page.evaluate((id) => window.pft.theme?.apply(id), process.env.THEME);
   const info = await page.evaluate((turns) => {
     const r = window.pft.fileWar(11, turns);
     r.mode = { kind: "pnp" };

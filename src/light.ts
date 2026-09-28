@@ -6,6 +6,7 @@
 
 import type { Pose } from "./camera";
 import { project, type View } from "./projection";
+import { luma, theme } from "./theme";
 
 export interface Lamp {
   /** Where the lamp stands, in page units, and how high. */
@@ -26,10 +27,8 @@ type RGB = [number, number, number];
 const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const css = (c: RGB, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
 
-// multiply stops: what fraction of each channel survives, by distance from the pool's centre
-const LAMP: [number, RGB][] = [[0, [255, 248, 232]], [0.36, [246, 226, 192]], [0.66, [176, 138, 102]], [0.88, [84, 64, 50]], [1, [40, 31, 25]]];
-const DAY: [number, RGB][] = [[0, [250, 251, 253]], [0.42, [242, 244, 247]], [0.7, [208, 212, 220]], [0.9, [150, 156, 168]], [1, [104, 110, 124]]];
-const OFF: RGB = [16, 13, 12];
+// Multiply stops (what fraction of each channel survives, by distance from the
+// pool's centre) come from the theme: tungsten, a banker's lamp, a tube light, daylight.
 
 /** Where the lamp sits for a camera pose: up-left of the focus on screen, high when you stand, low when you sit. */
 export function lampFor(p: Pose, dawn: number, on: number): Lamp {
@@ -43,12 +42,13 @@ export function lampFor(p: Pose, dawn: number, on: number): Lamp {
   const x = p.x + (c * ux - s * uy) * reach, y = p.y + (s * ux + c * uy) * reach;
   // the pool leans from under the lamp toward what you're looking at
   const cx = x + (p.x - x) * 0.72, cy = y + (p.y - y) * 0.72;
-  return { x, y, h, cx, cy, r: h * (0.9 + dawn * 1.2), dawn, on };
+  return { x, y, h, cx, cy, r: h * (0.9 + dawn * 1.2) * theme.light.reach, dawn, on };
 }
 
 /** The light's colour where there is no lamp (screen-edge fade, body background). */
 export function farColour(l: Lamp) {
-  return css(mix(OFF, mix(LAMP[LAMP.length - 1][1], DAY[DAY.length - 1][1], l.dawn), l.on));
+  const { lamp, day, off } = theme.light;
+  return css(mix(off, mix(lamp[lamp.length - 1][1], day[day.length - 1][1], l.dawn), l.on));
 }
 
 /** Light falling on a point, 0..1: for sheen strength and the like. */
@@ -63,9 +63,10 @@ export function paintLight(g: CanvasRenderingContext2D, w: number, h: number, k:
   g.setTransform(1, 0, 0, 1, 0, 0);
   const grad = g.createRadialGradient(c.x * k, c.y * k, 0, c.x * k, c.y * k, l.r * c.k * k);
   const tinted = (rgb: RGB): RGB => [rgb[0] * tint[0], rgb[1] * tint[1], rgb[2] * tint[2]];
-  for (let i = 0; i < LAMP.length; i++) {
-    const lit = mix(LAMP[i][1], DAY[i][1], l.dawn);
-    grad.addColorStop(LAMP[i][0], css(tinted(mix(OFF, lit, l.on))));
+  const { lamp, day, off } = theme.light;
+  for (let i = 0; i < lamp.length; i++) {
+    const lit = mix(lamp[i][1], day[i][1], l.dawn);
+    grad.addColorStop(lamp[i][0], css(tinted(mix(off, lit, l.on))));
   }
   g.fillStyle = grad;
   g.fillRect(0, 0, w, h);
@@ -81,6 +82,9 @@ export function paintHaze(g: CanvasRenderingContext2D, w: number, h: number, k: 
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.clearRect(0, 0, w, h);
   let any = false;
+  // the room beyond the light, in the theme's colour: near, mid, far, and the edge
+  const fog = theme.light.fog;
+  const room = (k: number, a: number) => `rgba(${(fog[0] * k) | 0}, ${(fog[1] * k) | 0}, ${(fog[2] * k) | 0}, ${a})`;
   if (lean > 0.02 && tip) {
     any = true;
     const R = Math.max(w, h);
@@ -88,27 +92,27 @@ export function paintHaze(g: CanvasRenderingContext2D, w: number, h: number, k: 
     // still there as shapes, but only the pool round the pen is really lit
     const f = lean * (1 - dawn * 0.6);
     const rad = g.createRadialGradient(tip.x * k, tip.y * k, R * 0.14, tip.x * k, tip.y * k, R * 0.85);
-    rad.addColorStop(0, "rgba(40, 30, 22, 0)");
-    rad.addColorStop(0.3, `rgba(40, 30, 22, ${0.3 * f})`);
-    rad.addColorStop(0.6, `rgba(30, 23, 17, ${0.7 * f})`);
-    rad.addColorStop(1, `rgba(24, 18, 14, ${0.92 * f})`);
+    rad.addColorStop(0, room(1, 0));
+    rad.addColorStop(0.3, room(1, 0.3 * f));
+    rad.addColorStop(0.6, room(0.75, 0.7 * f));
+    rad.addColorStop(1, room(0.6, 0.92 * f));
     g.fillStyle = rad;
     g.fillRect(0, 0, w, h);
     // depth: the far edge of the desk dissolves into the dark room
     const depth = g.createLinearGradient(0, 0, 0, tip.y * k);
-    depth.addColorStop(0, `rgba(22, 17, 13, ${f})`);
-    depth.addColorStop(0.18, `rgba(22, 17, 13, ${0.92 * f})`);
-    depth.addColorStop(0.5, `rgba(30, 23, 17, ${0.45 * f})`);
-    depth.addColorStop(0.85, `rgba(40, 30, 22, ${0.08 * f})`);
-    depth.addColorStop(1, "rgba(40, 30, 22, 0)");
+    depth.addColorStop(0, room(0.55, f));
+    depth.addColorStop(0.18, room(0.55, 0.92 * f));
+    depth.addColorStop(0.5, room(0.75, 0.45 * f));
+    depth.addColorStop(0.85, room(1, 0.08 * f));
+    depth.addColorStop(1, room(1, 0));
     g.fillStyle = depth;
     g.fillRect(0, 0, w, h);
     // and the sides, as the old tilted desk had them
     const ex = w * 0.12;
     for (const [x0, x1] of [[0, ex], [w, w - ex]]) {
       const side = g.createLinearGradient(x0, 0, x1, 0);
-      side.addColorStop(0, `rgba(22, 17, 13, ${0.75 * f})`);
-      side.addColorStop(1, "rgba(22, 17, 13, 0)");
+      side.addColorStop(0, room(0.55, 0.75 * f));
+      side.addColorStop(1, room(0.55, 0));
       g.fillStyle = side;
       g.fillRect(Math.min(x0, x1), 0, ex, h);
     }
@@ -122,7 +126,8 @@ export function paintHaze(g: CanvasRenderingContext2D, w: number, h: number, k: 
       const a0 = i * 0.5 + gap, a1 = i * 0.5 + 0.5 - gap, b0 = j * 0.5 + gap, b1 = j * 0.5 + 0.5 - gap;
       const P = (a: number, b: number) => project(v, O.x + u.x * a + vv.x * b, O.y + u.y * a + vv.y * b);
       const c = [P(a0, b0), P(a1, b0), P(a1, b1), P(a0, b1)];
-      g.fillStyle = `rgba(255, 244, 222, ${0.3 * dawn})`;
+      // on dark paper (a blueprint) the panes would glare: they fade with the paper's darkness
+      g.fillStyle = `rgba(255, 244, 222, ${0.3 * dawn * Math.min(1, 0.25 + luma(theme.paper.colour) * 1.2)})`;
       g.beginPath();
       c.forEach((q, n) => (n ? g.lineTo(q.x * k, q.y * k) : g.moveTo(q.x * k, q.y * k)));
       g.closePath();
