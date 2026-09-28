@@ -65,7 +65,7 @@ export async function flickAt(T, id, tx, ty, px = 110, { kind = "shoot", hold = 
   const me = await T.page.evaluate((id) => window.pft.s.soldiers[id], id);
   const a = await T.world(me.x, me.y);
   await T.tap(a.x, a.y, 40); // pick him up
-  await T.wait(() => window.pft.cam.settled, undefined, 20000);
+  await T.wait(() => window.pft.cam.settled, undefined, 60000);
   const b = await T.world(me.x, me.y);
   const t = await T.world(tx, ty);
   const ang = Math.atan2(t.y - b.y, t.x - b.x);

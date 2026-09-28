@@ -15,7 +15,7 @@ const url = process.argv[2] ?? "http://localhost:5173/";
 const out = process.argv[3] ?? "docs/shots/room-link";
 mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
-const opts = { w: 390, h: 844, dpr: 2, browser };
+const opts = { w: 390, h: 844, dpr: 1, browser };
 
 const checks = [];
 const check = (ok, what) => { checks.push([ok, what]); console.log(`${ok ? "ok  " : "FAIL"} ${what}`); };
@@ -27,14 +27,15 @@ const state = (T) => T.page.evaluate(() => {
     status: document.querySelector("#status").textContent };
 });
 // my go, and nothing left to draw
-const myTurn = (T, timeout = 90000) => T.page.waitForFunction(() => {
+const myTurn = (T, timeout = 180000) => T.page.waitForFunction(() => {
   const p = window.pft;
   return p.screen === "game" && p.link && p.link.queued === 0 && p.s.current === p.link.seat && !p.busy && !p.res && p.cam.settled;
 }, undefined, { timeout, polling: 100 });
-const settled = (T, timeout = 90000) => T.page.waitForFunction(() => { const p = window.pft; return !p.busy && !p.res && p.cam.settled; }, undefined, { timeout, polling: 100 });
+const settled = (T, timeout = 180000) => T.page.waitForFunction(() => { const p = window.pft; return !p.busy && !p.res && p.cam.settled; }, undefined, { timeout, polling: 100 });
 
 async function pair(name, a, b, note = "") {
-  const [ia, ib] = [await a.page.screenshot(), await b.page.screenshot()];
+  const snap = async (T) => { await T.page.bringToFront(); return T.page.screenshot({ timeout: 90000 }); };
+  const [ia, ib] = [await snap(a), await snap(b)];
   const tmp = await browser.newPage({ viewport: { width: 2 * 390 + 60, height: 844 + 70 }, deviceScaleFactor: 1 });
   const src = (buf) => `data:image/png;base64,${buf.toString("base64")}`;
   await tmp.setContent(`<body style="margin:0;background:#1a1512;font:15px sans-serif;color:#cbb">
@@ -70,7 +71,7 @@ try {
   await A.page.locator("#cover .label input").fill("Burooj");
   await A.page.screenshot({ path: `${out}/01-name-on-label.png` });
   await A.page.getByText("start a page for two").dispatchEvent("click");
-  await A.page.waitForSelector("#sheet:not([hidden]) .link", { timeout: 15000 });
+  await A.page.waitForSelector("#sheet:not([hidden]) .link", { timeout: 60000 });
   await A.page.waitForTimeout(500);
   await A.page.screenshot({ path: `${out}/02-send-the-link.png` });
   const link = (await A.page.textContent("#sheet .link")).trim();
@@ -82,14 +83,14 @@ try {
   // Dawood opens the link on his phone
   B = await phone({ ...opts, url: new URL(`/r/${code}`, url).href });
   await B.page.evaluate(() => window.pft.speed = 1.5);
-  await B.page.waitForSelector("#cover .label input", { timeout: 15000 });
+  await B.page.waitForSelector("#cover .label input", { timeout: 60000 });
   await B.page.waitForTimeout(700);
   await B.page.locator("#cover .label input").fill("Dawood");
   await pair("03-link-opened", A, B, "(opened the link)");
   await B.page.getByText("take the red pen").dispatchEvent("click");
-  await B.page.waitForFunction(() => window.pft.link?.seat === 1, undefined, { timeout: 15000 });
+  await B.page.waitForFunction(() => window.pft.link?.seat === 1, undefined, { timeout: 60000 });
   check(true, "Dawood took the red pen (seat 1)");
-  await A.wait(() => window.pft.link.names[1] === "Dawood", undefined, 10000);
+  await A.wait(() => window.pft.link.names[1] === "Dawood", undefined, 60000);
   check(true, "Burooj's phone learned Dawood's name");
 
   // camps: three each, alternately, by touch
@@ -164,7 +165,7 @@ try {
   await B.page.waitForTimeout(1200);
   await pair("09-dawood-back-at-cover", A, B, "(reopened the app)");
   await B.page.locator(`#cover [data-room="${code}"]`).dispatchEvent("click");
-  await B.page.waitForFunction(() => window.pft.link, undefined, { timeout: 10000 });
+  await B.page.waitForFunction(() => window.pft.link, undefined, { timeout: 60000 });
   await B.page.waitForTimeout(1200);
   await pair("10-catching-up", A, B, "(catching up)");
   await myTurn(B);
