@@ -79,7 +79,9 @@ export default async function (T, out) {
   await settle();
   await burst("leanin", frames);
   const h = await T.world(home.x, home.y);
-  await burst("leanin-camp", frames, { x: Math.round(h.x - 90), y: Math.round(h.y - 90), width: 180, height: 180 });
+  // his camp, kept inside the screen (it can sit near an edge leaning in)
+  const cx = Math.max(90, Math.min(390 - 90, h.x)), cy = Math.max(90, Math.min(844 - 90, h.y));
+  await burst("leanin-camp", frames, { x: Math.round(cx - 90), y: Math.round(cy - 90), width: 180, height: 180 });
   await page.evaluate(() => document.querySelector("#page-btn").click());
   await idle(T);
 
