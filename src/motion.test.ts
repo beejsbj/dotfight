@@ -192,6 +192,13 @@ describe("level 3: gun hold", () => {
     expect(hard.power).toBeLessThanOrEqual(1);
   });
 
+  it("stays armed through a pause in the sensor stream", () => {
+    const gun = new GunHold();
+    const r = drive(gun, [[upright, 500], [upright, 400]], flat);
+    expect(gun.armed).toBe(1);
+    expect(snap(gun, r.at, r.t + 800, 600)?.t).toBe("fire"); // nothing arrived for most of a second
+  });
+
   it("fires on a shake from a phone without a gyro", () => {
     const gun = new GunHold();
     gun.centre(upright);

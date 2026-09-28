@@ -210,7 +210,7 @@ export class GunHold {
       return;
     }
     // armed, or was a moment ago: a snap starts slower than it peaks
-    if (snap >= 1 && t - this.armedT <= GUN.graceMs) {
+    if (snap >= 1 && (this.armed >= 1 || t - this.armedT <= GUN.graceMs)) {
       // the aim you held, not wherever the snap itself swung the phone
       this.burst = { t0: t, peak: snap, aim: this.stillAim };
       return;
