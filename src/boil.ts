@@ -19,7 +19,7 @@ import type { Soldier } from "./game";
 import type { AnyState as GameState } from "./record";
 import { inBase } from "./hand";
 import { inkOp } from "./ink";
-import { dotSpots, drawBase, drawDot, drawMark, type Ink, type Spot } from "./page";
+import { dotSpots, drawBase, drawDot, drawMark, wentTo, type Ink, type Spot } from "./page";
 import { FPS as LIFE_FPS, FRAME as LIFE_FRAME, LIFE_BOX, type Life, type Pose } from "./life";
 import { theme } from "./theme";
 import { RULES } from "./rules";
@@ -363,10 +363,10 @@ class BoilCanvas {
         x0 = Math.min(...pts.map((p) => p.x)) - e; x1 = Math.max(...pts.map((p) => p.x)) + e;
         y0 = Math.min(...pts.map((p) => p.y)) - e; y1 = Math.max(...pts.map((p) => p.y)) + e;
       } else if (m.t === "cross") {
-        const r = RULES.soldierRadius * 3.2 + pad;
+        const r = RULES.soldierRadius * 4.4 + pad;
         x0 = m.x - r; y0 = m.y - r; x1 = m.x + r; y1 = m.y + r;
       } else continue;
-      things.push({ key: `m${i}@${m.seed}`, boils, x0, y0, x1, y1, paint: (g, w) => drawMark(g, m, 1, w) });
+      things.push({ key: `m${i}@${m.seed}`, boils, x0, y0, x1, y1, paint: (g, w) => drawMark(g, m, 1, w, wentTo(s, i)) });
     }
     this.things = things;
     this.poses = [];

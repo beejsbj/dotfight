@@ -2253,6 +2253,13 @@ function currentFrame(): Frame {
     // sends ordered this turn wait in pencil until the pen changes hands
     const orders = c0.convoys.filter((c) => c.state === "ordered");
     if (orders.length) f.orders = orders.map((c) => ({ a: c.road[0], b: c.road[1], at: c.ids.map((id) => c0.soldiers[id]) }));
+    // soldiers out on the road, where a lunger could catch them
+    const marching = new Set(lapse?.walkers.map((w) => w.id));
+    const out = c0.convoys.filter((c) => c.state === "road").flatMap((c) => {
+      const dir = Math.atan2(c.road[1].y - c.road[0].y, c.road[1].x - c.road[0].x);
+      return c.ids.filter((id) => c0.soldiers[id].alive && !marching.has(id)).map((id) => ({ at: c0.soldiers[id] as Pt, dir }));
+    });
+    if (out.length) f.road = out;
     if (sending?.from !== undefined && arrowTo) {
       const from = c0.bases[sending.from];
       const w = sending.to ?? ownBaseAt(arrowTo);

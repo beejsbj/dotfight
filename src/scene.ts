@@ -18,7 +18,7 @@ import type { AnyState as GameState } from "./record";
 import { INK, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilStroke, rubOut } from "./ink";
 import { Life } from "./life";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
-import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
+import { drawBase, drawDot, drawMark, drawSignature, wentTo, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
 import { cssMatrix, layerMatrix, project, stageCss, toLocal, unproject, type View } from "./projection";
 import { RULES } from "./rules";
@@ -70,6 +70,8 @@ export interface Frame {
   sendArrow?: { from: Pt; to: Pt; ok: boolean };
   /** Sends ordered this turn: the road in pencil, the ones going ringed. */
   orders?: { a: Pt; b: Pt; at: Pt[] }[];
+  /** Soldiers out on the open road between camps (a convoy in transit), marked in pencil as marching and exposed: where he stands and the way he faces. */
+  road?: { at: Pt; dir: number }[];
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
   danger?: { x: number; y: number; r: number }[];
   /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
@@ -241,11 +243,11 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
   s.marks.forEach((m, i) => {
     const k = `m${i}`;
     if (page.has(k) || !ink.live.has(k)) return;
-    drawMark(g, m, ink.p(k));
+    drawMark(g, m, ink.p(k), 0, wentTo(s, i));
     if (m.t === "stroke") for (const p of m.pts) box.add(p.x, p.y, 8);
     else if (m.t === "walk") { box.add(m.a.x, m.a.y, 10); box.add(m.b.x, m.b.y, 10); }
     else if (m.t === "stand") for (const p of m.at) box.add(p.x, p.y, 24);
-    else box.add(m.x, m.y, 20);
+    else box.add(m.x, m.y, 34);
   });
   const walking = new Set(f.walkers?.map((w) => w.id));
   for (const x of s.soldiers) {
@@ -260,6 +262,7 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     drawDot(g, s.soldiers[f.mover.id], 1, 1, at);
     g.restore();
     box.add(at.x, at.y, 12 * stretch);
+    if (stretch > 1.04) { drawSpeed(g, at, angle, stretch, 1 / v.z, f.mover.id); box.add(at.x, at.y, 46); }
   }
   for (const j of f.jabs ?? []) {
     if (j.p <= 0 || j.alpha <= 0) continue;
@@ -377,6 +380,7 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
   if (f.keepOut) {
     for (const k of f.keepOut) { pencilHatchRing(g, k.x, k.y, k.r, px); box.add(k.x, k.y, k.r + 6); }
   }
+  for (const q of f.road ?? []) { drawRoad(g, q.at, q.dir, px, s.soldiers.length + Math.round(q.at.x)); box.add(q.at.x, q.at.y, 34); }
   if (f.hint) for (const b of f.hint.bases) { pencilLoop(g, b.x, b.y, b.r + 12, 900 + b.id * 17, Math.max(1.6, px * 1.1), f.hint.p, 0.75); box.add(b.x, b.y, b.r + 24); }
   if (f.selected !== undefined && !f.aim && !f.mover) {
     const x = s.soldiers[f.selected];
@@ -396,6 +400,38 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
   }
   if (f.teach) { drawTeach(g, f.teach); box.add(f.teach.at.x, f.teach.at.y, 420); }
   if (f.aim) { drawAim(g, s, f.aim, px); box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + (f.aim.sight !== undefined ? 90 : 24)); }
+}
+
+/**
+ * A soldier out on the open road: a broken pencil ring round him (nobody's
+ * camp is round him now, so he's out in the open) and a pair of chevrons ahead
+ * of him, marching. Pencil, so it's the paper's remark on the page, never ink history.
+ */
+function drawRoad(g: Ctx, at: Pt, dir: number, px: number, seed: number) {
+  const r = RULES.soldierRadius + 8, w = Math.max(2.4, px * 1.9);
+  const n = 10;
+  for (let i = 0; i < n; i += 2) {
+    const a0 = (i / n) * Math.PI * 2 + 0.2, a1 = ((i + 1.2) / n) * Math.PI * 2 + 0.2;
+    pencilLine(g, { x: at.x + Math.cos(a0) * r, y: at.y + Math.sin(a0) * r }, { x: at.x + Math.cos(a1) * r, y: at.y + Math.sin(a1) * r }, w, seed + i, false);
+  }
+  const ux = Math.cos(dir), uy = Math.sin(dir);
+  for (const d of [r + 5, r + 12]) {
+    const cx = at.x + ux * d, cy = at.y + uy * d, s = 6.5;
+    pencilLine(g, { x: cx - ux * s - uy * s, y: cy - uy * s + ux * s }, { x: cx, y: cy }, w, seed + 40 + d, false);
+    pencilLine(g, { x: cx - ux * s + uy * s, y: cy - uy * s - ux * s }, { x: cx, y: cy }, w, seed + 50 + d, false);
+  }
+}
+
+/** A lunger at speed: three short pencil streaks trailing from him, the way a kid draws a fast thing. */
+function drawSpeed(g: Ctx, at: Pt, angle: number, stretch: number, px: number, seed: number) {
+  const ux = Math.cos(angle), uy = Math.sin(angle), w = Math.max(1.4, px * 1.1);
+  const len = 14 + (stretch - 1) * 60;
+  [-1, 0, 1].forEach((k, i) => {
+    const gap = 10 + Math.abs(k) * 2, lat = k * 6;
+    const a = { x: at.x - ux * gap - uy * lat, y: at.y - uy * gap + ux * lat };
+    const b = { x: a.x - ux * len * (k ? 0.65 : 1), y: a.y - uy * len * (k ? 0.65 : 1) };
+    pencilLine(g, a, b, w, seed * 7 + i, false);
+  });
 }
 
 function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
