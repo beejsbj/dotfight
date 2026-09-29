@@ -578,11 +578,11 @@ function runLapse(then: () => void) {
 // The soldier sits low on the screen when you aim, so the page ahead of the shot is what you see.
 const AIM_FY = 0.74;
 // Aiming turns the page under your thumb: sliding sideways swings the aim by
-// TURN_K rad per px, so one thumb-width of the phone is a full turn (from the
+// turnK() rad per px: the width of the phone (less the free zones) is a full turn (from the
 // middle of the screen you can reach straight back toward your own side). The
 // first TURN_DEAD px are free, so a straight pull stays straight.
 const TURN_DEAD = 8;
-const turnK = () => (Math.PI * 2) / Math.max(200, cam.W);
+const turnK = () => (Math.PI * 2) / Math.max(200, cam.W - TURN_DEAD * 2);
 /** Straight up the screen for this player, as a world angle. */
 const forwardAngle = () => -(Math.PI / 2 + rotFor(s.current));
 /** Nothing is being aimed: the page goes back to facing its player. */
