@@ -31,6 +31,26 @@ describe("room HTTP rate limits", () => {
   });
 
   it.each([
+    ["create", (api: RoomApi, signal: AbortSignal) => api.create({ name: "B", engine: "core", setup: { seed: 1 } }, signal)],
+    ["join", (api: RoomApi, signal: AbortSignal) => api.join("abc234", "Dawood", signal)],
+  ] as const)("cancels %s during repeated 429 waits without another request", async (_name, operation) => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockImplementation(async () => new Response("{}", { status: 429, headers: { "retry-after": "1" } }));
+    const controller = new AbortController();
+    const result = operation(httpApi("/room", fetcher), controller.signal);
+    const rejected = expect(result).rejects.toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[0][1]?.signal).toBe(controller.signal);
+    expect(fetcher.mock.calls[1][1]?.signal).toBe(controller.signal);
+    controller.abort();
+    await rejected;
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
     ["HTTP date", "Tue, 29 Sep 2026 12:00:03 GMT", {}, 3000],
     ["JSON fallback", "invalid", { retryAfter: 2 }, 2000],
     ["missing header", undefined, { retryAfter: 2 }, 2000],

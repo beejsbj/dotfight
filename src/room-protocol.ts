@@ -37,8 +37,8 @@ export class RoomHttpError extends Error {
 }
 
 export interface RoomApi {
-  create(b: { name: string; engine: string; setup: unknown; theme?: string }): Promise<{ code: string; seat: Seat; secret: string }>;
-  join(code: string, name: string): Promise<Joined>;
+  create(b: { name: string; engine: string; setup: unknown; theme?: string }, signal?: AbortSignal): Promise<{ code: string; seat: Seat; secret: string }>;
+  join(code: string, name: string, signal?: AbortSignal): Promise<Joined>;
   read(code: string, since?: number, signal?: AbortSignal): Promise<RoomView>;
   act(b: { code: string; seat: Seat; secret: string; i: number; a: unknown }, signal?: AbortSignal): Promise<Acted>;
 }
@@ -75,8 +75,8 @@ export function httpApi(base = "/api/room", f: typeof fetch = (...a) => fetch(..
     return () => f(base, init);
   };
   return {
-    create: (b) => call(post({ op: "create", ...b })),
-    join: (code, name) => call(post({ op: "join", code, name })),
+    create: (b, signal) => call(post({ op: "create", ...b }, signal), signal),
+    join: (code, name, signal) => call(post({ op: "join", code, name }, signal), signal),
     read: (code, since = 0, signal) => call(() => f(`${base}?code=${encodeURIComponent(code)}&since=${since}`, { cache: "no-store", signal }), signal),
     async act(b, signal) {
       const r = await call<{ n: number; status: number }>(post({ op: "act", ...b }, signal), signal);
