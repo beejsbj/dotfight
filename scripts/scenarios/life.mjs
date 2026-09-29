@@ -322,7 +322,7 @@ export default async function (T, out) {
       "-filter_complex", "[0][1][2]concat=n=3:v=0:a=1", "-c:a", "libmp3lame", "-q:a", "4", `${out}/voices/busy-before-then-after.mp3`], { stdio: "inherit" });
   }
 
-  // --- a comic bubble or two ------------------------------------------------------------
+  // --- a pencil note or two: written, read, rubbed out (31 frames at 12 fps) ------------
   if (want("bubbles")) {
     await war(7, 12);
     const camp = await fullest("mine");
@@ -335,7 +335,7 @@ export default async function (T, out) {
         for (let k = 0; k < 200 && !p.bubbles.cur; k++) { p.bubbles.reset(); p.speak(kind, id, p.wall, 1000 + k * 7); }
         p.poke();
       }, { kind, id, style });
-      await seq(name, 26, 1000 / 12, { [name]: clip });
+      await seq(name, 31, 1000 / 12, { [name]: clip });
       await page.evaluate(() => window.pft.bubbles.reset());
     };
     await say("bubble-ready", "ready", men[0].id, await box(camp, 150));
@@ -344,14 +344,16 @@ export default async function (T, out) {
     await step(0, 150);
     await say("bubble-birdseye", "phew", men[1].id);
   }
-  // --- balloons: stills, fully written, on each paper, leaning in and from bird's-eye ------
-  if (want("balloons")) {
+  // --- notes: stills, fully written, on each paper, leaning in and from bird's-eye ---------
+  if (want("notes")) {
+    // NOTE_RING=0: just the words and their tail, no ring, to compare by eye
+    if (process.env.NOTE_RING === "0") await page.evaluate(() => { window.pft.NOTE.ring = false; });
     for (const theme of (process.env.THEMES ?? "lamplight,blueprint").split(",")) {
       await page.evaluate((id) => window.pft.theme?.apply(id), theme);
       await war(7, 12);
       const camp = await fullest("mine");
       const men = await menIn(camp);
-      // the topmost and the bottom-most of his men, to see the balloon kept on the page
+      // the topmost of all the men, to see the note kept on the page
       const edge = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive).sort((a, b) => a.y - b.y)[0]; });
       const hold = async (name, kind, id, text, clip) => {
         const ok = await page.evaluate(({ kind, id, text }) => {
@@ -363,21 +365,23 @@ export default async function (T, out) {
           return null;
         }, { kind, id, text });
         if (!ok) { console.log(`no "${text}" for ${name}`); return; }
-        await step(700, 150);
+        await step(900, 150);
         await page.screenshot(clip ? { path: `${out}/${name}.png`, clip } : { path: `${out}/${name}.png` });
         console.log(`shot ${name}: "${ok}"`);
         await page.evaluate(() => window.pft.bubbles.reset());
         await step(500, 100);
       };
+      const menOf = (kind) => page.evaluate((kind) => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && (kind === "mine" ? x.owner === s.current : x.owner !== s.current)); }, kind);
+      const theirs = await menOf("theirs");
       await flat(camp, 2.4);
-      await hold(`balloon-${theme}-lean-dawood`, "idle", men[2].id, "for Dawood!", await box(camp, 200));
-      await hold(`balloon-${theme}-lean-ready`, "ready", men[0].id, "I'm ready", await box(camp, 200));
-      await hold(`balloon-${theme}-lean-phew`, "phew", men[4].id, "phew", await box(camp, 200));
+      await hold(`note-${theme}-lean-dawood`, "idle", men[2].id, "for Dawood!", await box(camp, 200));
+      await hold(`note-${theme}-lean-ready`, "ready", men[0].id, "I'm ready", await box(camp, 200));
+      await hold(`note-${theme}-lean-phew`, "phew", men[4].id, "phew", await box(camp, 200));
       await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
       await step(0, 150);
-      await hold(`balloon-${theme}-bird-dawood`, "idle", men[2].id, "for Dawood!");
-      await hold(`balloon-${theme}-bird-close`, "phew", men[1].id, "close one");
-      await hold(`balloon-${theme}-bird-edge`, "idle", edge.id, "for Dawood!");
+      await hold(`note-${theme}-bird-dawood`, "idle", men[2].id, "for Dawood!");
+      await hold(`note-${theme}-bird-close`, "phew", theirs[Math.floor(theirs.length / 2)].id, "close one");
+      await hold(`note-${theme}-bird-edge`, "idle", edge.id, "for Dawood!");
     }
   }
   await page.evaluate(() => window.pft.hand(false));
