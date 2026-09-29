@@ -18,6 +18,8 @@ const root = document.documentElement;
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches || root.classList.contains("og");
 // Read as a book (turning pages) unless asked for one long page (?read=all) or the share card (?og).
 const paged = root.classList.contains("paged");
+// (the page can fall back to one long page after this is read, if the fonts are slow)
+const inBook = () => paged && root.classList.contains("paged");
 
 // --- the desk and the paper, painted by the game's own texture code ------------
 
@@ -57,7 +59,7 @@ function paint(l: Live) {
 // one piece: on a throttled phone that about halves the time a turning frame takes.
 function freeze(l: Live) {
   // (a drawing not yet drawn is a blank picture until its page opens)
-  if (!paged || l.from !== undefined || (l.t > 0 && l.t < 1)) return;
+  if (!inBook() || l.from !== undefined || (l.t > 0 && l.t < 1)) return;
   l.el.toBlob((b) => {
     if (!b || l.from !== undefined) return;
     let img = l.img;
@@ -177,7 +179,7 @@ function scroll() {
 // Handwriting in the figures, and the pages' measurements, need the fonts first.
 const fonts = ["400 18px Caveat", "700 18px Caveat", "400 18px 'Patrick Hand'", "400 12px 'Special Elite'"];
 Promise.all(fonts.map((f) => document.fonts.load(f))).finally(() => {
-  if (paged && root.classList.contains("paged")) book();
+  if (inBook()) book();
   else scroll();
   // tap a drawing to watch it again
   for (const l of lives) {
@@ -208,7 +210,8 @@ function icons() {
 icons();
 
 let resizing = 0;
-if (!paged) addEventListener("resize", () => {
+addEventListener("resize", () => {
+  if (inBook()) return;
   cancelAnimationFrame(resizing);
   resizing = requestAnimationFrame(() => lives.forEach(fit));
 });

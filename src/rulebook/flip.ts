@@ -479,7 +479,7 @@ export function openBook(o: BookOpts) {
     const h = hashFor(faces, ids, contents);
     if (asPage) asPage.href = `?read=all${h ? `#${h}` : ""}`;
     const url = h ? `#${h}` : location.pathname + location.search;
-    if ((h ? location.hash.slice(1) : "") !== h) history.replaceState(history.state, "", url);
+    if (location.hash.slice(1) !== h) history.replaceState(history.state, "", url);
   }
 
   /** The thickness of paper under each side. */
@@ -499,7 +499,7 @@ export function openBook(o: BookOpts) {
 
   // --- sound: a quiet page rustle, only if the game's sound is on ----------------------
 
-  const audible = () => localStorage.getItem("pft:muted") === "0";
+  const audible = () => !sfx.muted;
   const wake = () => { if (audible()) sfx.unlock(); };
   addEventListener("pointerdown", wake);
   addEventListener("keydown", wake);
@@ -596,7 +596,8 @@ export function openBook(o: BookOpts) {
     // how fast it was going as it left the finger, in leaves per ms; a finger that stopped has no flick
     const v = a && b && b[0] > a[0] && e.timeStamp - b[0] < 120 ? (b[1] - a[1]) / (b[0] - a[0]) : 0;
     let to = Math.round(pos);
-    if (!cancelled && Math.abs(v) > 0.0009) to = v > 0 ? Math.ceil(pos - 1e-6) : Math.floor(pos + 1e-6);
+    if (cancelled) to = g.base;
+    else if (Math.abs(v) > 0.0009) to = v > 0 ? Math.ceil(pos - 1e-6) : Math.floor(pos + 1e-6);
     go(clamp(to, g.base - 1, g.base + 1));
   };
   stage.addEventListener("pointerup", (e) => release(e, false));
@@ -607,7 +608,7 @@ export function openBook(o: BookOpts) {
   stage.addEventListener("click", (e) => {
     if (dragged) { dragged = false; return; }
     const t = e.target as Element;
-    if (t.closest("a, button, canvas, input, select, textarea, summary")) return;
+    if (t.closest("a, button, canvas, img.fig, input, select, textarea, summary")) return;
     if (!document.getSelection()?.isCollapsed) return;
     const x = spineAt(e.clientX), y = e.clientY - bk.getBoundingClientRect().top;
     top = y < H * 0.38;
@@ -674,6 +675,7 @@ export function openBook(o: BookOpts) {
     pinned = id;
     const k = posOfPage(mode, p);
     if (heading() !== k) jump(k);
+    else if (asPage) asPage.href = `?read=all#${id}`;
   };
   addEventListener("popstate", followHash);
   addEventListener("hashchange", followHash);
@@ -695,7 +697,7 @@ export function openBook(o: BookOpts) {
       const s = size();
       if (s.mode === mode && s.W === W && s.H === H) { bk.style.left = `${Math.round((s.aw - (mode === "spread" ? 2 * W : W)) / 2 + (mode === "single" ? 5 : 0))}px`; return; }
       const first = pagesAt(mode, rest, n).find((p) => p > 0);
-      build(first ? anchorOf(first) : null);
+      build((pinned && document.getElementById(pinned)) || (first ? anchorOf(first) : null));
     }, 200);
   });
 
