@@ -25,7 +25,12 @@ export default async function (T, out) {
   const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).sort((a, b) => b.y - a.y)[0]; });
   const a = await T.world(me.x, me.y);
   await T.tap(a.x, a.y, 40);
-  await page.waitForFunction(() => window.pft.selected !== undefined);
+  await T.shot(`${out}/cancel-0-start.png`);
+  await page.waitForFunction(() => window.pft.selected !== undefined, undefined, { timeout: 15000 }).catch(async () => {
+    console.log("not picked up", JSON.stringify({ me, a, state: await T.state() }));
+    await T.shot(`${out}/cancel-0-fail.png`);
+    throw new Error("tap did not pick up");
+  });
   await page.waitForTimeout(200);
   await page.waitForFunction(() => window.pft.cam.settled);
   await page.waitForTimeout(300);
