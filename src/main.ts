@@ -48,6 +48,7 @@ let mode: Mode = { kind: "pnp" };
 let kind: Kind = "snipe";
 let selected: number | undefined;
 let aim: Pull | null = null;
+let aimFrom = 0; // the aim's angle when the thumb went down: straight up the screen
 let aimAngle = 0; // world angle of the current pull
 let byThumb = { angle: 0, dist: 0 }; // the pull as the thumb has it, before the phone's nudge
 let nudgeFrom: Pose | null = null; // how the phone was held when the pull began
@@ -275,10 +276,11 @@ function canSendAny(c0: GameState) {
   return c0.bases.some((a) => a.owner === c0.current && sendMax(c0, a.id) > 0 && c0.bases.some((b) => b !== a && !canSend(c0, a.id, b.id, 1)));
 }
 
-// A pencilled ring where the pull began, once the thumb is back inside the dead
-// zone after a real pull: let go there and the aim is dropped, nothing fired.
+// A pencilled ring at the height the pull began, once the thumb is back inside the dead
+// zone (no downward pull) after a real pull: let go there and the aim is dropped, nothing fired.
 // One small DOM circle (screen space), so no page or canvas layer is touched.
 let ringOn = false;
+let thumbX = 0; // where the thumb is across the screen (the ring rides under it, at the height the pull began)
 const ringEl = document.createElement("div");
 ringEl.id = "cancel-ring";
 ringEl.hidden = true;
@@ -287,7 +289,7 @@ function syncRing() {
   const on = !!aim && aim.charged && g.t === "aim" && !pull(aim).live;
   if (on && g.t === "aim") {
     const r = FEEL.minPullPx;
-    ringEl.style.transform = `translate(${g.sx - r}px, ${g.sy - r}px)`;
+    ringEl.style.transform = `translate(${thumbX - r}px, ${g.sy - r}px)`;
     ringEl.style.width = ringEl.style.height = `${r * 2}px`;
   }
   if (on === ringOn) return;
@@ -313,7 +315,7 @@ function status(msg?: string) {
     else if (aim) t = pull(aim).live ? (taught("cancel") ? `let go to ${turn.verb(s, kind)}` : `let go to ${turn.verb(s, kind)}, or slide back to the start to cancel`) : aim.charged ? "let go to cancel" : "pull back further…";
     else if (c0?.chain) t = "he lunges again, or stop";
     else if (motion.gun) t = motion.gun.armed < 1 ? "point the phone, hold it still…" : "flick your wrist to fire";
-    else if (selected !== undefined) t = motion.live("gun") ? "pull back, or tap him and raise the phone" : `pull back from anywhere, let go`;
+    else if (selected !== undefined) t = motion.live("gun") ? "pull back, or tap him and raise the phone" : `slide to turn the page, pull down, let go`;
     else if (c0 && c0.left > 1) t = `${who}: ${c0.left} flicks this turn`;
     else t = lastNote ? `${lastNote}` : `${who}: pick up a soldier`;
   }
@@ -565,8 +567,21 @@ function runLapse(then: () => void) {
   after(dur + 80, () => { lapse = null; dirty = true; then(); });
 }
 
+// The soldier sits low on the screen when you aim, so the page ahead of the shot is what you see.
+const AIM_FY = 0.74;
+// Aiming turns the page under your thumb: sliding sideways swings the aim by
+// TURN_K rad per px, so one thumb-width of the phone is a full turn (from the
+// middle of the screen you can reach straight back toward your own side). The
+// first TURN_DEAD px are free, so a straight pull stays straight.
+const TURN_DEAD = 8;
+const turnK = () => (Math.PI * 2) / Math.max(200, cam.W);
+/** Straight up the screen for this player, as a world angle. */
+const forwardAngle = () => -(Math.PI / 2 + rotFor(s.current));
+/** Nothing is being aimed: the page goes back to facing its player. */
+function faceForward() { cam.face(rotFor(s.current)); }
+
 // Lean in low to the pen to aim. Everything else is watched from above.
-function sitOn(p: Pt, fy = 0.66) {
+function sitOn(p: Pt, fy = AIM_FY) {
   if (cam.tiltScale > 0) cam.sit(p, 2.1, 0.55, fy);
   else cam.sit(p, 2, 0, 0.55);
 }
@@ -1606,6 +1621,7 @@ function select(id: number) {
   if (selected !== id) { sfx.pick(); haptic("pickup"); penDrop = T; }
   if (!taught("aim") && selected === undefined) fx.add("teach", T, 500, 1100, "linear");
   selected = id;
+  faceForward();
   sitOn(s.soldiers[id]);
   dirty = true;
   acts();
@@ -1615,6 +1631,7 @@ function select(id: number) {
 function standUp() {
   selected = undefined;
   motion.lower();
+  cam.face(rotFor(s.current));
   cam.overview();
   dirty = true;
   acts();
@@ -1639,6 +1656,7 @@ over.addEventListener("pointerdown", (e) => {
     // two fingers always mean the camera: stand up, then zoom
     if (aim) sfx.creak(0);
     aim = null;
+    faceForward();
     ghost = undefined;
     if (cam.cur.tilt > 0.02 || cam.tgt.tilt > 0) { cam.tgt = { ...cam.tgt, tilt: 0, fy: cam.fitFy }; cam.cur = { ...cam.cur, tilt: 0, fy: cam.fitFy }; }
     const { d } = pinchInfo();
@@ -1738,6 +1756,7 @@ over.addEventListener("pointermove", (e) => {
     if (!aim) {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
+      aimFrom = forwardAngle();
       ratchet.reset();
       acts();
       nudgeFrom = motion.held();
@@ -1748,13 +1767,16 @@ over.addEventListener("pointermove", (e) => {
   }
 });
 
-// The pull, in page terms: the pen should point exactly opposite your thumb
-// on screen, even with the desk tilted. Power stays in screen px.
+// The thumb does two separate things: sliding sideways turns the page (the aim
+// angle is where it began plus TURN_K per px, nothing to do with how far the
+// camera has caught up), and pulling down sets the power. The camera follows
+// the angle, so the shot always points up the screen and the pull comes down.
 function updateAim(x: number, y: number) {
   if (!aim || g.t !== "aim") return;
-  const dx = g.sx - x, dy = g.sy - y, dist = Math.hypot(dx, dy);
-  const me = s.soldiers[aim.soldierId];
-  byThumb = { angle: screenDirToWorld(cam.view(), me, dx, dy), dist };
+  const dx = x - g.sx, dy = y - g.sy;
+  thumbX = x;
+  const eff = Math.sign(dx) * Math.max(0, Math.abs(dx) - TURN_DEAD);
+  byThumb = { angle: aimFrom + eff * turnK(), dist: Math.max(0, dy) };
   steer();
   aim.kind = kind;
   const p = pull(aim);
@@ -1775,6 +1797,8 @@ function steer() {
   aim.x = -Math.cos(aimAngle) * byThumb.dist;
   aim.y = -Math.sin(aimAngle) * byThumb.dist;
   aim.steady = motion.steady();
+  cam.aimUp(aimAngle);
+  if (reduced) cam.cur.rot = cam.tgt.rot; // no easing: the page is under your thumb
 }
 
 // Pen falcon: tap a soldier, raise the phone and point it; a flick of the wrist fires.
@@ -1861,6 +1885,7 @@ function up(e: PointerEvent) {
     const tapped = Math.hypot(p.x - g.sx, p.y - g.sy) < TAP;
     if (aim && e.type === "pointerup") {
       updateAim(p.x, p.y);
+      faceForward();
       if (aim.charged && !pull(aim).live) {
         // thumb back at the start: a cancel, quietly. He stays picked up.
         aim = null;
@@ -1884,6 +1909,7 @@ function up(e: PointerEvent) {
       standUp(); // tap on empty paper puts the pen down
     } else if (tapped) raiseGun();
     aim = null;
+    faceForward();
     sfx.creak(0);
     g = { t: "none" };
     acts();
@@ -1964,7 +1990,7 @@ document.addEventListener("click", (e) => { if (e.isTrusted && (e.target as Elem
 window.addEventListener("keydown", (e) => {
   if (e.key === "l" || e.key === "m") $<HTMLButtonElement>('#kind [data-kind="lunge"]')?.click();
   if (e.key === "s") $<HTMLButtonElement>('#kind [data-kind="snipe"]')?.click();
-  if (e.key === "Escape") { aim = null; sfx.creak(0); if (!busy) standUp(); }
+  if (e.key === "Escape") { aim = null; faceForward(); sfx.creak(0); if (!busy) standUp(); }
 });
 
 // --- frame ------------------------------------------------------------------
