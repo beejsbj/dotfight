@@ -103,8 +103,11 @@ export const CORE = {
    * [0] is an empty ring, [1] a full base. The wall at your back is still free.
    * `null` (or missing, in a game begun before them): flat walls,
    * `snipeWallLoss` and `lungeWallShake`.
+   * Round 4 of the rules lab (docs/rules-lab/round-4.md) picked a straight
+   * line from nearly paper (3%, 0.02 rad) to a full base eating 85% of a
+   * snipe and jolting a lunger 1 rad (1 sd).
    */
-  garrison: { snipeLoss: [0.02, 0.5], lungeShake: [0.01, 0.35], curve: 1 } as Garrison | null,
+  garrison: { snipeLoss: [0.03, 0.85], lungeShake: [0.02, 1.0], curve: 1 } as Garrison | null,
 };
 
 /** How a wall's toughness follows its garrison (see `CORE.garrison`). */
