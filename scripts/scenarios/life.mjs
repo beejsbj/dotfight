@@ -384,6 +384,71 @@ export default async function (T, out) {
       await hold(`note-${theme}-bird-edge`, "idle", edge.id, "for Dawood!");
     }
   }
+  // --- notes, round two: any angle, shouts, moods --------------------------------------
+  //   note2-<theme>-turned       a stray thought on a busy bird's-eye page, written at an angle to find clear paper
+  //   note2-<theme>-lunge        "Luuunge!" as a real lunge flies (seeds looped for the line)
+  //   note2-<theme>-dawood       "fooor Dawooood!"
+  //   note2-<theme>-quiet        a whisper, for contrast
+  //   note2-<theme>-shout        (frames, GIF) a shout written, read and rubbed out
+  if (want("notes2")) {
+    const force = (kind, id, text, max = 6000) => page.evaluate(({ kind, id, text }) => {
+      const p = window.pft;
+      for (let k = 0; k < 6000; k++) {
+        p.bubbles.reset(); p.speak(kind, id, p.wall, 1000 + k * 7);
+        if (p.bubbles.cur && (!text || p.bubbles.cur.text === text)) { p.poke(); return p.bubbles.cur.text; }
+      }
+      return null;
+    }, { kind, id, text, max });
+    const still = async (name, ms = 900, clip) => { await step(ms, 150); await page.screenshot(clip ? { path: `${out}/${name}.png`, clip } : { path: `${out}/${name}.png` }); console.log(`shot ${name}`); await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100); };
+    for (const theme of (process.env.THEMES ?? "lamplight,blueprint").split(",")) {
+      await page.evaluate((id) => window.pft.theme?.apply(id), theme);
+      await war(7, 12);
+      await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
+      await step(0, 150);
+      // a turned note: the first of the side's men whose stray thought finds clear paper at an angle
+      const mine = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).map((x) => x.id); });
+      let turned = null;
+      for (const id of mine) {
+        const t = await force("idle", id, null);
+        if (!t) continue;
+        await step(0, 60);
+        const sp = await page.evaluate(() => window.pft.noteSpot());
+        if (sp && Math.abs(sp.ang) >= 0.5) { turned = { id, t, ang: sp.ang }; break; }
+        await page.evaluate(() => window.pft.bubbles.reset());
+        await step(0, 30);
+      }
+      console.log("turned:", JSON.stringify(turned));
+      if (turned) await still(`note2-${theme}-turned`);
+      // a real lunge: he yells as he goes (the line is looped for "Luuunge!")
+      // (most chances pass: up to four men lunge before the line is looped for)
+      let me = null, natural = null;
+      for (let k = 0; k < 4 && !natural; k++) {
+        for (let i = 0; i < 12; i++) await step(1000 / 12, 20);
+        await page.evaluate(() => window.pft.hand(false));
+        await idle(T);
+        await page.evaluate(() => window.pft.hand(true));
+        me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).map((x) => ({ id: x.id, x: x.x, y: x.y }))[0]; });
+        await page.evaluate(({ id }) => { window.pft.bubbles.reset(); window.pft.act({ soldierId: id, kind: "move", angle: -Math.PI / 2 + 0.4, length: 260, bend: 0 }); }, me);
+        await step(1000 / 12, 60);
+        natural = await page.evaluate(() => window.pft.bubbles.cur?.text ?? null);
+        console.log("the lunger said:", natural);
+      }
+      if (natural !== "Luuunge!") await force("lunge", me.id, "Luuunge!");
+      await still(`note2-${theme}-lunge`, 700);
+      for (let i = 0; i < 20; i++) await step(1000 / 12, 30);
+      await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
+      await step(0, 100);
+      const men = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).map((x) => x.id); });
+      await force("lunge", men[1], "fooor Dawooood!");
+      await still(`note2-${theme}-dawood`, 800);
+      await force("aim", men[2], "steady…");
+      await still(`note2-${theme}-quiet`, 900);
+      // a shout, written and rubbed out
+      await force("lunge", men[3], "Chaaarge!");
+      await seq(`note2-${theme}-shout`, 36, 1000 / 12);
+      await page.evaluate(() => window.pft.bubbles.reset());
+    }
+  }
   await page.evaluate(() => window.pft.hand(false));
 }
 

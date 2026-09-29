@@ -29,16 +29,20 @@ export default async function (T, out) {
     if (worst.length) fails.push(label);
   };
   // a note showing (its own layer: pencil words, tail and eraser) must match a full redraw too
-  const note = (id) => page.evaluate((id) => {
+  const note = (id, kind = "idle") => page.evaluate(({ id, kind }) => {
     const p = window.pft;
-    for (let k = 0; k < 400 && !p.bubbles.cur; k++) { p.bubbles.reset(); p.speak("idle", id, p.wall, 1000 + k * 7); }
+    for (let k = 0; k < 400 && !p.bubbles.cur; k++) { p.bubbles.reset(); p.speak(kind, id, p.wall, 1000 + k * 7); }
     p.poke();
     return p.bubbles.cur?.text ?? null;
-  }, id);
+  }, { id, kind });
   const some = await page.evaluate(() => window.pft.s.soldiers.find((x) => x.alive && x.owner === window.pft.s.current).id);
   console.log("note:", await note(some));
   await page.waitForTimeout(700);
   await check("bird's-eye + note");
+  await page.evaluate(() => window.pft.bubbles.reset());
+  console.log("shout:", await note(some, "lunge"));
+  await page.waitForTimeout(700);
+  await check("bird's-eye + shout");
   await page.evaluate(() => window.pft.bubbles.reset());
   await check("bird's-eye");
   // the lowest of the side to play: leaning in on him, the camps sit at the screen's edges
