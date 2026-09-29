@@ -1754,6 +1754,8 @@ function lowerGun(why?: string) {
 }
 let lastArmed = false;
 function stepGun() {
+  // the soldier was put down (send, stop), a sheet opened, or the turn moved on: the raised phone goes with it
+  if (selected === undefined || screen !== "game" || away(s.current) || !$("#sheet").hidden) return lowerGun();
   const e = motion.gun!.take();
   if (e?.t === "lowered") return lowerGun("phone lowered: pull back, or tap him to raise it again");
   if (e?.t === "fire") {

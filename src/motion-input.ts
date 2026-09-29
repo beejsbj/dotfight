@@ -63,7 +63,11 @@ function stop() {
 }
 
 /** Ask iOS for the sensors. Must run inside a tap; both prompts go out before either answer. */
-async function ask() {
+let asking: Promise<boolean> | undefined;
+function ask() {
+  return (asking ??= askNow().finally(() => { asking = undefined; }));
+}
+async function askNow() {
   if (allowed) return true;
   try {
     const answers = await Promise.all([DOE!.requestPermission!(), DME?.requestPermission?.() ?? "granted"]);
