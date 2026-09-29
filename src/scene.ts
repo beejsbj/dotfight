@@ -72,6 +72,12 @@ export interface Frame {
   orders?: { a: Pt; b: Pt; at: Pt[] }[];
   /** Soldiers out on the open road between camps (a convoy in transit), marked in pencil as marching and exposed: where he stands and the way he faces. */
   road?: { at: Pt; dir: number }[];
+  /** A side in its last stand: its survivors, kept marked in pencil for the rest of the war. */
+  stand?: Pt[];
+  /** A lunger owed another lunge: ringed twice, with what he's owed and how many links. */
+  chain?: { at: Pt; link: number };
+  /** An earned flick not yet used: a tally beside the soldier who earned it, `n` strokes. */
+  tally?: { at: Pt; n: number };
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
   danger?: { x: number; y: number; r: number }[];
   /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
@@ -381,6 +387,9 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
     for (const k of f.keepOut) { pencilHatchRing(g, k.x, k.y, k.r, px); box.add(k.x, k.y, k.r + 6); }
   }
   for (const q of f.road ?? []) { drawRoad(g, q.at, q.dir, px, s.soldiers.length + Math.round(q.at.x)); box.add(q.at.x, q.at.y, 34); }
+  for (const q of f.stand ?? []) { drawRays(g, q, px, 5 + Math.round(q.x + q.y)); box.add(q.x, q.y, 36); }
+  if (f.chain) { drawChain(g, f, f.chain, px, box); }
+  if (f.tally) { drawTally(g, f, f.tally, px, box); }
   if (f.hint) for (const b of f.hint.bases) { pencilLoop(g, b.x, b.y, b.r + 12, 900 + b.id * 17, Math.max(1.6, px * 1.1), f.hint.p, 0.75); box.add(b.x, b.y, b.r + 24); }
   if (f.selected !== undefined && !f.aim && !f.mover) {
     const x = s.soldiers[f.selected];
@@ -420,6 +429,43 @@ function drawRoad(g: Ctx, at: Pt, dir: number, px: number, seed: number) {
     pencilLine(g, { x: cx - ux * s - uy * s, y: cy - uy * s + ux * s }, { x: cx, y: cy }, w, seed + 40 + d, false);
     pencilLine(g, { x: cx - ux * s + uy * s, y: cy - uy * s - ux * s }, { x: cx, y: cy }, w, seed + 50 + d, false);
   }
+}
+
+/** The last few: short pencil rays all round each one, the way a kid draws something shining, or shouting. */
+function drawRays(g: Ctx, at: Pt, px: number, seed: number) {
+  const r0 = RULES.soldierRadius + 12, n = 10, w = Math.max(2.2, px * 1.7);
+  const rand = rng(seed);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rand() * 0.2, l = 8 + rand() * 6;
+    pencilLine(g, { x: at.x + Math.cos(a) * r0, y: at.y + Math.sin(a) * r0 }, { x: at.x + Math.cos(a) * (r0 + l), y: at.y + Math.sin(a) * (r0 + l) }, w, seed + i, false);
+  }
+}
+
+/** A page-space spot `dx, dy` from `at` in screen-upright terms (right, down), whichever way the page is turned. */
+function upright(f: Frame, at: Pt, dx: number, dy: number): Pt {
+  const c = Math.cos(f.view.rot), sn = Math.sin(f.view.rot);
+  return { x: at.x + dx * c + dy * sn, y: at.y - dx * sn + dy * c };
+}
+
+/** Owed another lunge: two loops round him and, in pencil beside him, "lunge again" with his link count. */
+function drawChain(g: Ctx, f: Frame, c: { at: Pt; link: number }, px: number, box: Box) {
+  const w = Math.max(2, px * 1.6);
+  pencilLoop(g, c.at.x, c.at.y, RULES.soldierRadius + 12, 31 + c.link, w, 1, 1);
+  pencilLoop(g, c.at.x, c.at.y, RULES.soldierRadius + 18, 37 + c.link, w, 1, 0.9);
+  const size = Math.max(30, Math.min(64, 22 / f.view.z));
+  const p = upright(f, c.at, size * 0.8, -size * 1.3);
+  handText(g, c.link > 1 ? `lunge again ×${c.link}` : "lunge again", p.x, p.y, size, lead(theme).note, { weight: 700, rot: -f.view.rot, alpha: 0.95, grain: 0.5 });
+  box.add(c.at.x, c.at.y, size * 6);
+}
+
+/** An earned flick waiting: `n` pencil tally strokes beside the man who earned it. */
+function drawTally(g: Ctx, f: Frame, t: { at: Pt; n: number }, px: number, box: Box) {
+  const w = Math.max(2.4, px * 2), h = 20;
+  for (let i = 0; i < t.n; i++) {
+    const a = upright(f, t.at, 20 + i * 8, -h * 0.5 - 6), b = upright(f, t.at, 20 + i * 8 + 1.5, h * 0.5 - 6);
+    pencilLine(g, a, b, w, 91 + i, false);
+  }
+  box.add(t.at.x, t.at.y, 60);
 }
 
 /** A lunger at speed: three short pencil streaks trailing from him, the way a kid draws a fast thing. */

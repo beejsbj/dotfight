@@ -23,7 +23,9 @@ import { LIFE, unit } from "./life";
 export type Mood = "whisper" | "say" | "shout";
 export type BubbleKind =
   | "ready" | "aim" | "phew" | "dread" | "kill" | "mourn" | "send" | "arrive"
-  | "last" | "win" | "lunge" | "snipe" | "deny" | "idle" | "idleUp" | "idleDown";
+  | "last" | "win" | "lunge" | "snipe" | "deny" | "idle" | "idleUp" | "idleDown"
+  // moments the field must announce (Bubbles.moment): always written, whatever the chance
+  | "stand" | "twoFor" | "chain";
 type Line = string | { t: string; mood: Mood };
 
 export const BUBBLE = {
@@ -47,6 +49,7 @@ export const BUBBLE = {
 export const MOOD: Record<BubbleKind, Mood> = {
   ready: "say", aim: "whisper", phew: "say", dread: "whisper", kill: "say", mourn: "whisper", send: "say", arrive: "say",
   last: "shout", win: "shout", lunge: "shout", snipe: "shout", deny: "say", idle: "say", idleUp: "say", idleDown: "whisper",
+  stand: "shout", twoFor: "shout", chain: "shout",
 };
 
 const shout = (t: string): Line => ({ t, mood: "shout" });
@@ -86,6 +89,8 @@ export const LINES: Record<BubbleKind, readonly Line[]> = {
   // stray thoughts, well ahead
   idleUp: ["easy", "too easy", "they've got no chance", "Dawood would be proud", "can we go home yet", "we're so good", "look at them", "who's winning? us", "…", "is it lunch?"],
   // stray thoughts, well behind
+  // moments (Bubbles.moment writes its own words)
+  stand: ["LAST STAND!"], twoFor: ["2 for 1!"], chain: ["lunge again!"],
   idleDown: ["we're losing aren't we", "can we go home", "Dawood wouldn't like this", "I miss camp", "don't tell mum", "is there a plan?", "…", "hm", "we can still do this", "ask Dawood for help"],
 };
 
@@ -93,6 +98,7 @@ export const LINES: Record<BubbleKind, readonly Line[]> = {
 const CHANCE: Record<BubbleKind, number> = {
   ready: 0.3, aim: 0.12, phew: 0.55, dread: 0.3, kill: 0.45, mourn: 0.4, send: 0.5, arrive: 0.5,
   last: 0.9, win: 1, lunge: 0.7, snipe: 0.5, deny: 0.6, idle: 1, idleUp: 1, idleDown: 1,
+  stand: 1, twoFor: 1, chain: 1,
 };
 
 export interface Bubble {
@@ -105,6 +111,8 @@ export interface Bubble {
   /** Which side of him it sits (screen): 1 right, -1 left. */
   side: 1 | -1;
   seed: number;
+  /** A moment the field must announce (last stand, two for one, a lunge chain): never chance-gated, waits its turn rather than talk over another, and chatter gives way to it. */
+  important?: boolean;
 }
 
 /** The line seed `seed` picks for `kind`: its text and mood. Pure. */
@@ -137,6 +145,8 @@ export class Bubbles {
   cur: Bubble | null = null;
   private last = -Infinity;
   private window = -1;
+  /** Important notes waiting for the one showing to finish (in order). */
+  pending: Bubble[] = [];
 
   /**
    * Soldier `id` might say something of `kind`, starting at wall `t0`.
@@ -146,12 +156,33 @@ export class Bubbles {
   offer(kind: BubbleKind, id: number, t0: number, seed: number): Bubble | null {
     if (!LIFE.bubbles) return null;
     if (this.cur && t0 < this.cur.t0 + showOf(this.cur)) return null;
+    if (this.pending.length) return null;
     const { text, mood } = lineFor(kind, seed);
     if (t0 - this.last < (mood === "shout" ? BUBBLE.loudGapMs : BUBBLE.gapMs)) return null;
     if (unit(seed, 5) >= CHANCE[kind]) return null;
     this.cur = { kind, id, text, mood, t0, side: unit(seed, 11) < 0.5 ? -1 : 1, seed };
     this.last = t0;
     return this.cur;
+  }
+
+  /**
+   * Something the field must announce: soldier `id` writes `text` (a shout) at
+   * wall `t0`, always. Chatter showing gives way to it; another moment showing
+   * is let finish first, and this one is written straight after it. Pure of
+   * game state, and seeded by the caller.
+   */
+  moment(kind: BubbleKind, id: number, t0: number, seed: number, text: string): Bubble | null {
+    if (!LIFE.bubbles) return null;
+    const b: Bubble = { kind, id, text, mood: "shout", t0, side: unit(seed, 11) < 0.5 ? -1 : 1, seed, important: true };
+    const tail = this.pending.length ? this.pending[this.pending.length - 1] : this.cur?.important ? this.cur : null;
+    if (tail && t0 < tail.t0 + showOf(tail) + 150) {
+      b.t0 = tail.t0 + showOf(tail) + 150;
+      this.pending.push(b);
+    } else {
+      this.cur = b;
+    }
+    this.last = Math.max(this.last, b.t0);
+    return b;
   }
 
   /** Is it time for a stray thought? Once per window, on a seeded chance. */
@@ -165,10 +196,11 @@ export class Bubbles {
   /** The note showing at `ms`, if any. */
   showing(ms: number) {
     if (this.cur && ms >= this.cur.t0 + showOf(this.cur)) this.cur = null;
+    if (!this.cur && this.pending.length) this.cur = this.pending.shift()!;
     return this.cur && ms >= this.cur.t0 ? this.cur : null;
   }
 
-  clear() { this.cur = null; }
+  clear() { this.cur = null; this.pending = []; }
   /** Forget the last one too, so the next chance can be taken at once (dev captures). */
-  reset() { this.cur = null; this.last = -Infinity; }
+  reset() { this.cur = null; this.pending = []; this.last = -Infinity; }
 }

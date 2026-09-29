@@ -624,6 +624,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   const first = s.marks.length; // the flick appends its stroke, then its crosses
   const before = s.soldiers.map((x) => ({ x: x.x, y: x.y }));
   const o = turn.flick(s, f);
+  earnedTally = null;
   save();
   selected = undefined;
   aim = null;
@@ -684,7 +685,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     }
     moments.push({ at: dur + 20 * quick + volleyHold, fn: () => { sfx.snag(true); sfx.cross(0.03, 1.1); if (live) { cam.shake(7); cue("lunge-death", base); } } });
   }
-  if (o.earned && live) moments.push({ at: dur, fn: () => cue("earned", core()?.left ?? 0) });
+  if (o.earned && live) moments.push({ at: dur, fn: () => { earnedBy = { id: f.soldier, kind: f.kind }; cue("earned", core()?.left ?? 0); } });
   const pen = opts.pen ?? true;
   const penTail = pen ? 900 * quick : 0;
   res = {
@@ -720,6 +721,12 @@ function speak(kind: BubbleKind, id: number, t0 = wall, seed?: number) {
   const p = cam.toScreen(x.x, x.y);
   if (p.x < 20 || p.x > W - 20 || p.y < 60 || p.y > H - 120) return; // off screen, or under the HUD
   if (bubbles.offer(kind, id, t0, seed ?? Math.floor(seeded(s.seed, s.turn, id, kind.length) * 2 ** 31))) dirty = true;
+}
+
+/** A moment the field must announce: written whatever the chance, after any other moment showing (bubble.ts Bubbles.moment). */
+function announce(kind: BubbleKind, id: number, text: string, t0 = wall + 120) {
+  if (!heard() || !s.soldiers[id]?.alive) return;
+  if (bubbles.moment(kind, id, t0, Math.floor(seeded(s.seed, s.turn, id, kind.length, text.length) * 2 ** 31), text)) dirty = true;
 }
 
 /** A soldier picked up: he perks up and says so; a campmate mutters. */
@@ -849,7 +856,23 @@ onCue((c, p) => {
   if (c !== "last-stand" || p === undefined || !heard()) return;
   const few = turn.aliveOf(s, p as Player);
   if (few[0]) voice.say("uhoh", few[0].id, p as Player, 0.15, 0.8);
-  if (few[0]) speak("last", few[Math.floor(seeded(s.seed, s.turn, 67) * few.length)].id, wall + 400);
+  if (few.length) announce("stand", few[Math.floor(seeded(s.seed, s.turn, 67) * few.length)].id, "LAST STAND!", wall + 250);
+});
+
+// Two with one, and a lunge chain: the earning flick's soldier writes it on the
+// field, and the earned flick is tallied beside him until it's used.
+let earnedTally: { id: number; n: number; turn: number } | null = null;
+let earnedBy: { id: number; kind: Kind } | null = null;
+onCue((c, left) => {
+  if (c !== "earned" || !earnedBy) return;
+  const who = earnedBy, c0 = core();
+  if (who.kind === "snipe") {
+    earnedTally = { id: who.id, n: Math.max(1, left ?? 1), turn: s.turn };
+    announce("twoFor", who.id, "2 for 1! +1 flick");
+  } else if (c0?.chain) {
+    announce("chain", c0.chain.soldier, c0.chain.link > 1 ? `lunge again ×${c0.chain.link}` : "lunge again!");
+  }
+  dirty = true;
 });
 
 // What the status line says after a flick.
@@ -2265,6 +2288,15 @@ function currentFrame(): Frame {
       const w = sending.to ?? ownBaseAt(arrowTo);
       f.sendArrow = { from, to: arrowTo, ok: w !== undefined && w !== sending.from && !canSend(c0, sending.from, w, 1) };
     }
+  }
+  if (c0 && c0.phase === "play" && !res && (screen === "game" || screen === "replay" || screen === "view")) {
+    // a side in its last stand keeps its survivors marked; a lunger owed another lunge is ringed with his link count
+    const held = ([0, 1] as Player[]).filter((p) => c0.stand[p] > 0);
+    if (held.length) f.stand = c0.soldiers.filter((x) => x.alive && held.includes(x.owner)).map((x) => ({ x: x.x, y: x.y }));
+    const owed = c0.chain && c0.soldiers[c0.chain.soldier];
+    if (owed?.alive) f.chain = { at: owed, link: c0.chain!.link };
+    const tl = earnedTally && screen === "game" && c0.soldiers[earnedTally.id];
+    if (tl && tl.alive && c0.left > 0 && earnedTally!.turn === c0.turn && !busy) f.tally = { at: tl, n: c0.left };
   }
   if (lapse) {
     const p = Math.min(1, Math.max(0, (T - lapse.t0) / lapse.dur));
