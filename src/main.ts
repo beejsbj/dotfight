@@ -784,9 +784,9 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   // under your thumb: your camp cheering your kill; the bot's ink going right past one of yours
   const shooter = s.soldiers[f.soldier].owner;
   const cheer = plan.acts.find((a) => a.r.kind === "cheer");
-  if (cheer && !isBot(shooter)) after(cheer.r.t0 * speed, () => feel("cheer"));
-  const close = plan.cues.find((c) => c.say === "eep" && !isBot(s.soldiers[c.id].owner));
-  if (close && isBot(shooter)) after(close.at * speed, () => feel("flinch"));
+  if (cheer && !away(shooter)) after(cheer.r.t0 * speed, () => feel("cheer"));
+  const close = plan.cues.find((c) => c.say === "eep" && !away(s.soldiers[c.id].owner));
+  if (close && away(shooter)) after(close.at * speed, () => feel("flinch"));
   const phew = plan.cues.find((c) => c.say === "phew");
   if (phew) speak("phew", phew.id, wall + phew.at);
   // a flick is one moment: one voice, now and then two, never the crowd
@@ -2107,7 +2107,7 @@ function frame(now: number) {
   const bb = bubbles.showing(wall), bk = bb ? bubbleAt(bb, wall, reduced)?.key ?? "" : "";
   if (bk !== bubbleKey) { bubbleKey = bk; dirty = true; }
   // now and then, on your go with nothing happening, a stray thought
-  if (screen === "game" && !isBot(s.current) && s.phase === "play" && !aim && !res && !busy && selected === undefined && bubbles.idleDue(wall, s.seed)) {
+  if (screen === "game" && !away(s.current) && s.phase === "play" && !aim && !res && !busy && selected === undefined && bubbles.idleDue(wall, s.seed)) {
     const mine = turn.aliveOf(s, s.current);
     if (mine.length) speak("idle", mine[Math.floor(seeded(s.seed, s.turn, Math.floor(wall / 1000)) * mine.length)].id);
   }

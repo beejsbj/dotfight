@@ -447,8 +447,8 @@ function balloonBounds(f: Frame): { x0: number; y0: number; x1: number; y1: numb
   const B = { x0: 12, y0: 12, x1: RULES.pageW - 12, y1: RULES.pageH - 12 };
   const v = f.view, hud = f.hud;
   if (!hud) return B;
-  // the part of the screen clear of the HUD, in page units (canvas coords: the screen sits (ox, oy) in)
-  const l = v.ox + HUD_INSET, r = v.ox + f.sw - HUD_INSET, t = v.oy + hud.top + HUD_INSET, bt = v.oy + hud.h - hud.bottom - HUD_INSET;
+  // the part of the screen clear of the HUD, in page units
+  const l = HUD_INSET, r = f.sw - HUD_INSET, t = hud.top + HUD_INSET, bt = hud.h - hud.bottom - HUD_INSET;
   const pts = [[l, t], [r, t], [l, bt], [r, bt]].map(([x, y]) => unproject(v, x, y));
   if (pts.some((p) => !p) || bt - t < 60) return B;
   const xs = pts.map((p) => p!.x), ys = pts.map((p) => p!.y);
