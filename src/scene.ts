@@ -5,17 +5,20 @@
 // screen at any zoom, turn or tilt, and the compositor does the rest. What
 // is still moving (ink being drawn, a soldier riding his line, pencil guides,
 // the pen's shadow) is drawn on a small live layer multiplied over the page.
+// What is alive boils on a small page-space layer of its own (boil.ts), placed
+// the same way and redrawn only when its boil frame ticks.
 // Light and fog are two tiny canvases stretched over the screen. The standing
 // pen lives on the untilted overlay. A camera move therefore costs a few
 // style writes and a couple of hundred pixels of gradient, not a repaint.
 
+import { BoilLayer, planBoil, type Plan } from "./boil";
 import type { Pt } from "./game";
 import type { AnyState as GameState } from "./record";
 import { INK, handText, lead, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
-import { cssMatrix, layerMatrix, project, stageCss, toLocal, type View } from "./projection";
+import { cssMatrix, layerMatrix, project, stageCss, toLocal, unproject, type View } from "./projection";
 import { RULES } from "./rules";
 import { DESK, deskTexture } from "./textures";
 import { theme } from "./theme";
@@ -66,15 +69,19 @@ export interface Frame {
   /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
   teach?: { kind: "aim" | "place" | "arrange" | "note"; at: Pt; p: number; rot: number; note?: string; text?: string };
   sig?: Signature;
+  /** The line boil: whether the living boil at all, wall time (ms) for its frame, and how bold (boil.ts boldAt). */
+  boil?: { on: boolean; ms: number; bold: number };
 }
 
 export const page = new PageLayer();
 export const pageState = { epoch: 0, S: 1.6 };
-export const stageStats = { live: 0, air: 0, frames: 0 };
+export const stageStats = { live: 0, air: 0, frames: 0, boil: 0 };
+export const boil = new BoilLayer();
 
 export interface Els {
   desk: HTMLCanvasElement;
   pageHost: HTMLElement;
+  boilHost: HTMLElement;
   live: HTMLCanvasElement;
   light: HTMLCanvasElement;
   haze: HTMLCanvasElement;
@@ -97,7 +104,7 @@ class Box {
   get empty() { return this.x0 > this.x1; }
 }
 
-let lastCss = { desk: "", page: "", live: "" };
+let lastCss = { desk: "", page: "", live: "", boil: ["", ""] };
 let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
 let airKey = "";
 let deskTheme = ""; // the theme the desk canvas was painted for
@@ -120,6 +127,18 @@ function place(els: Els, f: Frame) {
   if (c.style.width !== w) { c.style.width = w; c.style.height = h; }
   const pm = cssMatrix(layerMatrix(v, page.S));
   if (pm !== lastCss.page) { c.style.transform = pm; lastCss.page = pm; }
+  const cs = boil.parts.map((p) => p.c);
+  if (cs.some((c, i) => els.boilHost.children[i] !== c)) { els.boilHost.replaceChildren(...cs); lastCss.boil = ["", ""]; }
+  boil.parts.forEach((p, i) => {
+    const b = p.c;
+    const bv = p.empty ? "hidden" : "";
+    if (b.style.visibility !== bv) b.style.visibility = bv;
+    if (p.empty) return;
+    const bw = `${b.width}px`, bh = `${b.height}px`;
+    if (b.style.width !== bw || b.style.height !== bh) { b.style.width = bw; b.style.height = bh; }
+    const bm = cssMatrix(layerMatrix(v, page.S, p.ox, p.oy));
+    if (bm !== lastCss.boil[i]) { b.style.transform = bm; lastCss.boil[i] = bm; }
+  });
   const lc = stageCss(v);
   const lk = lc.transform + lc.origin;
   if (lk !== lastCss.live) { els.live.style.transform = lc.transform; els.live.style.transformOrigin = lc.origin; lastCss.live = lk; }
@@ -128,11 +147,59 @@ function place(els: Els, f: Frame) {
 export function renderStage(els: Els, f: Frame) {
   const { s, dpr } = f;
   const ink = f.ink ?? SETTLED;
-  page.sync(s, ink, pageState.S, pageState.epoch, f.sig, f.mover?.id);
+  const plan = boilPlan(f, ink);
+  page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold);
+  boil.set(plan, s, pageState.S);
   place(els, f);
+  seen = onScreen(f);
+  bold = f.boil?.bold ?? 0;
+  if (boil.draw(f.boil?.ms ?? 0, bold, seen)) stageStats.boil++;
   renderLive(els.live.getContext("2d")!, els.live, f, ink, dpr);
   renderAir(els, f);
   stageStats.frames++;
+}
+
+// The boil plan only changes when the page or the ink does: most frames reuse it.
+let planMemo: { s: GameState | null; stamp: string; plan: Plan | null } = { s: null, stamp: "", plan: null };
+function boilPlan(f: Frame, ink: Ink): Plan {
+  const { s } = f;
+  const on = !!f.boil?.on && !boil.tooDear;
+  let stamp = `${s.v === 1 ? s.flicks.length : s.actions.length}|${s.marks.length}|${s.bases.length}|${s.soldiers.length}|${s.turn}|${f.mover?.id}|${on}|`;
+  for (const k of ink.live) stamp += k + (ink.p(k) > 0 ? "+" : "-");
+  if (planMemo.s !== s || planMemo.stamp !== stamp || !planMemo.plan) planMemo = { s, stamp, plan: planBoil(s, ink, { on, moving: f.mover?.id }) };
+  return planMemo.plan!;
+}
+
+// The part of the page on screen (page units, padded), so the boil leaves
+// what you can't see alone. None if the view reaches the horizon.
+let seen: { x0: number; y0: number; x1: number; y1: number } | undefined;
+/** How bold the boil is drawn, by how far away the camera stands (boil.ts boldAt), as of the last render. */
+let bold = 0;
+function onScreen(f: Frame) {
+  const pts = [[0, 0], [f.sw, 0], [0, f.ch], [f.sw, f.ch]].map(([x, y]) => unproject(f.view, x, y));
+  if (pts.some((p) => !p)) return undefined;
+  const xs = pts.map((p) => p!.x), ys = pts.map((p) => p!.y), pad = 40;
+  return { x0: Math.min(...xs) - pad, y0: Math.min(...ys) - pad, x1: Math.max(...xs) + pad, y1: Math.max(...ys) + pad };
+}
+
+/**
+ * Dev check: forget every layer's dirty rectangles, so the next render draws
+ * each whole. An incremental frame must match that full redraw (pft.redrawCheck).
+ */
+/** Dev: the part of the page the boil keeps up to date (page units), or undefined for all of it. Off it, a thing keeps its last look until it's seen. */
+export const boilSeen = () => seen;
+
+export function forgetDrawn() {
+  liveDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
+  inked = { x: 0, y: 0, w: 1e6, h: 1e6 };
+  boil.redrawAll();
+}
+
+/** Between rendered frames: redraw the boil if its frame has ticked. Returns whether it did. */
+export function boilTick(ms: number) {
+  if (boil.empty || !boil.draw(ms, bold, seen)) return false;
+  stageStats.boil++;
+  return true;
 }
 
 // --- the live layer: only what is still being drawn ---------------------------
@@ -356,7 +423,8 @@ export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: numbe
     const pb = penBox(f.pen, f.view);
     box.add(pb.x0, pb.y0); box.add(pb.x1, pb.y1);
     drawPen(g, f.pen, f.view);
-    if (f.aim && f.aim.power > 0) guideThroughBarrel(g, f);
+    // the guide runs past the pen's box: its dashes join the box, or they'd never be cleared
+    if (f.aim && f.aim.power > 0) guideThroughBarrel(g, f, box);
     // the pen stands in the same light as everything else
     const lit = lightAt(f.lamp, f.pen.x, f.pen.y);
     g.save();
@@ -387,7 +455,7 @@ function penBox(p: PenPose, v: View) {
   };
 }
 
-function guideThroughBarrel(g: Ctx, f: Frame) {
+function guideThroughBarrel(g: Ctx, f: Frame, box: Box) {
   const a = f.aim!;
   const me = f.s.soldiers[a.soldierId];
   const show = aimShow(a);
@@ -399,6 +467,7 @@ function guideThroughBarrel(g: Ctx, f: Frame) {
     const p = project(f.view, me.x + dx * d, me.y + dy * d), q = project(f.view, me.x + dx * Math.min(show, d + step), me.y + dy * Math.min(show, d + step));
     g.lineWidth = Math.max(1.2, 2.2 * p.k);
     g.beginPath(); g.moveTo(p.x, p.y); g.lineTo(q.x, q.y); g.stroke();
+    box.add(p.x, p.y, g.lineWidth); box.add(q.x, q.y, g.lineWidth);
   }
 }
 

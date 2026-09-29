@@ -11,6 +11,7 @@ import type { AnyState as GameState } from "./record";
 import { INK, handText, inkCircle, inkCross, inkDot, inkFlick, inkOp, paint, paperGrain } from "./ink";
 import { GAME } from "./name";
 import { RULES } from "./rules";
+import type { Hold } from "./boil";
 import { theme, type Theme } from "./theme";
 
 type Ctx = CanvasRenderingContext2D;
@@ -297,23 +298,24 @@ function showThrough(g: Ctx, w: number, h: number) {
 
 type Dotted = { id: number; owner: 0 | 1 };
 
-export function drawBase(g: Ctx, b: GameState["bases"][number], p = 1) {
-  inkCircle(g, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.8 * theme.ink.width, 2, p);
+// `wob` picks a redrawing for the line boil (0 is the drawing the page keeps), straying `amp` times the usual.
+export function drawBase(g: Ctx, b: GameState["bases"][number], p = 1, wob = 0, amp = 1) {
+  inkCircle(g, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.8 * theme.ink.width, 2, p, wob, amp);
 }
 
-export function drawMark(g: Ctx, m: Mark, p = 1) {
+export function drawMark(g: Ctx, m: Mark, p = 1, wob = 0) {
   const pen = INK.pens[m.owner], k = theme.ink.width;
-  if (m.t === "stroke") inkFlick(g, m.pts, pen, m.seed, RULES.inkWidth * k, p);
+  if (m.t === "stroke") inkFlick(g, m.pts, pen, m.seed, RULES.inkWidth * k, p, 1, wob);
   else if (m.t === "walk") drawWalk(g, m.a, m.b, pen, m.seed, p);
   else if (m.t === "stand") {
     // the last few, ringed where they stood when their comrades were gone
     m.at.forEach((q, j) => inkCircle(g, q.x, q.y, RULES.soldierRadius + 9, pen, m.seed + j * 17, 1.7 * k, 1, p));
   } else if (m.kind === "moved") {
     // the old dot stays; the little cross comes after the move
-    inkDot(g, m.x, m.y, RULES.soldierRadius, pen, m.seed);
-    inkCross(g, m.x, m.y, RULES.soldierRadius * 1.2, pen, m.seed, 1.6 * k, 0.7, p);
-  } else if (m.kind === "kill") inkCross(g, m.x, m.y, RULES.soldierRadius * 2.1, pen, m.seed, 2.8 * k, 1, p);
-  else inkCross(g, m.x, m.y, RULES.soldierRadius * 1.6, pen, m.seed, 2 * k, 1, p);
+    inkDot(g, m.x, m.y, RULES.soldierRadius, pen, m.seed, 1, 1, wob);
+    inkCross(g, m.x, m.y, RULES.soldierRadius * 1.2, pen, m.seed, 1.6 * k, 0.7, p, wob);
+  } else if (m.kind === "kill") inkCross(g, m.x, m.y, RULES.soldierRadius * 2.1, pen, m.seed, 2.8 * k, 1, p, wob);
+  else inkCross(g, m.x, m.y, RULES.soldierRadius * 1.6, pen, m.seed, 2 * k, 1, p, wob);
 }
 
 /** A convoy's footprints: short ticks, left and right, the way a kid draws soldiers marching. */
@@ -340,8 +342,8 @@ export function drawWalk(g: Ctx, a: Pt, b: Pt, color: string, seed: number, p = 
   g.globalAlpha = 1;
 }
 
-export function drawDot(g: Ctx, x: Pt & Dotted, alpha = 1, grow = 1, at: { x: number; y: number } = x) {
-  inkDot(g, at.x, at.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, alpha, grow);
+export function drawDot(g: Ctx, x: Pt & Dotted, alpha = 1, grow = 1, at: { x: number; y: number } = x, wob = 0, amp = 1) {
+  inkDot(g, at.x, at.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, alpha, grow, wob, amp);
 }
 
 export function drawSignature(g: Ctx, sig: Signature, p = 1) {
@@ -435,7 +437,8 @@ export function dotSpots(s: GameState): Spot[] {
  * The page as an append-only canvas in page space. Marks, camps, soldiers'
  * dots, the ring and the signature are multiplied on once, when they finish
  * drawing, and never redrawn. The camera never touches it: the compositor
- * carries it wherever the camera looks.
+ * carries it wherever the camera looks. What boils (boil.ts) is held off the
+ * page until it stops, then multiplied on like everything else.
  */
 export class PageLayer {
   c: HTMLCanvasElement | null = null;
@@ -462,14 +465,20 @@ export class PageLayer {
   hasDot(key: string) { return this.dots.has(key); }
   get isSigned() { return this.signed; }
 
-  /** Bring the page up to date. `moving` is a soldier riding his ink (not settled yet). */
-  sync(s: GameState, ink: Ink, S: number, epoch: number, sig?: Signature, moving?: number) {
+  /**
+   * Bring the page up to date. `hold` is what stays off the page for now: a
+   * soldier riding his ink, and whatever is boiling. Something held that is
+   * already on the page (a camp manned again) can't be rubbed out, so the
+   * page is drawn afresh.
+   */
+  sync(s: GameState, ink: Ink, S: number, epoch: number, sig?: Signature, hold?: Hold) {
     let fresh = !this.c || this.src !== s || this.S !== S || this.epoch !== epoch || this.themeId !== theme.id || s.marks.length < this.marks.filter(Boolean).length;
     // nothing new since last time: most frames stop here
     const acts = s.v === 1 ? s.flicks.length : s.actions.length;
-    const stamp = `${s.marks.length}|${s.bases.length}|${s.turn}|${acts}|${[...ink.live].join()}|${moving}|${!!sig}`;
+    const stamp = `${s.marks.length}|${s.bases.length}|${s.turn}|${acts}|${[...ink.live].join()}|${hold?.sig}|${!!sig}`;
     if (!fresh && stamp === this.stamp) return { fresh, added: 0 };
     this.stamp = stamp;
+    if (!fresh && hold && this.holdsBaked(hold)) fresh = true;
     const spots = dotSpots(s);
     // Ink is never taken back once the war starts. Before it, a soldier arranged
     // somewhere else leaves no dot behind: the page is drawn afresh (once per drop).
@@ -480,13 +489,13 @@ export class PageLayer {
     if (fresh) this.rebuild(s, S, epoch);
     const added: ((g: Ctx) => void)[] = [];
     for (const b of s.bases) {
-      if (!this.bases.has(b.id) && !ink.live.has(`b${b.id}`)) { added.push((g) => drawBase(g, b)); this.bases.add(b.id); }
+      if (!this.bases.has(b.id) && !ink.live.has(`b${b.id}`) && !hold?.bases.has(b.id)) { added.push((g) => drawBase(g, b)); this.bases.add(b.id); }
     }
     s.marks.forEach((m, i) => {
-      if (!this.marks[i] && !ink.live.has(`m${i}`)) { added.push((g) => drawMark(g, m)); this.marks[i] = true; }
+      if (!this.marks[i] && !ink.live.has(`m${i}`) && !hold?.marks.has(i)) { added.push((g) => drawMark(g, m)); this.marks[i] = true; }
     });
     for (const d of spots) {
-      if (this.dots.has(d.key) || ink.live.has(`d${d.id}`) || d.id === moving) continue;
+      if (this.dots.has(d.key) || ink.live.has(`d${d.id}`) || hold?.dots.has(d.key)) continue;
       const x = s.soldiers[d.id];
       added.push((g) => drawDot(g, x, 1, 1, d));
       this.dots.add(d.key);
@@ -505,6 +514,13 @@ export class PageLayer {
       this.version++;
     }
     return { fresh, added: added.length };
+  }
+
+  private holdsBaked(h: Hold) {
+    for (const k of h.dots) if (this.dots.has(k)) return true;
+    for (const b of h.bases) if (this.bases.has(b)) return true;
+    for (const i of h.marks) if (this.marks[i]) return true;
+    return false;
   }
 
   private rebuild(s: GameState, S: number, epoch: number) {
