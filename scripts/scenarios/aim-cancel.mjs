@@ -18,7 +18,7 @@ export default async function (T, out) {
   await idle(T);
   const read = () => page.evaluate(() => ({
     marks: window.pft.s.marks.length, turn: window.pft.s.turn, selected: window.pft.selected, busy: window.pft.busy,
-    status: document.querySelector("#status").textContent, ring: !document.querySelector("#cancel-ring").hidden,
+    status: document.querySelector("#status").textContent, mark: !document.querySelector("#cancel-ring").hidden, ring: document.querySelector("#cancel-ring").classList.contains("in"),
     acts: document.querySelector("#acts").textContent, tilt: window.pft.cam.tgt.tilt, aim: !!window.pft.aim,
     felt: window.pft.haptics.felt.map((f) => f.ev),
   }));
@@ -38,7 +38,7 @@ export default async function (T, out) {
   for (let i = 1; i <= 10; i++) { await T.touch("touchMove", [[x0, y0 + i * 9]]); await page.waitForTimeout(30); }
   await page.waitForTimeout(250);
   const pulled = await read();
-  check(pulled.aim && !pulled.ring, "pulled 90px: aiming, no ring", pulled.status);
+  check(pulled.aim && pulled.mark && !pulled.ring, "pulled 90px: start mark shown, not firm", pulled.status);
   await T.shot(`${out}/cancel-2-pulled.png`);
   for (let i = 9; i >= 0; i--) { await T.touch("touchMove", [[x0, y0 + i * 9 * 0.1]]); await page.waitForTimeout(30); }
   await page.waitForTimeout(250);
@@ -51,7 +51,7 @@ export default async function (T, out) {
   const done = await read();
   check(done.marks === picked.marks && done.turn === picked.turn && !done.busy, "released there: nothing fired", `marks ${picked.marks} -> ${done.marks}`);
   check(!/too soft/.test(done.status), "no failure text", `"${done.status}"`);
-  check(!done.ring && !done.aim, "ring gone, aim cleared");
+  check(!done.ring && !done.mark && !done.aim, "mark gone, aim cleared");
   check(done.selected === picked.selected, "he is still picked up");
   await T.shot(`${out}/cancel-4-cancelled.png`);
 

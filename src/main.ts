@@ -275,24 +275,29 @@ function canSendAny(c0: GameState) {
   return c0.bases.some((a) => a.owner === c0.current && sendMax(c0, a.id) > 0 && c0.bases.some((b) => b !== a && !canSend(c0, a.id, b.id, 1)));
 }
 
-// A pencilled ring where the pull began, once the thumb is back inside the dead
-// zone after a real pull: let go there and the aim is dropped, nothing fired.
-// One small DOM circle (screen space), so no page or canvas layer is touched.
-let ringOn = false;
+// A pencilled mark where the pull began, for the whole pull: a dot with the dead
+// zone drawn faintly round it. Slide the thumb back onto it and the ring firms
+// up (and ticks): let go there and the aim is dropped, nothing fired. One small
+// fixed DOM element in screen space, so no page or canvas layer is touched.
+let ringOn = false; // the thumb is inside the ring
+let markOn = false;
 const ringEl = document.createElement("div");
 ringEl.id = "cancel-ring";
 ringEl.hidden = true;
+ringEl.innerHTML = "<i></i>";
 document.body.append(ringEl);
 function syncRing() {
-  const on = !!aim && aim.charged && g.t === "aim" && !pull(aim).live;
-  if (on && g.t === "aim") {
+  const shown = !!aim && g.t === "aim";
+  if (shown && g.t === "aim") {
     const r = FEEL.minPullPx;
     ringEl.style.transform = `translate(${g.sx - r}px, ${g.sy - r}px)`;
     ringEl.style.width = ringEl.style.height = `${r * 2}px`;
   }
+  if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
+  const on = shown && !!aim && aim.charged && !pull(aim).live;
   if (on === ringOn) return;
   ringOn = on;
-  ringEl.hidden = !on;
+  ringEl.classList.toggle("in", on);
   if (on) { haptic("brink"); learn("cancel"); }
 }
 
