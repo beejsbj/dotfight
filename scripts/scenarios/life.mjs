@@ -433,19 +433,79 @@ export default async function (T, out) {
         natural = await page.evaluate(() => window.pft.bubbles.cur?.text ?? null);
         console.log("the lunger said:", natural);
       }
-      if (natural !== "Luuunge!") await force("lunge", me.id, "Luuunge!");
+      // (a lunge is yelled from his camp, in its late form once the war's hot)
+      const camp = await page.evaluate((id) => window.pft.s.soldiers[id].home, me.id);
+      await page.evaluate(() => { window.pft.heat = 1; });
+      if (natural !== "Luuunge!") await force("lunge", camp, "Luuunge!");
       await still(`note2-${theme}-lunge`, 700);
       for (let i = 0; i < 20; i++) await step(1000 / 12, 30);
       await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
       await step(0, 100);
       const men = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).map((x) => x.id); });
-      await force("lunge", men[1], "fooor Dawooood!");
+      await force("lunge", camp, "fooor Dawooood!");
       await still(`note2-${theme}-dawood`, 800);
       await force("aim", men[2], "steady…");
       await still(`note2-${theme}-quiet`, 900);
       // a shout, written and rubbed out
-      await force("lunge", men[3], "Chaaarge!");
+      await force("lunge", camp, "Chaaarge!");
       await seq(`note2-${theme}-shout`, 36, 1000 / 12);
+      await page.evaluate(() => { window.pft.bubbles.reset(); window.pft.heat = undefined; });
+    }
+  }
+  // --- notes, round three: camps speak from their ring, moods, exchanges, crickets ------------
+  //   note3-<theme>-chant        a camp's chant along its ring, from bird's-eye
+  //   note3-<theme>-who          an individual's line from bird's-eye: the tail and the ring round his dot
+  //   note3-<theme>-early/late   "for Dawood!" from a camp early in the war, "fooor Dawooood!" late
+  //   note3-<theme>-tiny-lean    a tiny whisper leaning in (and -tiny-bird: barely there from above)
+  //   note3-<theme>-chat         an exchange: a line and a nearby comrade's reply
+  //   note3-<theme>-crickets     a long wait
+  if (want("notes3")) {
+    const force = (kind, id, text, mate) => page.evaluate(({ kind, id, text, mate }) => {
+      const p = window.pft;
+      for (let k = 0; k < 8000; k++) {
+        p.bubbles.reset(); p.speak(kind, id, p.wall, 1000 + k * 7, mate);
+        if (p.bubbles.cur && (!text || p.bubbles.cur.text === text) && (mate === undefined || p.bubbles.cur.reply)) { p.poke(); return p.bubbles.cur.text; }
+      }
+      return null;
+    }, { kind, id, text, mate });
+    const still = async (name, ms = 900, clip) => { await step(ms, 150); await page.screenshot(clip ? { path: `${out}/${name}.png`, clip } : { path: `${out}/${name}.png` }); console.log(`shot ${name}`); await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100); };
+    for (const theme of (process.env.THEMES ?? "lamplight,blueprint").split(",")) {
+      await page.evaluate((id) => window.pft.theme?.apply(id), theme);
+      await war(7, 12);
+      await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
+      await step(0, 150);
+      const camp = await fullest("mine");
+      const men = await menIn(camp);
+      const mate = await page.evaluate((id) => { const s = window.pft.s, x = s.soldiers[id]; return s.soldiers.filter((y) => y.alive && y.owner === x.owner && y.id !== id).sort((a, b) => Math.hypot(a.x - x.x, a.y - x.y) - Math.hypot(b.x - x.x, b.y - x.y))[0]?.id; }, men[0].id);
+      console.log("chant:", await force("chant", camp.id, "Da-wood! Da-wood!"));
+      await still(`note3-${theme}-chant`, 1700);
+      console.log("who:", await force("idle", men[2].id, "hold the line"));
+      await still(`note3-${theme}-who`, 900);
+      await page.evaluate(() => { window.pft.heat = 0; });
+      console.log("early:", await force("lunge", camp.id, "for Dawood!"));
+      await still(`note3-${theme}-early`, 800);
+      await page.evaluate(() => { window.pft.heat = 1; });
+      console.log("late:", await force("lunge", camp.id, "fooor Dawooood!"));
+      await still(`note3-${theme}-late`, 800);
+      await page.evaluate(() => { window.pft.heat = undefined; });
+      console.log("chat:", await force("chat", men[0].id, "what's the plan", mate));
+      await still(`note3-${theme}-chat`, 1900);
+      console.log("crickets:", await force("wait", men[3].id, "*crickets*"));
+      await still(`note3-${theme}-crickets-bird`, 1000);
+      console.log("tiny:", await force("tiny", men[1].id, "psst"));
+      await still(`note3-${theme}-tiny-bird`, 1000);
+      await flat(camp, 2.4);
+      console.log("tiny:", await force("tiny", men[1].id, "psst"));
+      await still(`note3-${theme}-tiny-lean`, 1100, await box(camp, 200));
+      console.log("crickets:", await force("wait", men[3].id, "*crickets*"));
+      await still(`note3-${theme}-crickets-lean`, 1000, await box(camp, 200));
+      console.log("chat:", await force("chat", men[0].id, "what's the plan", mate));
+      await seq(`note3-${theme}-chat-clip`, 46, 1000 / 12, { [`note3-${theme}-chat-clip`]: await box(camp, 220) });
+      await page.evaluate(() => window.pft.bubbles.reset());
+      await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
+      await step(0, 150);
+      console.log("chant:", await force("chant", camp.id, "Da-wood! Da-wood!"));
+      await seq(`note3-${theme}-chant-clip`, 42, 1000 / 12);
       await page.evaluate(() => window.pft.bubbles.reset());
     }
   }

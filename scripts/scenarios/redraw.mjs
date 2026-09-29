@@ -40,9 +40,20 @@ export default async function (T, out) {
   await page.waitForTimeout(700);
   await check("bird's-eye + note");
   await page.evaluate(() => window.pft.bubbles.reset());
-  console.log("shout:", await note(some, "lunge"));
+  // a camp's line arcs along its ring; an exchange puts a reply up beside the line
+  const camp = await page.evaluate(() => { const s = window.pft.s; return s.bases.find((b) => b.owner === s.current).id; });
+  console.log("shout:", await note(camp, "lunge"));
   await page.waitForTimeout(700);
-  await check("bird's-eye + shout");
+  await check("bird's-eye + camp shout");
+  await page.evaluate(() => window.pft.bubbles.reset());
+  console.log("chant:", await note(camp, "chant"));
+  await page.waitForTimeout(1500);
+  await check("bird's-eye + chant");
+  await page.evaluate(() => window.pft.bubbles.reset());
+  const pair = await page.evaluate(() => { const s = window.pft.s, m = s.soldiers.filter((x) => x.alive && x.owner === s.current); return [m[0].id, m[1].id]; });
+  console.log("chat:", await page.evaluate(([a, b]) => { const p = window.pft; for (let k = 0; k < 4000; k++) { p.bubbles.reset(); p.speak("chat", a, p.wall, 1000 + k * 7, b); if (p.bubbles.cur?.reply) { p.poke(); return p.bubbles.cur.text; } } return null; }, pair));
+  await page.waitForTimeout(1900);
+  await check("bird's-eye + exchange");
   await page.evaluate(() => window.pft.bubbles.reset());
   await check("bird's-eye");
   // the lowest of the side to play: leaning in on him, the camps sit at the screen's edges
