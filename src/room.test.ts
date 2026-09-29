@@ -1,11 +1,11 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stubRedis } from "../api/_redis-stub";
 import { RoomError, rooms, type Rooms } from "../api/_rooms";
 import { botAction, botArrange, botBase } from "./bot";
 import { canPlaceBase, illegal, type Action, type GameState } from "./game";
 import { CORE, SIZES } from "./rules";
 import { ENGINE, apply, check, drifted, fresh, hash, replay, turn, type Payload, type Setup } from "./room-engine";
-import { RoomHttpError, type RoomApi, type Seat } from "./room-protocol";
+import { httpApi, RoomHttpError, type RoomApi, type Seat } from "./room-protocol";
 import { listRooms, readRoom, RoomLink, type Saved } from "./room";
 
 /** The real store over a stub Redis, behind the same interface as the HTTP client. */
@@ -71,6 +71,81 @@ function phone(data: Saved, api: RoomApi) {
 const setup: Setup = { seed: 424242, size: SIZES.quick, rules: CORE, page: { no: 1, date: "26 Sep 2026" } };
 const saved = (code: string, seat: Seat | null, secret: string | null, names: Saved["names"]): Saved =>
   ({ v: 1, code, seat, secret, engine: ENGINE, setup, names, log: [], applied: 0, pending: [], updated: 0 });
+
+describe("room link rate limit waits", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+  const limited = () => new Response('{"retryAfter":2}', { status: 429 });
+
+  it("retains moves and deduplicates push, poll and wake during a wait", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(limited())
+      .mockResolvedValueOnce(new Response('{"n":1}'))
+      .mockResolvedValueOnce(new Response('{"n":2}'));
+    const storage = memStorage();
+    const diverged = vi.fn();
+    const link = new RoomLink(saved("abc234", 0, "test", ["B", "D"]), { api: httpApi("/room", fetcher), storage, onDiverged: diverged });
+    link.start();
+    link.push({ move: 1 });
+    const sending = link.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    link.push({ move: 2 });
+    link.wake();
+    expect(link.poll()).toBe(sending);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(readRoom(storage, link.code)?.pending).toEqual([{ move: 1 }, { move: 2 }]);
+    expect(link.offline).toBe(false);
+    expect(link.broken).toBe("");
+    expect(diverged).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await sending;
+    expect(fetcher.mock.calls[1]).toEqual(fetcher.mock.calls[0]);
+    expect(JSON.parse(fetcher.mock.calls[2][1]!.body as string)).toMatchObject({ i: 1, a: { move: 2 } });
+    expect(link.data.pending).toEqual([]);
+    expect(link.data.log.map(e => e.a)).toEqual([{ move: 1 }, { move: 2 }]);
+    link.stop();
+  });
+
+  it("stop cancels a waiting send and preserves moves for restart", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(limited()).mockResolvedValueOnce(new Response('{"n":1}'));
+    const storage = memStorage();
+    const link = new RoomLink(saved("abc234", 0, "test", ["B", "D"]), { api: httpApi("/room", fetcher), storage });
+    link.start();
+    link.push({ move: 1 });
+    const sending = link.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    link.stop();
+    await sending;
+    link.wake();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(readRoom(storage, link.code)?.pending).toEqual([{ move: 1 }]);
+    expect(link.offline).toBe(false);
+    link.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(link.data.pending).toEqual([]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    link.stop();
+  });
+
+  it("wake does not bypass a polling wait and stop cancels it", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(limited());
+    const link = new RoomLink(saved("abc234", null, null, ["B", "D"]), { api: httpApi("/room", fetcher), storage: memStorage() });
+    link.start();
+    const reading = link.poll();
+    await vi.advanceTimersByTimeAsync(0);
+    link.wake();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(link.poll()).toBe(reading);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    link.stop();
+    await reading;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(link.offline).toBe(false);
+  });
+});
 
 let k = 1;
 function botMove(s: GameState): Action {

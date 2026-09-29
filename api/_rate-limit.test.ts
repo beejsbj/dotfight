@@ -46,6 +46,22 @@ describe("room rate limiter (Lua emulated by stub)", () => {
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(RATE_LIMITS.create.requests);
   });
 
+  it("allows a long NAT-shared game and a full-log reconnect burst", async () => {
+    let now = 0;
+    const redis = stubRedis(() => now);
+    // Two phones at the fastest 1.5-second poll cadence for an hour.
+    for (let minute = 0; minute < 60; minute++) {
+      for (let poll = 0; poll < 40; poll++) {
+        await rateLimit(redis, request(), "read");
+        await rateLimit(redis, request(), "read");
+        now += 1500;
+      }
+    }
+    // Catch-up can post every possible log entry, sequentially with no delay.
+    for (let i = 0; i < 3000; i++) await rateLimit(redis, request(), "act");
+    await expect(rateLimit(redis, request(), "read")).resolves.toBeUndefined();
+  });
+
   it("returns a 429 header/body and never runs room Lua after rejection", async () => {
     const redis = stubRedis(() => 0);
     const spy = vi.spyOn(redis, "eval");
