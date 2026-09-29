@@ -26,7 +26,8 @@ import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
 import { CUSTOM, RULES, SIZES, type Size } from "./rules";
-import { page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { boldAt } from "./boil";
+import { boil, boilSeen, boilTick, forgetDrawn, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
 import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
@@ -112,7 +113,7 @@ let arrowTo: Pt | null = null; // the pencil end of a send being drawn
 
 const $ = <T extends HTMLElement>(q: string) => document.querySelector(q) as T;
 const els: Els = {
-  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), live: $<HTMLCanvasElement>("#live"),
+  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), live: $<HTMLCanvasElement>("#live"),
   light: $<HTMLCanvasElement>("#light"), haze: $<HTMLCanvasElement>("#haze"),
 };
 const over = $<HTMLCanvasElement>("#over");
@@ -181,6 +182,17 @@ for (const ev of ["touchend", "click", "keydown"]) window.addEventListener(ev, s
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function applyTilt() { cam.tiltScale = settings.tilt && !reduced ? 1 : 0; }
 applyTilt();
+
+// The line boil (boil.ts): the living are drawn over and over. Not with reduced
+// motion, not under the cover, and not on a phone that's struggling: one whose
+// camera moves are slow (the same check that skips the page-turn spin) or whose
+// boil ticks run over budget. Off, everything is simply ink on the page.
+let boilForce: boolean | undefined; // dev: pin it on or off for playtests
+function boilOn() {
+  if (boilForce !== undefined) return boilForce;
+  return !reduced && !slow && !boil.tooDear && screen !== "title";
+}
+let boilWas = false;
 
 // --- hud --------------------------------------------------------------------
 
@@ -1965,14 +1977,26 @@ function frame(now: number) {
     if (ratchet.shake(w !== 0)) haptic("wobble");
   }
   if (motion.gun) { stepGun(); active = true; }
+  wall = boilClock ?? now;
+  const bo = boilOn();
+  if (bo !== boilWas) { boilWas = bo; dirty = true; }
   if (active || dirty) {
     const t0 = performance.now();
     renderNow();
     scriptTimes.push(performance.now() - t0);
     if (scriptTimes.length > 240) scriptTimes.shift();
     dirty = false;
+  } else if (bo) {
+    // nothing else moving: only the living, redrawn when their frame ticks
+    const t0 = performance.now();
+    if (boilTick(wall)) {
+      scriptTimes.push(performance.now() - t0);
+      if (scriptTimes.length > 240) scriptTimes.shift();
+    }
   }
 }
+let wall = 0;
+let boilClock: number | undefined; // dev: pin the boil's wall time, to capture its frames in order
 
 function currentFrame(): Frame {
   const v = cam.view();
@@ -1986,7 +2010,7 @@ function currentFrame(): Frame {
   }
   const f: Frame = {
     s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
-    selected, ghost, sig: signatureFor(s, mode), lean: leanOf(),
+    selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
@@ -2086,6 +2110,22 @@ function leanOf() {
   return Math.max(0, Math.min(1, cam.tiltScale > 0 ? p.tilt / 0.55 : (p.m - 1) / 1.1));
 }
 
+// Dev: how two drawings of a layer differ, beyond antialiasing (a channel off by more than 24).
+function differ(a: ImageData | null, b: ImageData | null, only?: (x: number, y: number) => boolean) {
+  if (!a || !b) return { bad: a === b ? 0 : -1, box: null };
+  if (a.width !== b.width || a.height !== b.height) return { bad: -1, box: null };
+  let bad = 0, x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+  const p = a.data, q = b.data;
+  for (let i = 0; i < p.length; i += 4) {
+    if (Math.abs(p[i] - q[i]) <= 24 && Math.abs(p[i + 1] - q[i + 1]) <= 24 && Math.abs(p[i + 2] - q[i + 2]) <= 24 && Math.abs(p[i + 3] - q[i + 3]) <= 24) continue;
+    const x = (i >> 2) % a.width, y = Math.floor((i >> 2) / a.width);
+    if (only && !only(x, y)) continue;
+    bad++;
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+  }
+  return { bad, of: a.width * a.height, box: bad ? [x0, y0, x1, y1] : null };
+}
+
 function renderNow() {
   const f = currentFrame();
   const bg = farColour(f.lamp);
@@ -2117,6 +2157,28 @@ if (import.meta.env.DEV) {
     get selected() { return selected; }, get res() { return res; }, get lapse() { return lapse; }, haptics, get link() { return link; }, get mode() { return mode; }, get roomDrift() { return roomDrift; },
     set speed(v: number) { speed = v; }, get speed() { return speed; },
     poke: () => { dirty = true; },
+    /**
+     * Every layer drawn incrementally must match a full redraw of the same
+     * frame: per layer, how many pixels differ by more than antialiasing, and where.
+     */
+    redrawCheck: () => {
+      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, rings: boil.parts[0].c, rest: boil.parts[1].c };
+      const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => [k, c.width && c.height && c.style.visibility !== "hidden" ? c.getContext("2d")!.getImageData(0, 0, c.width, c.height) : null]));
+      renderNow();
+      const a = grab();
+      forgetDrawn();
+      renderNow(); renderNow(); // the boil draws one of its two canvases a render
+      const b = grab();
+      // the boil leaves what's off screen at its last look until it comes into view: compare what's on it
+      const on = boilSeen(), S = pageState.S;
+      const mask = (k: string) => {
+        const i = k === "rings" ? 0 : k === "rest" ? 1 : -1;
+        if (i < 0 || !on) return undefined;
+        const p = boil.parts[i];
+        return (x: number, y: number) => { const u = p.ox + x / S, w = p.oy + y / S; return u >= on.x0 && u <= on.x1 && w >= on.y0 && w <= on.y1; };
+      };
+      return Object.fromEntries(Object.keys(layers).map((k) => [k, differ(a[k], b[k], mask(k))]));
+    },
     frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view }; },
     frames: (reset = false) => {
       const stats = (src: number[]) => {
@@ -2128,7 +2190,9 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    stageStats, cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
+    stageStats, boil, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
+    set boilClock(ms: number | undefined) { boilClock = ms; },
+    cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
     get slow() { return slow; }, set slow(v: boolean) { slow = v; cam.quick = v ? 1.8 : 1; probeSlow = v; },
     start, showTitle, replay: () => replay(file(s, mode)), apply: (st: Step) => { apply(s, st); dirty = true; },
     unfile, file: () => file(s, mode), flick: (f: Flick) => fire(f, 0.6, 0.3),

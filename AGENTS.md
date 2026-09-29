@@ -28,6 +28,7 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 - `src/camera.ts`: bird's-eye by default, leaning in to aim, turning the page
 - `src/light.ts`: the lamp, the aiming fog, the dawn
 - `src/page.ts`, `src/scene.ts`: the append-only sheet, and one frame's composition
+- `src/boil.ts`: the line boil: living soldiers and manned camps swap between three drawings at 8 fps, bolder from bird's-eye (`BOIL.bold`); the dead hold still. Small page-space canvases, dirty rectangles, sprites
 - `src/pen.ts`, `src/ink.ts`, `src/textures.ts`: the ballpoint, seeded ink and pencil primitives, desk and paper
 - `src/timeline.ts`, `src/hand.ts`: draw-on timing, which soldier a tap means (pure, tested)
 - `src/sound.ts`: synthesised pen, paper and lamp sounds
@@ -38,7 +39,7 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 ## Seeing it work
 
 - **On bjslab, every browser test, screenshot script, build and test suite runs through `/home/admin/.local/bin/t3-test-run COMMAND`.** The guard admits one job at a time (three CPUs, 2 GiB, no swap, 20-minute timeout) to protect T3 from memory and I/O pressure. The checked-in browser entrypoints enter it automatically; prefix everything else, including ad hoc scripts and older worktrees whose scripts predate it. Use one Vitest worker: `t3-test-run npm test -- --maxWorkers=1`. If it defers (another job, low headroom, unhealthy T3), report why and retry once the condition clears; never bypass it or launch parallel copies. It wraps finite jobs, not the dev server. Default playtest captures persist in `/mnt/server-ssd/t3-test-artifacts/dotfight`; pass an output directory to keep separate runs. Launch Chrome with `browserOpts` from `scripts/lib/guarded-browser.mjs`: without it Chrome keeps its frame buffers in the guard's write-capped `$TMPDIR` and the game crawls at ~2 fps, so every playtest times out waiting for idle. Branches cut before this fix need `main` merged in.
-- `npm run dev`, then drive it in headless Chrome at phone size: `node scripts/playtest.mjs <scenario> http://localhost:5173/ /tmp/out`. It uses playwright-core with `/usr/bin/google-chrome` and real CDP touch events, and takes `W`, `H`, `DPR`, `THROTTLE` and `TAUGHT=0` from the environment. Scenarios are in `scripts/scenarios/` (`first`, `pnp`, `tour`, `sizes`, `fog`, `perf`, `haptics`, …). The haptics scenario reads what was felt from `pft.haptics.felt`; add `?haptics=tap` or `?haptics=script` to the URL to run the iPhone rigs.
+- `npm run dev`, then drive it in headless Chrome at phone size: `node scripts/playtest.mjs <scenario> http://localhost:5173/ /tmp/out`. It uses playwright-core with `/usr/bin/google-chrome` and real CDP touch events, and takes `W`, `H`, `DPR`, `THROTTLE` and `TAUGHT=0` from the environment. Scenarios are in `scripts/scenarios/` (`first`, `pnp`, `tour`, `sizes`, `fog`, `perf`, `haptics`, `boil`, `redraw`, …). `redraw` checks that every dirty-rectangle layer matches a full redraw while leaning in and aiming (`pft.redrawCheck()`). The haptics scenario reads what was felt from `pft.haptics.felt`; add `?haptics=tap` or `?haptics=script` to the URL to run the iPhone rigs.
 - In dev builds, `window.pft` exposes state, camera, timelines, `speed`, `frames()`, `renderNow`, and helpers that file, resume and replay seeded bot-v-bot wars (`fileWar`, `resumeRecord`).
 - `npm run phone` serves on bjslab's Tailscale address for testing on a real phone.
 - **Share art:** after changing the title, cover or rulebook look, regenerate with `npm run share-art -- <devurl>` and `npm run rules-art -- <devurl> --og`, and look at the images.
@@ -46,7 +47,7 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 
 ## Rules: where they stand
 
-`RULES.md` is the single rulebook: Core (Quick battle) and Long war, with an open/to-test table. The playable game still runs the older simple rules (shoot or move). The new rules were simulated on the rules-lab branches `rules/lab` (PR #3, report `docs/rules-lab/report.md`) and `rules/lab-2` (PR #4, `docs/rules-lab/round-2.md`). Both are built on the retired notebook UI, so bringing a rule into the game means porting it into Lamplight. Rule decisions are Burooj's; record them in `RULES.md` and on the `/rules` pages together.
+`RULES.md` is the single rulebook: Core (Quick battle) and Advanced (Long war), with an open/to-test table. **The Core rules are in the game** (#15): `src/game.ts` is `GameState` v2, with camps, a positioning phase, snipe and lunge, sends (convoys) and the last stand; `src/cues.ts` names the moments presentation can hang on (`lunge-death`, `last-stand`, …). Old v1 saves (shoot or move) still load through `src/legacy.ts`, and `record.ts`'s `AnyState` covers both. **The Advanced rules (Long war) aren't built yet.** The rules lab's round 3 (`docs/rules-lab/round-3.md`) simulated the Core rules on the game's own engine; rounds 1 and 2 (`docs/rules-lab/report.md`, `round-2.md`, on the rules-lab branches) ran on a retired lab copy. Rule decisions are Burooj's; record them in `RULES.md` and on the `/rules` pages together.
 
 ## Coordination
 
