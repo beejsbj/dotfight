@@ -1,7 +1,7 @@
 // Comic bubbles: now and then, a soldier says something in writing.
 //
 // A word or two written on the page beside the man who said it, in his side's
-// pen, with an arrow to him, the way you'd annotate an exercise book: "I'm ready" when you pick him
+// pen inside a hand-drawn balloon whose tail points at him: "I'm ready" when you pick him
 // up, "phew" after a near miss, "!" when a pen points at him, and the odd
 // stray thought. Rare on purpose: one on screen at most, a long gap between
 // them, and most chances pass. Seeded, cosmetic, never game state.

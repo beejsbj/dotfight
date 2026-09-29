@@ -27,7 +27,7 @@ It's made for phones. Touch one of your soldiers to lean in over him, pull back 
 The rules are in two books, drawn by hand:
 
 - **[Core rules](https://dotfight.vercel.app/rules)**: Quick battle, Dawood's game. Snipe, lunge, send, last stand.
-- **[Advanced rules](https://dotfight.vercel.app/rules/advanced)**: the Long war, with shaped bases, gravity wells, billiards cushions and ink that fights back.
+- **[Long war rules](https://dotfight.vercel.app/rules/advanced)**: book 2, with shaped bases, gravity wells, billiards cushions and ink that fights back.
 
 The same rules are in plain text in [RULES.md](RULES.md). The playable game still runs the first, simpler rules; the new ones are being tested and brought in.
 

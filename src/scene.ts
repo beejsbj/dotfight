@@ -14,7 +14,7 @@
 import { BoilLayer, planBoil, type Plan } from "./boil";
 import type { Pt } from "./game";
 import type { AnyState as GameState } from "./record";
-import { INK, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop } from "./ink";
+import { INK, handText, inkBalloon, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop } from "./ink";
 import { Life } from "./life";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
@@ -67,12 +67,15 @@ export interface Frame {
   orders?: { a: Pt; b: Pt; at: Pt[] }[];
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
   danger?: { x: number; y: number; r: number }[];
-  teach?: { kind: "aim" | "place" | "arrange"; at: Pt; p: number; rot: number; note?: string };
+  /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
+  teach?: { kind: "aim" | "place" | "arrange" | "note"; at: Pt; p: number; rot: number; note?: string; text?: string };
   sig?: Signature;
   /** A volley (life.ts): the defenders' jabs, drawn on and glinting away, and the intruder's cross if the rules haven't drawn one. */
   jabs?: { pts: Pt[]; p: number; alpha: number; owner: 0 | 1; seed: number }[];
   stamp?: { x: number; y: number; owner: 0 | 1; seed: number; p: number };
-  /** A soldier's line (bubble.ts), written on the page beside him with an arrow to him: how much is written (p) and how faded. */
+  /** A soldier's line (bubble.ts), a balloon drawn on the page beside him with its tail to him: how much is written (p) and how faded. */
+  /** Screen height and the HUD's top and bottom bars (css px), to keep balloons clear of them. */
+  hud?: { h: number; top: number; bottom: number };
   bubble?: { text: string; at: Pt; p: number; alpha: number; side: 1 | -1; seed: number; owner: 0 | 1 };
   /** The line boil: whether the living boil at all, wall time (ms) for its frame, and how bold (boil.ts boldAt). */
   boil?: { on: boolean; ms: number; bold: number };
@@ -91,6 +94,8 @@ export interface Els {
   pageHost: HTMLElement;
   boilHost: HTMLElement;
   live: HTMLCanvasElement;
+  /** Balloons: normal blend, so they can knock out the ink under them. */
+  talk: HTMLCanvasElement;
   light: HTMLCanvasElement;
   haze: HTMLCanvasElement;
 }
@@ -112,8 +117,9 @@ class Box {
   get empty() { return this.x0 > this.x1; }
 }
 
-let lastCss = { desk: "", page: "", live: "", boil: ["", ""] };
+let lastCss = { desk: "", page: "", live: "", talk: "", boil: ["", ""] };
 let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
+let talkDirty: { x: number; y: number; w: number; h: number } | null = null;
 let airKey = "";
 let deskTheme = ""; // the theme the desk canvas was painted for
 
@@ -150,6 +156,7 @@ function place(els: Els, f: Frame) {
   const lc = stageCss(v);
   const lk = lc.transform + lc.origin;
   if (lk !== lastCss.live) { els.live.style.transform = lc.transform; els.live.style.transformOrigin = lc.origin; lastCss.live = lk; }
+  if (lk !== lastCss.talk) { els.talk.style.transform = lc.transform; els.talk.style.transformOrigin = lc.origin; lastCss.talk = lk; }
 }
 
 export function renderStage(els: Els, f: Frame) {
@@ -163,6 +170,7 @@ export function renderStage(els: Els, f: Frame) {
   bold = f.boil?.bold ?? 0;
   if (boil.draw(f.boil?.ms ?? 0, bold, seen)) stageStats.boil++;
   renderLive(els.live.getContext("2d")!, els.live, f, ink, dpr);
+  renderTalk(els.talk.getContext("2d")!, els.talk, f, dpr);
   renderAir(els, f);
   stageStats.frames++;
 }
@@ -172,7 +180,7 @@ let planMemo: { s: GameState | null; stamp: string; plan: Plan | null } = { s: n
 function boilPlan(f: Frame, ink: Ink): Plan {
   const { s } = f;
   const on = !!f.boil?.on && !boil.tooDear;
-  let stamp = `${s.marks.length}|${s.bases.length}|${s.soldiers.length}|${s.turn}|${f.mover?.id}|${on}|`;
+  let stamp = `${s.v === 1 ? s.flicks.length : s.actions.length}|${s.marks.length}|${s.bases.length}|${s.soldiers.length}|${s.turn}|${f.mover?.id}|${on}|`;
   for (const k of ink.live) stamp += k + (ink.p(k) > 0 ? "+" : "-");
   if (planMemo.s !== s || planMemo.stamp !== stamp || !planMemo.plan) planMemo = { s, stamp, plan: planBoil(s, ink, { on, moving: f.mover?.id }) };
   return planMemo.plan!;
@@ -199,6 +207,7 @@ export const boilSeen = () => seen;
 
 export function forgetDrawn() {
   liveDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
+  talkDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   inked = { x: 0, y: 0, w: 1e6, h: 1e6 };
   boil.redrawAll();
 }
@@ -291,6 +300,23 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
   liveDirty = x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
 }
 
+/** The balloon layer: nothing on it but a soldier's line, so it's hidden the rest of the time. */
+function renderTalk(g: Ctx, el: HTMLCanvasElement, f: Frame, dpr: number) {
+  if (!f.bubble && !talkDirty) return;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  if (talkDirty) g.clearRect(talkDirty.x, talkDirty.y, talkDirty.w, talkDirty.h);
+  talkDirty = null;
+  if (!f.bubble) { if (el.style.visibility !== "hidden") el.style.visibility = "hidden"; return; }
+  const v = f.view, box = new Box();
+  worldTransform(g, v, dpr);
+  drawBalloon(g, f, f.bubble, box);
+  if (el.style.visibility === "hidden") el.style.visibility = "";
+  const pts = [[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]].map(([x, y]) => toLocal(v, x, y));
+  const x0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.x)) * dpr) - 4), y0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.y)) * dpr) - 4);
+  const x1 = Math.min(el.width, Math.ceil(Math.max(...pts.map((p) => p.x)) * dpr) + 4), y1 = Math.min(el.height, Math.ceil(Math.max(...pts.map((p) => p.y)) * dpr) + 4);
+  talkDirty = x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+}
+
 function shadowEnds(p: PenPose, lamp: Lamp) {
   const cast = (q: { x: number; y: number; h: number }) => {
     const k = lamp.h / Math.max(lamp.h * 0.08, lamp.h - q.h);
@@ -364,7 +390,6 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
     g.globalAlpha = 1;
   }
   if (f.teach) { drawTeach(g, f.teach); box.add(f.teach.at.x, f.teach.at.y, 420); }
-  if (f.bubble) drawNote(g, f, f.bubble, box);
   if (f.aim) { drawAim(g, s, f.aim, px); box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + 24); }
 }
 
@@ -410,30 +435,64 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   }
 }
 
-// A soldier's line, written on the page beside him in his side's pen, with a
-// hand-drawn arrow from the words to him, the way you'd annotate an exercise
-// book. The arrow goes on first, then the words. It's a note, not a mark: it
-// lives on the live layer and fades, and the page never keeps it. Written the
-// way up you're looking, and sized so it reads from bird's-eye as well as leaning in.
-function drawNote(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box) {
+// A soldier's line: a comic balloon someone drew on the page, in his side's
+// pen, its tail pointing at him and the words handwritten inside. It's a note,
+// not a mark: it lives on its own layer (the balloon is filled with the
+// paper's colour to knock out the ink under it, which the live layer's
+// multiply can't do) and fades, and the page never keeps it. Upright the way
+// you're looking, sized to read from bird's-eye as well as leaning in, and kept
+// on the page and on the screen, with the tail on whichever side has room.
+const HUD_INSET = 20;
+function balloonBounds(f: Frame): { x0: number; y0: number; x1: number; y1: number } {
+  const B = { x0: 12, y0: 12, x1: RULES.pageW - 12, y1: RULES.pageH - 12 };
+  const v = f.view, hud = f.hud;
+  if (!hud) return B;
+  // the part of the screen clear of the HUD, in page units (canvas coords: the screen sits (ox, oy) in)
+  const l = v.ox + HUD_INSET, r = v.ox + f.sw - HUD_INSET, t = v.oy + hud.top + HUD_INSET, bt = v.oy + hud.h - hud.bottom - HUD_INSET;
+  const pts = [[l, t], [r, t], [l, bt], [r, bt]].map(([x, y]) => unproject(v, x, y));
+  if (pts.some((p) => !p) || bt - t < 60) return B;
+  const xs = pts.map((p) => p!.x), ys = pts.map((p) => p!.y);
+  // a turned screen is a diamond on the page: shrink to the box it certainly holds
+  const q = 1 + Math.abs(Math.sin(2 * v.rot)) * 0.35;
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const hw = (Math.max(...xs) - Math.min(...xs)) / 2 / q, hh = (Math.max(...ys) - Math.min(...ys)) / 2 / q;
+  return { x0: Math.max(B.x0, cx - hw), x1: Math.min(B.x1, cx + hw), y0: Math.max(B.y0, cy - hh), y1: Math.min(B.y1, cy + hh) };
+}
+
+function drawBalloon(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box) {
   const pen = INK.pens[b.owner];
   const size = Math.max(30, Math.min(70, 25 / f.view.z)); // page units: about 25 screen px
   g.save();
   g.font = `700 ${size}px Caveat, "Patrick Hand", cursive`;
   const w = g.measureText(b.text).width;
   g.restore();
-  const R = RULES.soldierRadius, side = b.side, gap = size * 1.7;
-  // the words up and to one side of him (screen-wise), the arrow from their near end down to him
-  const tx = side * (R + gap), ty = -(R + gap);
-  const from = { x: tx - side * 3, y: ty + size * 0.12 }, to = { x: side * (R + 3), y: -(R + 3) };
-  const arrow = Math.min(1, b.p / 0.35), words = Math.max(0, (b.p - 0.3) / 0.7);
+  const R = RULES.soldierRadius;
+  const ry = size * 0.82, rx = Math.max(w / 2 + size * 0.8, ry * 1.15);
+  const rot = f.view.rot, c = Math.cos(rot), sn = Math.sin(rot);
+  // local (screen-upright, at the soldier) <-> page
+  const toPage = (lx: number, ly: number): Pt => ({ x: b.at.x + lx * c + ly * sn, y: b.at.y - lx * sn + ly * c });
+  const toLocal_ = (x: number, y: number): Pt => ({ x: (x - b.at.x) * c - (y - b.at.y) * sn, y: (x - b.at.x) * sn + (y - b.at.y) * c });
+  const ex = Math.abs(c) * (rx + 4) + Math.abs(sn) * (ry + 4), ey = Math.abs(sn) * (rx + 4) + Math.abs(c) * (ry + 4);
+  const B = balloonBounds(f);
+  const place = (side: 1 | -1) => {
+    const l = { x: side * (R * 0.6 + rx * 0.72), y: -(R + ry + size * 1.7) };
+    const p = toPage(l.x, l.y);
+    const q = { x: Math.max(B.x0 + ex, Math.min(B.x1 - ex, p.x)), y: Math.max(B.y0 + ey, Math.min(B.y1 - ey, p.y)) };
+    return { at: toLocal_(q.x, q.y), miss: Math.hypot(q.x - p.x, q.y - p.y), side };
+  };
+  const one = place(b.side), two = place(-b.side as 1 | -1);
+  const use = two.miss + 1 < one.miss ? two : one;
+  const tip = { x: use.side * R * 0.55, y: -(R + 3) };
+  const outline = Math.min(1, b.p / 0.5), words = Math.max(0, (b.p - 0.4) / 0.6);
   g.save();
   g.translate(b.at.x, b.at.y);
-  g.rotate(-f.view.rot);
-  pencilArrow(g, from, to, 0.18 * side, b.seed, Math.max(2, size * 0.09 * theme.ink.width), arrow, b.alpha, pen);
-  handText(g, b.text, tx + (side < 0 ? -w : 0), ty, size, pen, { upTo: words, alpha: b.alpha * 0.95, weight: 700, rot: -0.04 * side });
+  g.rotate(-rot);
+  inkBalloon(g, use.at.x, use.at.y, rx, ry, tip, pen, theme.paper.colour, b.seed, Math.max(2.4, size * 0.08) * theme.ink.width, outline, b.alpha);
+  handText(g, b.text, use.at.x, use.at.y + size * 0.27, size, pen, { upTo: words, alpha: b.alpha * 0.95, weight: 700, rot: -0.03 * use.side, align: "center" });
   g.restore();
-  box.add(b.at.x, b.at.y, Math.hypot(Math.abs(tx) + w + size, Math.abs(ty) + size * 1.5));
+  const m = toPage(use.at.x, use.at.y);
+  box.add(m.x, m.y, Math.max(rx, ry) + size * 0.4);
+  box.add(b.at.x, b.at.y, R + 8);
 }
 
 function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
@@ -442,7 +501,9 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   g.translate(at.x, at.y);
   g.rotate(-t.rot);
   const pencil = lead(theme).note;
-  if (t.kind === "place") {
+  if (t.kind === "note") {
+    handText(g, t.text ?? "", 0, 0, 46, pencil, { upTo: p * 1.2, weight: 400, rot: -0.02, align: "center" });
+  } else if (t.kind === "place") {
     handText(g, "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
     handText(g, t.note ?? "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
   } else if (t.kind === "arrange") {

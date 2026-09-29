@@ -37,6 +37,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #desk, #page-host > canvas, #boil-host > canvas { position: fixed; left: 0; top: 0; transform-origin: 0 0; display: block; will-change: transform; }
 #boil-host > canvas { mix-blend-mode: var(--live-blend); }
 #live { position: fixed; display: block; mix-blend-mode: var(--live-blend); will-change: transform; }
+#talk { position: fixed; display: block; will-change: transform; }
 #light, #haze { position: fixed; inset: 0; width: 100vw; height: 100dvh; display: block; }
 #light { mix-blend-mode: multiply; }
 #over { position: fixed; inset: 0; width: 100vw; height: 100dvh; touch-action: none; display: block; }
@@ -235,6 +236,22 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .menu .row { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 8px 0 0 18px; }
 .menu .pencil { font-family: var(--hand); font-size: 22px; color: var(--pencil); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--pencil) 35%, transparent); text-underline-offset: 3px; }
 .card a.act { text-decoration: none; }
+
+/* rooms: your name pencilled on the label, notes and friends' games on the slip */
+.label .field input.pencil-in {
+  flex: 1; min-width: 0; border: 0; padding: 0; margin: 0; background: transparent; outline: none;
+  font-family: var(--hand); font-weight: 400; font-size: 27px; line-height: 1.05; color: #4a4744;
+  text-shadow: 0 0 .6px rgba(60, 58, 56, .5); caret-color: #4a4744;
+}
+.label .field input.pencil-in::placeholder { color: rgba(74, 71, 68, .38); }
+.menu .note { margin: 0 0 6px 18px; font-family: var(--hand); font-size: 22px; line-height: 1.1; color: #4a4744; }
+.menu .note b { color: var(--blue); }
+.menu .friends { display: flex; flex-wrap: wrap; gap: 0 12px; margin: 6px 0 8px 18px; }
+.menu .friends span { width: 100%; font-family: var(--type); font-size: 11px; letter-spacing: .08em; color: #77726c; }
+.menu .friends .pencil { font-size: 21px; }
+.menu button:disabled { opacity: .45; }
+#status.tap { pointer-events: auto; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(243, 236, 220, .35); text-underline-offset: 4px; }
+.card .link { font-family: var(--hand); font-size: 25px; color: #4a4744; margin: 2px 0 10px; word-break: break-all; user-select: all; -webkit-user-select: all; }
 
 /* --- cards: a page torn from the same book ------------------------------------ */
 

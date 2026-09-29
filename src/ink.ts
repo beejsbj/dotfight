@@ -384,6 +384,65 @@ export function pencilArrow(ctx: Ctx, from: Pt, to: Pt, bend: number, seed: numb
   ctx.globalAlpha = 1;
 }
 
+// A comic speech balloon, drawn by hand: a wobbly oval with a short pointed
+// tail whose tip is `tip`, filled with `fill` (the paper's own colour) so the
+// words inside read over whatever is under it. Ballpoint like everything else:
+// the outline goes round once, then a lighter second pass goes over the start.
+// `upTo` (0..1) draws it on. Every seeded value is taken before anything is
+// skipped, so a half-drawn balloon is exactly the start of the finished one.
+export function inkBalloon(ctx: Ctx, cx: number, cy: number, rx: number, ry: number, tip: Pt, color: string, fill: string | null, seed: number, width: number, upTo = 1, alpha = 1) {
+  if (upTo <= 0 || alpha <= 0) return;
+  const rand = rng(seed);
+  const ph = [rand() * 6.28, rand() * 6.28, rand() * 6.28];
+  const bow = (rand() - 0.5) * 0.3, jit = [rand(), rand(), rand(), rand()];
+  const half = 0.34, N = 40;
+  // where the tail leaves the oval: the side facing the tip
+  const ta = Math.atan2((tip.y - cy) / ry, (tip.x - cx) / rx);
+  const edge = (a: number): Pt => {
+    const k = 1 + Math.sin(a * 2 + ph[0]) * 0.035 + Math.sin(a * 3 + ph[1]) * 0.022 + Math.sin(a * 5 + ph[2]) * 0.012;
+    return { x: cx + Math.cos(a) * rx * k, y: cy + Math.sin(a) * ry * k };
+  };
+  const pts: Pt[] = [];
+  for (let i = 0; i <= N; i++) pts.push(edge(ta + half + (Math.PI * 2 - half * 2) * (i / N)));
+  const end = pts[pts.length - 1], start = pts[0];
+  // the tail: two slightly bowed sides down to the tip
+  const side = (from: Pt, to: Pt, b: number): Pt => {
+    const dx = to.x - from.x, dy = to.y - from.y;
+    return { x: (from.x + to.x) / 2 - dy * b, y: (from.y + to.y) / 2 + dx * b };
+  };
+  pts.push(side(end, tip, 0.05 + bow * 0.5), tip, side(tip, start, 0.05 - bow * 0.5), start);
+  const path = (n: number, dx = 0, dy = 0) => {
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) { if (i) ctx.lineTo(pts[i].x + dx, pts[i].y + dy); else ctx.moveTo(pts[i].x + dx, pts[i].y + dy); }
+  };
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  if (fill) {
+    path(pts.length);
+    ctx.closePath();
+    ctx.globalAlpha = alpha * 0.97 * clamp01(upTo * 3);
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  ctx.strokeStyle = paint(ctx, color);
+  const stroke = (dx: number, dy: number, w: number, a: number, upto: number) => {
+    const m = 1 + (pts.length - 1) * upto, k = Math.floor(m);
+    path(k, dx, dy);
+    if (k < pts.length) {
+      const f = m - k, a0 = pts[k - 1], a1 = pts[k];
+      ctx.lineTo(a0.x + (a1.x - a0.x) * f + dx, a0.y + (a1.y - a0.y) * f + dy);
+    }
+    ctx.globalAlpha = a;
+    ctx.lineWidth = w;
+    ctx.stroke();
+  };
+  stroke(0, 0, width, alpha * 0.92, clamp01(upTo));
+  // a lighter second pass, a hair off, over the first part again
+  stroke((jit[0] - 0.5) * width * 1.4, (jit[1] - 0.5) * width * 1.4, width * 0.65, alpha * 0.5, clamp01((upTo - 0.6) / 0.4) * 0.42);
+  ctx.restore();
+}
+
 // Handwriting on the page (Caveat). `upTo` reveals it left to right, as if
 // being written; `rot` tilts the line the way a hand drifts.
 export function handText(

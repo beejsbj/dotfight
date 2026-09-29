@@ -33,6 +33,9 @@ import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
 import { boil, boilSeen, boilTick, forgetDrawn, life, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
+import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
+import { apply as roomApply, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
+import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
 import { Timeline, reachFraction } from "./timeline";
 import * as turn from "./turn";
 
@@ -118,7 +121,7 @@ let arrowTo: Pt | null = null; // the pencil end of a send being drawn
 
 const $ = <T extends HTMLElement>(q: string) => document.querySelector(q) as T;
 const els: Els = {
-  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), live: $<HTMLCanvasElement>("#live"),
+  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), live: $<HTMLCanvasElement>("#live"), talk: $<HTMLCanvasElement>("#talk"),
   light: $<HTMLCanvasElement>("#light"), haze: $<HTMLCanvasElement>("#haze"),
 };
 const over = $<HTMLCanvasElement>("#over");
@@ -129,12 +132,17 @@ const cam = new Camera();
 let W = 0, H = 0, dpr = 1, sdpr = 1, dirty = true;
 
 const isBot = (p: Player) => mode.kind === "bot" && p === 1;
+// in a room, the other seat's moves come down the link (watchers: both seats')
+const remote = (p: Player) => mode.kind === "room" && link?.seat !== p;
+const away = (p: Player) => isBot(p) || remote(p);
 const core = () => turn.coreOf(s);
-const name = (p: Player) => (isBot(p) ? "Dawood-bot" : INK.names[p]);
-const rotFor = (p: Player) => (mode.kind === "pnp" && p === 1 ? Math.PI : 0);
+const name = (p: Player) => (isBot(p) ? "Dawood-bot" : mode.kind === "room" && link ? (link.names[p] ?? "your friend") : INK.names[p]);
+// pass & play turns the page for red; in a room, red's page sits the other way up for good
+const rotFor = (p: Player) => ((mode.kind === "pnp" && p === 1) || (mode.kind === "room" && link?.seat === 1) ? Math.PI : 0);
 
 function save() {
   if (screen !== "game") return;
+  if (mode.kind === "room") return roomSave();
   localStorage.setItem("pft:save", JSON.stringify({ s, mode } satisfies Save));
 }
 const load = () => readSave(localStorage.getItem("pft:save"));
@@ -156,13 +164,14 @@ function resize() {
   const bottom = br.height ? H - br.top : 0;
   cam.resize(W, H, top, bottom);
   const cw = W + cam.ox * 2, ch = H + cam.oy + cam.ob;
-  const live = els.live;
-  live.style.left = `${-cam.ox}px`;
-  live.style.top = `${-cam.oy}px`;
-  live.style.width = `${cw}px`;
-  live.style.height = `${ch}px`;
   const [pw, ph] = [Math.round(cw * sdpr), Math.round(ch * sdpr)];
-  if (live.width !== pw || live.height !== ph) { live.width = pw; live.height = ph; }
+  for (const live of [els.live, els.talk]) {
+    live.style.left = `${-cam.ox}px`;
+    live.style.top = `${-cam.oy}px`;
+    live.style.width = `${cw}px`;
+    live.style.height = `${ch}px`;
+    if (live.width !== pw || live.height !== ph) { live.width = pw; live.height = ph; }
+  }
   const [ow, oh] = [Math.round(W * dpr), Math.round(H * dpr)];
   if (over.width !== ow || over.height !== oh) { over.width = ow; over.height = oh; }
   // light and fog are gradients: a quarter of a css pixel is plenty
@@ -238,7 +247,7 @@ function hud() {
     b.querySelector("b")!.textContent = k === "lunge" && chain ? "lunge on" : turn.verb(s, k);
     b.querySelector("i")!.textContent = CARD[turn.isLegacy(s) ? "legacy" : "core"][k];
   }
-  $("#kind").classList.toggle("off", s.phase !== "play" || isBot(s.current) || screen !== "game" || busy && !aim || !!sending);
+  $("#kind").classList.toggle("off", s.phase !== "play" || away(s.current) || screen !== "game" || busy && !aim || !!sending);
   $("#bottom").classList.toggle("view", screen === "view" || screen === "replay");
   acts();
   status();
@@ -255,7 +264,7 @@ const CARD = {
 function acts() {
   const el = $("#acts");
   const c0 = core();
-  const mine = screen === "game" && !isBot(s.current) && !busy && !aim && !!c0 && $("#sheet").hidden;
+  const mine = screen === "game" && !away(s.current) && !busy && !aim && !!c0 && $("#sheet").hidden;
   let html = "";
   if (mine && c0.phase === "position") html = `<button data-act="ready" class="go">done arranging</button>`;
   else if (mine && c0.phase === "play") {
@@ -282,6 +291,7 @@ function status(msg?: string) {
     const who = name(s.current);
     const c0 = core();
     if (screen === "replay") t = "the war, again";
+    else if (screen === "game" && roomStatus() !== null) t = roomStatus()!;
     else if (screen === "view") t = viewing ? `page ${viewing.page?.no ?? "?"} · ${viewing.page?.date ?? ""}` : "";
     else if (s.phase === "setup") t = isBot(s.current) ? `${who} is drawing a camp…` : `${who}: draw a camp`;
     else if (s.phase === "position") t = isBot(s.current) ? `${who} is arranging…` : dragging ? (dragging.ok ? "let go to put him here" : "too far from his camp") : `${who}: arrange your men, then done`;
@@ -297,6 +307,7 @@ function status(msg?: string) {
     else t = lastNote ? `${lastNote}` : `${who}: pick up a soldier`;
   }
   $("#status").textContent = t;
+  $("#status").classList.toggle("tap", t === RESEND);
 }
 
 // --- flow -------------------------------------------------------------------
@@ -378,8 +389,10 @@ function next() {
   dirty = true;
   if (screen !== "game") return;
   if (s.phase === "over") return finish();
+  if (mode.kind === "room" && (link?.queued || remote(s.current))) return roomNext();
   const c0 = core();
   if (!isBot(s.current)) {
+    link?.waiting(false);
     if (s.phase === "play") {
       fx.add("hint", T, 150, 620, "out");
       // an earned lunge: he's already in hand
@@ -409,21 +422,27 @@ function next() {
     if (a.t !== "flick") return;
     const { t: _t, ...f } = a;
     void _t;
-    selected = f.soldier;
-    pickUp(f.soldier);
-    kind = f.kind;
-    sfx.pick();
-    penDrop = T;
-    hud();
-    const power = turn.powerOfFlick(s, f);
-    after(650, () => {
-      botAim = { soldierId: f.soldier, angle: f.angle, power, t0: T };
-      after(900, () => {
-        const pw = botAim?.power ?? 0.5;
-        const lean = penLean(pw);
-        botAim = null;
-        fire(f, pw, lean);
-      });
+    showFlick(f);
+  });
+}
+
+// Someone else's flick, played out: the pen goes down on the soldier, pulls
+// back, and lets go. You watch from above, the way you'd lean over a friend's.
+function showFlick(f: Flick) {
+  selected = f.soldier;
+  pickUp(f.soldier);
+  kind = f.kind;
+  sfx.pick();
+  penDrop = T;
+  hud();
+  const power = turn.powerOfFlick(s, f);
+  after(650, () => {
+    botAim = { soldierId: f.soldier, angle: f.angle, power, t0: T };
+    after(900, () => {
+      const pw = botAim?.power ?? 0.5;
+      const lean = penLean(pw);
+      botAim = null;
+      fire(f, pw, lean);
     });
   });
 }
@@ -853,7 +872,7 @@ function stepResolve() {
     if (r.cam) { cam.shake(k.last ? 9 : 4); haptic(k.last ? "over" : "kill", r.kills.filter((x) => x.hit).length); }
   }
   for (const m of r.moments) if (!m.done && it >= m.at) { m.done = true; m.fn(); }
-  if (!r.settled && it >= r.dur) { r.settled = true; if (r.pen && !isBot(r.owner)) haptic("land"); }
+  if (!r.settled && it >= r.dur) { r.settled = true; if (r.pen && !away(r.owner)) haptic("land"); }
   if (it >= r.end) {
     const done = r.done;
     res = null;
@@ -891,7 +910,8 @@ function finish() {
   const w = s.winner!;
   if (screen === "game") {
     localStorage.setItem("pft:drawer", JSON.stringify(addToDrawer(drawer(), file(s, mode))));
-    localStorage.removeItem("pft:save");
+    if (mode.kind === "room") link?.stop();
+    else localStorage.removeItem("pft:save");
   }
   // the page is turned square to the desk, the way it will be filed
   cam.overview();
@@ -936,6 +956,8 @@ function titleDesk(saved = load()) {
 
 function showTitle() {
   screen = "title";
+  leaveRoom();
+  restoreLabel();
   reset();
   applyTheme(homeTheme());
   closeSheet();
@@ -968,6 +990,8 @@ function coverMenu() {
     <button data-a="bot" class="ink red">play Dawood-bot</button>
     <p class="levels">${LEVELS.map((l, i) => `<button data-lvl="${i}" class="${i === botLevel ? "on" : ""}">${l}</button>`).join("")}</p>
     <button data-a="pnp" class="ink blue">pass &amp; play<small>two of you, one phone</small></button>
+    <button data-a="friend" class="ink blue">play a friend<small>send a link: each on your own phone</small></button>
+    ${friendsList()}
     <p class="row">
       <button data-a="drawer" class="pencil">the drawer${d.length ? ` (${d.length})` : ""}</button>
       <button data-a="how" class="pencil">how it's played</button>
@@ -988,6 +1012,8 @@ function coverMenu() {
     else if (a === "how") showHow();
     else if (a === "drawer") showDrawer();
     else if (a === "settings") showSettings();
+    else if (a === "friend") newRoomOnCover();
+    else if (b.dataset.room) { const x = readRoom(localStorage, b.dataset.room); if (x) enterRoom(x); }
     else if (b.dataset.lvl) {
       botLevel = +b.dataset.lvl as Level;
       localStorage.setItem("pft:lvl", String(botLevel));
@@ -1311,6 +1337,337 @@ function replayNext() {
   hud();
 }
 
+// --- rooms: one page, two phones, a link sent on WhatsApp ----------------------------
+
+const roomApi = httpApi();
+let link: RoomLink | null = null;
+let roomDrift = 0; // the move from which our page stopped matching theirs (0: never)
+const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const cleanName = (t: string) => t.replace(/\s+/g, " ").trim().slice(0, 24);
+const RESEND = "tap here to send the link again";
+
+// Every save in a room: whatever is on our page past what the link knows is
+// ours (the other side's moves are counted as drawn before they're applied),
+// so post it. The last carries a hash of the page, for drift.
+function roomSave() {
+  const l = link, c0 = core();
+  if (!l || !c0) return;
+  const mine = c0.actions.slice(l.data.applied + l.data.pending.length);
+  mine.forEach((a, i) => l.push(i === mine.length - 1 ? { a, h: roomHash(c0) } : { a }));
+  l.save({ turn: c0.turn, next: roomTurn(c0), winner: c0.winner });
+}
+
+function leaveRoom() {
+  if (!link) return;
+  link.stop();
+  link = null;
+  setRoomTheme();
+  if (location.pathname.startsWith("/r/")) history.replaceState(null, "", "/");
+}
+
+function openLink(d: RoomSaved) {
+  link?.stop();
+  link = new RoomLink(d, {
+    api: roomApi,
+    storage: localStorage,
+    hidden: () => document.hidden,
+    onNews: () => {
+      hud();
+      if (screen === "game" && !busy && !res && link?.queued) next();
+    },
+    onDiverged: () => {
+      // our move lost a race (the same seat on another device, say): take the server's page
+      const l = link!;
+      reset();
+      s = roomReplay(l.data.setup as Setup, l.data.log.slice(0, l.data.applied)).s;
+      lastNote = "your last move didn't make it: the page had moved on";
+      hud();
+      next();
+    },
+  });
+  return link;
+}
+
+function enterRoom(d: RoomSaved) {
+  reset();
+  roomDrift = 0;
+  restoreKindBar();
+  closeCover();
+  closeSheet();
+  const l = openLink(d);
+  mode = { kind: "room", code: d.code };
+  const r = roomReplay(d.setup as Setup, d.log.slice(0, d.applied));
+  const c0 = r.s;
+  s = c0;
+  if (r.bad !== undefined) l.broken = "this page doesn't add up: one copy of it is different";
+  if (r.drift !== undefined) roomDrift = r.drift + 1;
+  for (const p of d.pending) if (d.seat !== null && !roomCheck(c0, d.seat, p)) roomApply(c0, p as Payload);
+  kind = "snipe";
+  screen = "game";
+  viewing = null;
+  cam.overview(rotFor(s.current));
+  cam.snap();
+  dawn.set(s.phase === "over" && !l.queued ? 1 : 0);
+  setRoomTheme(d.theme);
+  if (location.pathname !== `/r/${d.code}`) history.replaceState(null, "", `/r/${d.code}`);
+  save();
+  l.start();
+  hud();
+  if (s.phase === "over" && !l.queued) { viewBar(); return void after(400, showOver); }
+  after(300, next);
+}
+
+// The other side's go: draw what has come down the link, or wait for it.
+function roomNext() {
+  const l = link!;
+  const e = l.peek();
+  if (!e) {
+    busy = false;
+    l.waiting(true);
+    fx.add("note", T, 300, 1300, "linear");
+    hud();
+    return;
+  }
+  const c0 = core()!;
+  const p = e.a as Payload;
+  // try it on a copy first: is it legal here, and does our page come out as theirs did?
+  const sim = roomCheck(c0, e.seat, p) ? null : structuredClone(c0);
+  try { if (sim) roomApply(sim, p); } catch { /* treated as broken below */ }
+  if (!sim || sim.actions.length !== c0.actions.length + 1) {
+    l.broken = "this page doesn't add up: one copy of it is different";
+    l.stop();
+    busy = false;
+    return hud();
+  }
+  if (roomDrift === 0 && roomDrifted(sim, p)) { roomDrift = c0.actions.length + 1; console.warn("room: page drifted at move", roomDrift); }
+  busy = true;
+  l.waiting(false);
+  hud();
+  const a = p.a;
+  const then = () => { busy = false; next(); };
+  if (a.t === "arrange") return remoteArranges();
+  l.drawn();
+  if (a.t === "base") after(400, () => { drawBase(a.x, a.y); after(900, then); });
+  else if (a.t === "flick") { const { t: _t, ...f } = a; void _t; after(300, () => showFlick(f)); }
+  else if (a.t === "send") botSends(a);
+  else if (a.t === "stop") { lastNote = `${name(s.current)} stopped`; perform(a, then); }
+  else perform(a, then);
+}
+
+// Their men walk to where they arranged them, all together.
+function remoteArranges() {
+  const l = link!, c0 = core()!;
+  const walkers: Walk[] = [];
+  for (let e = l.peek(); e && (e.a as Partial<Payload> | null)?.a?.t === "arrange" && !roomCheck(c0, e.seat, e.a); e = l.peek()) {
+    const a = (e.a as Payload).a as Extract<Action, { t: "arrange" }>;
+    const x = c0.soldiers[a.soldier];
+    const from = { x: x.x, y: x.y };
+    l.drawn();
+    act(c0, a);
+    walkers.push({ id: a.soldier, from, to: { x: a.x, y: a.y } });
+    fx.add(`d${a.soldier}`, T, 1e9, 1);
+  }
+  save();
+  lapseDue = { walkers, marks: [], out: 0, home: 0 };
+  after(300, () => runLapse(() => after(200, () => { busy = false; next(); })));
+}
+
+// Pencilled on the page, at your end of it, while the other side has the pen.
+function waitNote(): string | null {
+  const l = link;
+  if (screen !== "game" || !l || l.broken || s.phase === "over" || busy || res || !remote(s.current)) return null;
+  if (l.seat === null) return `${name(s.current)}'s go…`;
+  if (l.names[1] === null) return "waiting for your friend to open the link…";
+  return `waiting for ${name(s.current)}…`;
+}
+
+// The line under the page, when a room has something to say; null to fall through.
+function roomStatus(): string | null {
+  const l = link;
+  if (mode.kind !== "room" || !l) return null;
+  if (l.broken) return l.broken;
+  if (roomDrift) return `careful: your page and theirs differ slightly from move ${roomDrift}`;
+  if (l.offline) return l.data.pending.length ? "no signal: your move goes when it can" : "no signal: still trying…";
+  if (s.phase === "over" || res || !remote(s.current)) return null;
+  const who = name(s.current);
+  if (busy) return s.phase === "setup" ? `${who} is drawing a camp…` : s.phase === "position" ? `${who} is arranging…` : `${who} is lining up…`;
+  if (l.seat === 0 && l.names[1] === null) return RESEND;
+  if (l.seat === null) return `watching ${name(0)} v ${name(1)}`;
+  return lastNote;
+}
+
+function showShare() {
+  const l = link;
+  if (!l) return;
+  const me = l.names[l.seat ?? 0];
+  const text = `${me} challenges you to ${GAME.name}, a pen-flick war on the back page of an exercise book. Your red pen's waiting:`;
+  const card = sheet(`
+    <p class="sub">page ${s.page?.no ?? ""} is on the desk</p>
+    <h2>Send it to your friend</h2>
+    <p class="link">${esc(l.url)}</p>
+    <button class="act" data-a="send">send the link</button>
+    <button class="act" data-a="copy">copy it</button>
+    <button class="act red" data-a="back">${s.bases.length === 0 && l.seat === 0 ? "draw your first camp" : "back to the page"}</button>
+    <p class="fine">They open it, write their name and take the red pen. You go first; they can come later.</p>`, "share");
+  card.onclick = async (e) => {
+    const a = (e.target as HTMLElement).closest("button")?.dataset.a;
+    if (!a) return;
+    sfx.tap();
+    if (a === "back") return closeSheet();
+    if (a === "send" && navigator.share) {
+      try { await navigator.share({ title: GAME.name, text, url: l.url }); closeSheet(); } catch { /* they changed their mind */ }
+      return;
+    }
+    const btn = card.querySelector<HTMLElement>('[data-a="copy"]')!;
+    try {
+      await navigator.clipboard.writeText(`${text} ${l.url}`);
+      btn.textContent = "copied: paste it in a chat";
+    } catch {
+      getSelection()?.selectAllChildren(card.querySelector(".link")!);
+      btn.textContent = "press and hold the link to copy it";
+    }
+  };
+}
+
+// On the cover: your name goes on the label, in pencil.
+function nameOnLabel(): HTMLInputElement {
+  const old = $("#cover .label input");
+  if (old) return old as HTMLInputElement;
+  const input = document.createElement("input");
+  input.className = "hand pencil-in";
+  input.maxLength = 24;
+  input.placeholder = "your name";
+  input.setAttribute("autocomplete", "nickname");
+  input.enterKeyHint = "go";
+  input.value = localStorage.getItem("pft:name") ?? "";
+  $("#cover .label .field b").replaceWith(input);
+  return input;
+}
+function restoreLabel() {
+  $("#cover .label input")?.replaceWith(Object.assign(document.createElement("b"), { className: "hand blue", textContent: "Dawood" }));
+}
+function coverNote(t: string) {
+  const menu = $("#cover .menu");
+  let n = menu.querySelector(".note");
+  if (!n) { n = document.createElement("p"); n.className = "note"; menu.prepend(n); }
+  n.textContent = t;
+}
+
+function friendsList() {
+  const rs = listRooms(localStorage).slice(0, 4);
+  if (!rs.length) return "";
+  return `<p class="friends"><span>games with friends</span>${rs.map((r) => {
+    const foe = r.seat === null ? `${r.names[0]} v ${r.names[1] ?? "?"}` : r.names[r.seat === 0 ? 1 : 0] ?? "your friend";
+    const sm = r.summary;
+    const st = !sm ? "" : sm.next === null ? (r.seat === null ? "done" : sm.winner === r.seat ? "you won" : "they won")
+      : r.seat === null ? "watching" : sm.next === r.seat ? "your go" : "their go";
+    return `<button data-room="${esc(r.code)}" class="pencil">${esc(foe)}${st ? ` · ${st}` : ""}</button>`;
+  }).join("")}</p>`;
+}
+
+function newRoomOnCover() {
+  const input = nameOnLabel();
+  const menu = $("#cover .menu");
+  menu.innerHTML = `
+    <p class="note">write your name on the label</p>
+    <button data-a="make" class="ink blue">start a page for two<small>you get a link to send</small></button>
+    <p class="row"><button data-a="back" class="pencil">back</button></p>`;
+  input.focus();
+  const go = async (b: HTMLButtonElement) => {
+    const who = cleanName(input.value);
+    if (!who) { coverNote("your name first, on the label"); return input.focus(); }
+    localStorage.setItem("pft:name", who);
+    b.disabled = true;
+    coverNote("tearing out a page…");
+    try {
+      const setup = setupOf(newGame(pickedSize(), undefined, pageStamp()));
+      const theme = currentTheme();
+      const c = await roomApi.create({ name: who, engine: ENGINE, setup, theme });
+      restoreLabel();
+      enterRoom({ v: 1, code: c.code, seat: 0, secret: c.secret, engine: ENGINE, setup, theme, names: [who, null], log: [], applied: 0, pending: [], updated: Date.now() });
+      showShare();
+    } catch (e) {
+      b.disabled = false;
+      coverNote(e instanceof RoomHttpError ? `the page server said no: ${e.message}` : "can't reach the page server: check your signal and try again");
+    }
+  };
+  const make = menu.querySelector<HTMLButtonElement>('[data-a="make"]')!;
+  input.onkeydown = (e) => { if (e.key === "Enter" && !make.disabled) void go(make); };
+  menu.onclick = (e) => {
+    const b = (e.target as HTMLElement).closest("button");
+    if (!b || b.disabled) return;
+    sfx.tap();
+    if (b.dataset.a === "make") void go(b);
+    else if (b.dataset.a === "back") { restoreLabel(); showTitle(); }
+  };
+}
+
+// Someone opened /r/<code>: back to our seat, or take the free one, or watch.
+async function openRoom(code: string) {
+  const mine = readRoom(localStorage, code);
+  if (mine) return enterRoom(mine);
+  const menu = $("#cover .menu");
+  const home = (why: string) => { history.replaceState(null, "", "/"); showTitle(); coverNote(why); };
+  menu.onclick = null;
+  menu.innerHTML = `<p class="note">opening the page…</p>`;
+  let v: RoomView;
+  try {
+    v = await roomApi.read(code);
+  } catch (e) {
+    return home(e instanceof RoomHttpError && e.status === 404 ? "that page has gone: links last 30 days after the last move" : "couldn't open that page: check your signal and open the link again");
+  }
+  if (v.engine !== ENGINE) return home("that page needs a newer copy of the game: reload");
+  const host = v.names[0];
+  const input = v.names[1] === null ? nameOnLabel() : null;
+  menu.innerHTML = input ? `
+      <p class="note"><b>${esc(host)}</b> challenges you. Write your name on the label.</p>
+      <button data-a="take" class="ink red">take the red pen<small>${esc(host)} draws first</small></button>
+      <p class="row"><button data-a="watch" class="pencil">just watch</button><button data-a="back" class="pencil">not now</button></p>`
+    : `<p class="note">${esc(host)} v ${esc(v.names[1] ?? "")}</p>
+      <button data-a="watch" class="ink blue">watch the war<small>both pens are taken</small></button>
+      <p class="row"><button data-a="back" class="pencil">back</button></p>`;
+  const saved = (seat: RoomSaved["seat"], secret: string | null, names: RoomSaved["names"]): RoomSaved => ({
+    v: 1, code, seat, secret, engine: v.engine, setup: v.setup as RoomSaved["setup"], theme: v.theme, names,
+    // arriving late, only the last couple of moves are drawn in
+    log: v.entries, applied: Math.max(0, v.entries.length - 2), pending: [], updated: Date.now(),
+  });
+  const take = async (b: HTMLButtonElement) => {
+    const who = cleanName(input!.value);
+    if (!who) { coverNote("your name first, on the label"); return input!.focus(); }
+    localStorage.setItem("pft:name", who);
+    b.disabled = true;
+    coverNote("picking up the red pen…");
+    try {
+      const j = await roomApi.join(code, who);
+      restoreLabel();
+      if (j.seat === null) { enterRoom(saved(null, null, v.names)); lastNote = "someone got to the red pen first: you're watching"; return hud(); }
+      enterRoom(saved(j.seat, j.secret, j.seat === 1 ? [host, who] : [who, v.names[1]]));
+    } catch (e) {
+      b.disabled = false;
+      coverNote(e instanceof RoomHttpError ? `the page server said no: ${e.message}` : "can't reach the page server: check your signal and try again");
+    }
+  };
+  if (input) input.onkeydown = (e) => {
+    const b = menu.querySelector<HTMLButtonElement>('[data-a="take"]')!;
+    if (e.key === "Enter" && !b.disabled) void take(b);
+  };
+  menu.onclick = (e) => {
+    const b = (e.target as HTMLElement).closest("button");
+    if (!b || b.disabled) return;
+    sfx.unlock();
+    sfx.tap();
+    const a = b.dataset.a;
+    if (a === "back") { restoreLabel(); history.replaceState(null, "", "/"); showTitle(); }
+    else if (a === "watch") { restoreLabel(); enterRoom(saved(null, null, v.names)); }
+    else if (a === "take") void take(b);
+  };
+}
+
+$("#status").onclick = () => { if ($("#status").classList.contains("tap")) { sfx.tap(); showShare(); } };
+document.addEventListener("visibilitychange", () => { if (!document.hidden) link?.wake(); });
+window.addEventListener("focus", () => link?.wake());
+window.addEventListener("online", () => link?.wake());
+
 // --- the page as an image -------------------------------------------------------
 
 const exportLayer = new PageLayer();
@@ -1408,7 +1765,7 @@ function pinchInfo() {
   return { d: Math.hypot(a.x - b.x, a.y - b.y), m: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
 }
 
-const humanTurn = () => screen === "game" && !isBot(s.current) && !busy && $("#sheet").hidden;
+const humanTurn = () => screen === "game" && !away(s.current) && !busy && $("#sheet").hidden;
 
 over.addEventListener("pointerdown", (e) => {
   sfx.unlock();
@@ -1789,8 +2146,8 @@ function currentFrame(): Frame {
     selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
   const bb = heard() ? bubbles.showing(wall) : null, bs = bb && bubbleAt(bb, wall, reduced), bx = bb && s.soldiers[bb.id];
-  if (bb && bs && bx?.alive) f.bubble = { text: bb.text, at: bx, p: bs.p, alpha: bs.alpha, side: bb.side, seed: bb.seed, owner: bx.owner };
-  const human = screen === "game" && !isBot(s.current) && $("#sheet").hidden;
+  if (bb && bs && bx?.alive) { f.hud = { h: H, top: cam.top, bottom: cam.bottom }; f.bubble = { text: bb.text, at: bx, p: bs.p, alpha: bs.alpha, side: bb.side, seed: bb.seed, owner: bx.owner }; }
+  const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
   if (ghost) {
     f.keepOut = s.bases.map((b) => ({ x: b.x, y: b.y, r: b.r + RULES.baseRadius + (b.owner === s.current ? RULES.minBaseGap : RULES.minEnemyBaseGap) }));
@@ -1829,6 +2186,12 @@ function currentFrame(): Frame {
   if (human && s.phase === "play" && selected === undefined && !aim && !res && !busy) {
     const mine = s.soldiers.filter((x) => x.alive && x.owner === s.current && turn.canFlick(s, x.id));
     if (!sending) f.hint = { p: fx.p("hint", T), bases: s.bases.filter((b) => b.owner === s.current && inBase(mine, b).length) };
+  }
+  const note = waitNote();
+  if (note) {
+    // at your end of the page, whichever way up it is (clear of the header)
+    const low = Math.cos(cam.cur.rot) > 0;
+    f.teach = { kind: "note", text: note, at: { x: RULES.pageW / 2, y: low ? RULES.pageH - 70 : 160 }, p: fx.p("note", T), rot: cam.cur.rot };
   }
   // the pen
   if (res) {
@@ -1947,13 +2310,16 @@ function showBoot() {
   requestAnimationFrame(frame);
   showTitle();
 }
+const roomPath = location.pathname.match(/^\/r\/([a-z0-9]{6})\/?$/)?.[1];
 showBoot();
+if (roomPath) void openRoom(roomPath);
 
 // dev-only handle for scripted playtests
 if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
-    get selected() { return selected; }, get res() { return res; }, get lapse() { return lapse; }, haptics, get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; },
+    get selected() { return selected; }, get res() { return res; }, get lapse() { return lapse; }, haptics, get link() { return link; }, get mode() { return mode; }, get roomDrift() { return roomDrift; },
+    get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; },
     /** A camp turns on an intruder (the lunge rule's execution, by hand): `pft.volley(baseId, soldierId)`. */
     volley: (base: number, id: number) => { const x = s.soldiers[id]; return startVolley(base, { id, x: x.x, y: x.y }); }, set hidePen(v: boolean) { hidePen = v; dirty = true; },
     set speed(v: number) { speed = v; }, get speed() { return speed; },
@@ -1963,7 +2329,7 @@ if (import.meta.env.DEV) {
      * frame: per layer, how many pixels differ by more than antialiasing, and where.
      */
     redrawCheck: () => {
-      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, rings: boil.parts[0].c, rest: boil.parts[1].c };
+      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, rings: boil.parts[0].c, rest: boil.parts[1].c };
       const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => [k, c.width && c.height && c.style.visibility !== "hidden" ? c.getContext("2d")!.getImageData(0, 0, c.width, c.height) : null]));
       renderNow();
       const a = grab();

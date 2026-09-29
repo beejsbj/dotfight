@@ -291,6 +291,8 @@ class BoilCanvas {
    */
   private poses: (Pose | undefined)[] = [];
   private drawn: (number[] | undefined)[] = [];
+  /** Whether things that left the canvas are still to be cleared. */
+  get clearing() { return this.gone.length > 0; }
 
   /** `part`: the camps' rings, or everything else (soldiers, and marks when the dead boil). `life`: soldiers' and camps' moods, if they have them. */
   constructor(private part: "rings" | "rest", private life: () => Life | null) {
@@ -607,8 +609,10 @@ export class BoilLayer {
   draw(ms: number, bold: number, seen?: { x0: number; y0: number; x1: number; y1: number }) {
     const t0 = performance.now();
     let drew = false, steady = true;
+    // a canvas with something to clear goes first: a thing that left it is already baked into the page
+    const first = this.parts.findIndex((p) => p.clearing);
     for (let k = 0; k < this.parts.length && !drew; k++) {
-      const i = (this.turn + k) % this.parts.length, p = this.parts[i];
+      const i = first >= 0 && k === 0 ? first : (this.turn + k - (first >= 0 ? 1 : 0)) % this.parts.length, p = this.parts[i];
       if (p.draw(ms, bold, seen)) { drew = true; steady = p.steady; this.turn = i + 1; }
     }
     if (!drew) return false;

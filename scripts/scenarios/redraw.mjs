@@ -28,6 +28,18 @@ export default async function (T, out) {
     console.log(`${label.padEnd(22)} ${Object.entries(r).map(([k, v]) => `${k} ${v.bad}${v.box ? ` @${v.box.join(",")}` : ""}`).join(" | ")}`);
     if (worst.length) fails.push(label);
   };
+  // a balloon showing (its own layer, filled with the paper's colour) must match a full redraw too
+  const balloon = (id) => page.evaluate((id) => {
+    const p = window.pft;
+    for (let k = 0; k < 400 && !p.bubbles.cur; k++) { p.bubbles.reset(); p.speak("idle", id, p.wall, 1000 + k * 7); }
+    p.poke();
+    return p.bubbles.cur?.text ?? null;
+  }, id);
+  const some = await page.evaluate(() => window.pft.s.soldiers.find((x) => x.alive && x.owner === window.pft.s.current).id);
+  console.log("balloon:", await balloon(some));
+  await page.waitForTimeout(700);
+  await check("bird's-eye + balloon");
+  await page.evaluate(() => window.pft.bubbles.reset());
   await check("bird's-eye");
   // the lowest of the side to play: leaning in on him, the camps sit at the screen's edges
   const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).sort((a, b) => b.y - a.y)[0]; });
@@ -36,6 +48,10 @@ export default async function (T, out) {
   await page.waitForFunction(() => window.pft.cam.settled, undefined, { timeout: 30000 });
   await page.waitForTimeout(300);
   await check("leaning in");
+  console.log("balloon:", await balloon(me.id));
+  await page.waitForTimeout(700);
+  await check("leaning in + balloon");
+  await page.evaluate(() => window.pft.bubbles.reset());
   await T.touch("touchStart", [[195, 600]]);
   for (let i = 1; i <= 10; i++) { await T.touch("touchMove", [[195, 600 + i * 12]]); await page.waitForTimeout(30); }
   for (let j = 0; j < 60; j++) {
