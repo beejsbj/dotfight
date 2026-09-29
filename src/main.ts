@@ -1789,7 +1789,7 @@ function currentFrame(): Frame {
     selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
   const bb = heard() ? bubbles.showing(wall) : null, bs = bb && bubbleAt(bb, wall, reduced), bx = bb && s.soldiers[bb.id];
-  if (bb && bs && bx?.alive) f.bubble = { text: bb.text, at: bx, p: bs.p, alpha: bs.alpha, style: bb.style, side: bb.side, seed: bb.seed, owner: bx.owner };
+  if (bb && bs && bx?.alive) f.bubble = { text: bb.text, at: bx, p: bs.p, alpha: bs.alpha, side: bb.side, seed: bb.seed, owner: bx.owner };
   const human = screen === "game" && !isBot(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
   if (ghost) {

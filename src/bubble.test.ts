@@ -23,7 +23,6 @@ describe("comic bubbles", () => {
     const a = new Bubbles().offer("idle", 1, 0, 42), b = new Bubbles().offer("idle", 1, 0, 42);
     expect(a).toEqual(b);
     expect(LINES.idle).toContain(a!.text);
-    expect(new Bubbles().offer("dread", 1, 0, [...Array(50).keys()].find((k) => new Bubbles().offer("dread", 1, 0, k))!)!.style).toBe("ring");
   });
 
   it("writes on, holds, fades, on twos; gone after its time", () => {

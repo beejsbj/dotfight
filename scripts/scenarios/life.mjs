@@ -332,14 +332,14 @@ export default async function (T, out) {
       // offered until one is taken (they're rare on purpose), then written on, held and faded
       await page.evaluate(({ kind, id, style }) => {
         const p = window.pft;
-        for (let k = 0; k < 200 && (!p.bubbles.cur || (style && p.bubbles.cur.style !== style)); k++) { p.bubbles.reset(); p.speak(kind, id, p.wall, 1000 + k * 7); }
+        for (let k = 0; k < 200 && !p.bubbles.cur; k++) { p.bubbles.reset(); p.speak(kind, id, p.wall, 1000 + k * 7); }
         p.poke();
       }, { kind, id, style });
       await seq(name, 26, 1000 / 12, { [name]: clip });
       await page.evaluate(() => window.pft.bubbles.reset());
     };
     await say("bubble-ready", "ready", men[0].id, await box(camp, 150));
-    await say("bubble-idle", "idle", men[3].id, await box(camp, 150), "scrap");
+    await say("bubble-idle", "idle", men[3].id, await box(camp, 150));
     await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
     await step(0, 150);
     await say("bubble-birdseye", "phew", men[1].id);

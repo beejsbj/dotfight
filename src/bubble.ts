@@ -1,14 +1,15 @@
 // Comic bubbles: now and then, a soldier says something in writing.
 //
-// A scrap of torn paper with a word or two in pen, or a word in pencil with a
-// ring round it, beside the man who said it: "I'm ready" when you pick him
+// A word or two written on the page beside the man who said it, in his side's
+// pen, with an arrow to him, the way you'd annotate an exercise book: "I'm ready" when you pick him
 // up, "phew" after a near miss, "!" when a pen points at him, and the odd
 // stray thought. Rare on purpose: one on screen at most, a long gap between
 // them, and most chances pass. Seeded, cosmetic, never game state.
 //
-// It's drawn on the overlay (screen space, like the standing pen), so it stays
-// readable at any tilt; it only redraws while it's being written or fading,
-// on the 12 fps grid, and while the camera moves (the overlay does anyway).
+// It's a note, not a mark: drawn on the live layer (page space, the theme's
+// pens and blend), written on, then faded, and the append-only page never
+// keeps it, so a long war isn't cluttered with talk. It only redraws while
+// being written or fading, on the 12 fps grid, or while the camera moves.
 
 import { LIFE, unit } from "./life";
 
@@ -44,8 +45,6 @@ export interface Bubble {
   text: string;
   /** Wall ms it starts being written. */
   t0: number;
-  /** A torn scrap in pen, or a pencilled word ringed round. */
-  style: "scrap" | "ring";
   /** Which side of him it sits (screen): 1 right, -1 left. */
   side: 1 | -1;
   seed: number;
@@ -79,8 +78,7 @@ export class Bubbles {
     if (unit(seed, 5) >= CHANCE[kind]) return null;
     const lines = LINES[kind];
     const text = lines[Math.floor(unit(seed, 7) * lines.length)];
-    const style = kind === "dread" || text.length <= 2 ? "ring" : unit(seed, 9) < 0.55 ? "scrap" : "ring";
-    this.cur = { kind, id, text, t0, style, side: unit(seed, 11) < 0.5 ? -1 : 1, seed };
+    this.cur = { kind, id, text, t0, side: unit(seed, 11) < 0.5 ? -1 : 1, seed };
     this.last = t0;
     return this.cur;
   }

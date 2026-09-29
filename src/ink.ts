@@ -341,7 +341,8 @@ export function pencilLoop(ctx: Ctx, cx: number, cy: number, r: number, seed: nu
 }
 
 // A pencil arrow, bowed a little, for notes in the margin.
-export function pencilArrow(ctx: Ctx, from: Pt, to: Pt, bend: number, seed: number, width: number, upTo = 1, alpha = 1) {
+// `color`: a pen instead of the pencil (a note written on the page in a side's ink).
+export function pencilArrow(ctx: Ctx, from: Pt, to: Pt, bend: number, seed: number, width: number, upTo = 1, alpha = 1, color?: string) {
   if (upTo <= 0 || alpha <= 0) return;
   const rand = rng(seed);
   const dx = to.x - from.x, dy = to.y - from.y, l = Math.hypot(dx, dy) || 1;
@@ -352,7 +353,7 @@ export function pencilArrow(ctx: Ctx, from: Pt, to: Pt, bend: number, seed: numb
   };
   const steps = 16;
   const shade = Array.from({ length: steps + 2 }, () => rand());
-  ctx.strokeStyle = INK.pencil;
+  ctx.strokeStyle = color ? paint(ctx, color) : INK.pencil;
   ctx.lineCap = "round";
   const head = steps * Math.min(1, upTo / 0.8);
   for (let i = 0; i < Math.ceil(head); i++) {
