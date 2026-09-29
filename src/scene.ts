@@ -164,7 +164,7 @@ let planMemo: { s: GameState | null; stamp: string; plan: Plan | null } = { s: n
 function boilPlan(f: Frame, ink: Ink): Plan {
   const { s } = f;
   const on = !!f.boil?.on && !boil.tooDear;
-  let stamp = `${s.marks.length}|${s.bases.length}|${s.soldiers.length}|${s.turn}|${f.mover?.id}|${on}|`;
+  let stamp = `${s.v === 1 ? s.flicks.length : s.actions.length}|${s.marks.length}|${s.bases.length}|${s.soldiers.length}|${s.turn}|${f.mover?.id}|${on}|`;
   for (const k of ink.live) stamp += k + (ink.p(k) > 0 ? "+" : "-");
   if (planMemo.s !== s || planMemo.stamp !== stamp || !planMemo.plan) planMemo = { s, stamp, plan: planBoil(s, ink, { on, moving: f.mover?.id }) };
   return planMemo.plan!;
