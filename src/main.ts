@@ -31,7 +31,7 @@ import { boil, boilSeen, boilTick, forgetDrawn, page, pageState, stageStats, ren
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
 import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
-import { apply as roomApply, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
+import { apply as roomApply, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, READS, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
 import { Timeline, reachFraction } from "./timeline";
 import * as turn from "./turn";
@@ -919,7 +919,7 @@ function showHow() {
     <h2>How Dawood played it</h2>
     <ol>
       <li>Take turns drawing camps, each jotted full of men. Then arrange your men: in camp, or just outside the wall.</li>
-      <li>On your go, pick up one soldier. Pull back from anywhere on the screen and let go, like flicking a pen stood on its tip.</li>
+      <li>On your go, pick up one soldier. Pull back from anywhere on the screen and let go, like flicking a pen stood on its tip: a small pull is a short line, a long one crosses the page (a lunge, half of it).</li>
       <li><b>Snipe</b>: he stays put and the ink goes through every enemy it crosses. Walls and bodies sap it. Take two with one line and you flick again.</li>
       <li><b>Lunge</b>: he runs along his ink and crosses out whoever he passes. A kill earns him another lunge, shakier each time. Land among a camp's men and they shoot him; an empty camp is safe; off the page, he's gone.</li>
       <li><b>Send</b>, free, once a turn: up to five men walk to another of your camps. They're out on the open page for one enemy turn.</li>
@@ -1451,7 +1451,7 @@ async function openRoom(code: string) {
   } catch (e) {
     return home(e instanceof RoomHttpError && e.status === 404 ? "that page has gone: links last 30 days after the last move" : "couldn't open that page: check your signal and open the link again");
   }
-  if (v.engine !== ENGINE) return home("that page needs a newer copy of the game: reload");
+  if (!READS.includes(v.engine)) return home("that page needs a newer copy of the game: reload");
   const host = v.names[0];
   const input = v.names[1] === null ? nameOnLabel() : null;
   menu.innerHTML = input ? `
@@ -1972,7 +1972,7 @@ function frame(now: number) {
   if (aim) {
     steer();
     const p = pull(aim);
-    const w = wobble(aim, T);
+    const w = wobble(aim, T, turn.handFor(s, aim.soldierId, aim.kind));
     sfx.creak(p.power, Math.abs(w) * 12);
     if (ratchet.shake(w !== 0)) haptic("wobble");
   }
@@ -2071,7 +2071,7 @@ function currentFrame(): Frame {
     const ink = inkLeft(owner);
     if (aim) {
       const pl = pull(aim);
-      const ang = aimAngle + wobble(aim, T);
+      const ang = aimAngle + wobble(aim, T, turn.handFor(s, selected, kind));
       f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: aimError(pl.power, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pl.power), kind };
       f.pen = tip(leaning(me.x, me.y, ang, pl.live ? penLean(pl.power) : 0.04, owner, ink), ang, penSide);
       // a lunger landing among their men is shot: those camps are hatched while you aim one
@@ -2223,7 +2223,7 @@ if (import.meta.env.DEV) {
     resumeRecord: (r: Filed) => resume({ s: unfile(r), mode: r.mode }),
     // motion aiming: synthetic sensors, and what the aim made of them
     sensors: motion.simulator(),
-    get aim() { return aim && { angle: aimAngle, thumb: byThumb.angle, wobble: wobble(aim, T), steady: aim.steady, power: pull(aim).power }; },
+    get aim() { return aim && { angle: aimAngle, thumb: byThumb.angle, wobble: wobble(aim, T, turn.handFor(s, aim.soldierId, aim.kind)), steady: aim.steady, power: pull(aim).power }; },
     get gun() { return motion.gun && { fwd: gunFwd, delta: motion.gun.delta, armed: motion.gun.armed }; },
   };
 }

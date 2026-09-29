@@ -29,7 +29,7 @@ One flick, either a **snipe** or a **lunge**, plus one free **send**.
 
 ## Flicking
 
-Pull back and release, like flicking a pen stood on its tip. The harder the flick, the longer the line and the less accurate it is. A soft flick is short and precise.
+Pull back and release, like flicking a pen stood on its tip. The harder the flick, the longer the line and the less accurate it is. A soft flick is short and precise. The pull is long and forgiving: a thumb's whole travel down a phone covers the whole reach, with the short lines that matter most spread widest, so a finger's slip changes the line a little, not a lot.
 
 ## Snipe
 
@@ -41,7 +41,7 @@ Pull back and release, like flicking a pen stood on its tip. The harder the flic
 
 _Formerly "move"._
 
-- The soldier runs along his own ink, as far as a shot can go, and crosses out every enemy he passes. He stands where the ink stops.
+- The soldier runs along his own ink, along a line up to about half a page long (a snipe can cross the whole page), and crosses out every enemy he passes. He stands where the ink stops.
 - **Walls shake him.** Crossing a wall shakes his hand; crossing a soldier shakes it a little. It's the same foundation as a snipe's power loss, paid in shake instead of power: his heading jolts at each wall and each soldier and the rest of his line turns with it. (to test: 0.08 rad, about 4.6°, at a wall; 0.04 at a soldier)
 - **Lunge again.** A lunge that crosses someone out earns another lunge by the same soldier, and you may stop instead. Every link adds a fixed shake (0.05 rad, about 3°, however softly you flick; to test).
 - **Through a base.** He may cut right through an enemy base, crossing out the soldiers inside, as long as he doesn't land in it. He pays shake at both walls and at every soldier he crosses: costly, but legal.
@@ -155,6 +155,7 @@ Every value here is a lab guess or a direction nobody has played yet.
 |---|---|
 | Snipe power loss per wall and per kill | 10% of what's left at a wall, 5% at a soldier crossed out (the lab's gentle magnitudes, walls costing more). Round 3: fair, and snipe streaks stay short. |
 | Snipe extra flick with no rising bar | Round 3: the worst turn averages 6.4 flicks in Quick and 7.5 in Classic (up to 13–15), and it's lunge chains that make them long, not snipes. |
+| Flick reach and pull | Snipe 300 to 1800 units, lunge 100 to 900, over 240 px of thumb travel; both curved (snipe power^1.2, lunge power^1.6) so short lines get the most travel. A lunge that crosses the page is a lunge that leaves it, so it no longer reaches as far as a shot (a change from "a move goes as far as a shot"). Error follows a line's length, so a 400-unit line is as accurate as before. Rules version 2. |
 | Lunge shake at walls and soldiers | 0.08 rad at a wall, 0.04 at a soldier. Round 3: lunges are 69–76% of flicks, because cutting through a base is legal now. Is it too cheap? Doubling the wall shake only brings lunges to 58–66%. |
 | Lunge chain shake per link | 0.05 rad (about 3°). A fifth of chains run to four or more; 0.10 a link cut that to an eighth. The first lever to try if chains feel long. |
 | Positioning reach | 20 units. Inside-only changed nothing in the lab; 40 turned the game towards lunges. "Keep at least one inside" is not a rule (the bot keeps half inside by choice). |

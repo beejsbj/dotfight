@@ -26,7 +26,7 @@ export const canPlaceBase = (s: AnyState, x: number, y: number) => (isLegacy(s) 
 export const perBase = (s: AnyState) => (isLegacy(s) ? 10 : s.size.soldiers);
 
 /** How long a flick of this kind and power is. */
-export const lengthFor = (s: AnyState, k: Kind, power: number) => (isLegacy(s) ? legacy.legacyReach(toLegacy(k), power) : core.reachOf(s.rules, power));
+export const lengthFor = (s: AnyState, k: Kind, power: number) => (isLegacy(s) ? legacy.legacyReach(toLegacy(k), power) : core.reachOf(s.rules, power, k));
 
 /** How steady this soldier's hand is right now (a last stand, a lunge chain). */
 export const handFor = (s: AnyState, id: number, k: Kind): Hand => (isLegacy(s) ? STEADY : core.hand(s, id, k));

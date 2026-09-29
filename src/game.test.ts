@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { botAction, botArrange, botBase } from "./bot";
 import {
-  act, alive, canArrange, canFlick, canPlaceBase, canSend, columnSpots, garrison, hand, illegal, isRing, newGame, pathLen, preview, replay,
+  act, alive, canArrange, canFlick, canPlaceBase, canSend, columnSpots, garrison, hand, illegal, isRing, maxReach, newGame, pathLen, powerFor, preview, reachOf, replay, wildOf, wildOfLength,
   type Action, type Flick, type GameState, type Player,
 } from "./game";
 import { CORE, RULES, SIZES, type CoreRules, type Size } from "./rules";
@@ -406,5 +406,53 @@ describe("the record", () => {
     expect(() => act(s, { t: "send", from: 1, to: 3, n: 1 })).toThrow(/illegal/);
     expect(() => act(s, { t: "flick", soldier: of(s, 0)[0].id, kind: "snipe", angle: NaN, length: 300, bend: 0, wob: 0 })).toThrow(/bad numbers/);
     expect(JSON.stringify(s)).toBe(before);
+  });
+});
+
+/** The rules a version-1 page was played with: one reach for both kinds, no curve, no lunge reach. */
+const V1 = (() => {
+  const { lungeReach: _l, ...rest } = CORE;
+  return { ...rest, version: 1, reach: { min: 300, max: 1800 } } as unknown as CoreRules;
+})();
+
+describe("reach: how far a pull sends the line", () => {
+  const kinds: Flick["kind"][] = ["snipe", "lunge"];
+
+  it("powerFor is the exact inverse of reachOf, for both kinds and both rule versions", () => {
+    for (const R of [CORE, V1]) for (const k of kinds) {
+      for (let p = 0; p <= 1.0001; p += 0.05) expect(powerFor(R, reachOf(R, p, k), k)).toBeCloseTo(Math.min(1, p), 9);
+      for (let len = 120; len <= 1700; len += 130) {
+        const r = reachOf(R, powerFor(R, len, k), k);
+        const lo = reachOf(R, 0, k), hi = maxReach(R, k);
+        expect(r).toBeCloseTo(Math.min(hi, Math.max(lo, len)), 6);
+      }
+    }
+  });
+
+  it("a lunge runs shorter than a snipe at every pull, and short lengths take real thumb travel", () => {
+    for (let p = 0; p <= 1; p += 0.05) expect(reachOf(CORE, p, "lunge")).toBeLessThan(reachOf(CORE, p, "snipe"));
+    expect(maxReach(CORE, "lunge")).toBeLessThan(CORE.reach.max);
+    // the lengths a lunge is wanted at (150..700) get the middle of the travel, not its first sliver
+    const share = powerFor(CORE, 700, "lunge") - powerFor(CORE, 150, "lunge");
+    expect(share).toBeGreaterThan(0.55);
+    // and no length in that band moves more than ~5 units for a pixel of a 224 px pull
+    for (let p = 0.2; p < 0.85; p += 0.01) expect(reachOf(CORE, p + 1 / 224, "lunge") - reachOf(CORE, p, "lunge")).toBeLessThan(5.5);
+  });
+
+  it("version 1 pages keep the one reach and the 0.9 curve, and ignore lungeReach", () => {
+    for (const k of kinds) for (const p of [0, 0.1, 0.5, 0.9, 1]) expect(reachOf(V1, p, k)).toBeCloseTo(300 + 1500 * Math.pow(p, 0.9), 9);
+    expect(maxReach(V1, "lunge")).toBe(1800);
+    // and error follows the pull itself, as it always did
+    for (const p of [0, 0.3, 0.7, 1]) expect(wildOf(V1, "lunge", p)).toBeCloseTo(p, 9);
+  });
+
+  it("the hand's error follows the line's length, not the thumb's travel", () => {
+    // a 900-unit snipe and a 900-unit lunge are equally wild; a lunge under 300 is as steady as the softest snipe
+    expect(wildOf(CORE, "lunge", powerFor(CORE, 900, "lunge"))).toBeCloseTo(wildOf(CORE, "snipe", powerFor(CORE, 900, "snipe")), 9);
+    expect(wildOfLength(CORE, 200)).toBe(0);
+    expect(wildOfLength(CORE, 1800)).toBeCloseTo(1, 9);
+    const s = game(PAGE, 3);
+    const id = of(s, 0)[0].id;
+    expect(hand(s, id, "lunge").wild!(1)).toBeCloseTo(wildOfLength(CORE, 900), 9);
   });
 });
