@@ -36,9 +36,10 @@ export const inkOp = (): GlobalCompositeOperation => (theme.ink.blend === "scree
 
 // Pencil and chalk have tooth: the colour as a pattern with the paper showing
 // through where the lead skipped. Made once per colour; plain ink is a string.
+// `grain` is the theme's unless a mark is pencil whatever the pen (a note).
 const tooth = new Map<string, CanvasPattern | string>();
-export function paint(ctx: Ctx, color: string): CanvasPattern | string {
-  const k = theme.ink.grain;
+export function paint(ctx: Ctx, color: string, grain = theme.ink.grain): CanvasPattern | string {
+  const k = grain;
   if (k <= 0 || typeof document === "undefined") return color;
   const key = `${color}|${k}`;
   let p = tooth.get(key);
@@ -384,72 +385,122 @@ export function pencilArrow(ctx: Ctx, from: Pt, to: Pt, bend: number, seed: numb
   ctx.globalAlpha = 1;
 }
 
-// A comic speech balloon, drawn by hand: a wobbly oval with a short pointed
-// tail whose tip is `tip`, filled with `fill` (the paper's own colour) so the
-// words inside read over whatever is under it. Ballpoint like everything else:
-// the outline goes round once, then a lighter second pass goes over the start.
-// `upTo` (0..1) draws it on. Every seeded value is taken before anything is
-// skipped, so a half-drawn balloon is exactly the start of the finished one.
-export function inkBalloon(ctx: Ctx, cx: number, cy: number, rx: number, ry: number, tip: Pt, color: string, fill: string | null, seed: number, width: number, upTo = 1, alpha = 1) {
-  if (upTo <= 0 || alpha <= 0) return;
+// A pencil line along `pts` (a hand's path: a tail, a tick), pressed harder
+// and lighter as it goes, with the lead's tooth. `upTo` (0..1) draws it on.
+export function pencilStroke(ctx: Ctx, pts: Pt[], color: string, seed: number, width: number, upTo = 1, alpha = 1, grain = 0.5) {
+  if (upTo <= 0 || alpha <= 0 || pts.length < 2) return;
   const rand = rng(seed);
-  const ph = [rand() * 6.28, rand() * 6.28, rand() * 6.28];
-  const bow = (rand() - 0.5) * 0.3, jit = [rand(), rand(), rand(), rand()];
-  const half = 0.34, N = 40;
-  // where the tail leaves the oval: the side facing the tip
-  const ta = Math.atan2((tip.y - cy) / ry, (tip.x - cx) / rx);
-  const edge = (a: number): Pt => {
-    const k = 1 + Math.sin(a * 2 + ph[0]) * 0.035 + Math.sin(a * 3 + ph[1]) * 0.022 + Math.sin(a * 5 + ph[2]) * 0.012;
-    return { x: cx + Math.cos(a) * rx * k, y: cy + Math.sin(a) * ry * k };
-  };
-  const pts: Pt[] = [];
-  for (let i = 0; i <= N; i++) pts.push(edge(ta + half + (Math.PI * 2 - half * 2) * (i / N)));
-  const end = pts[pts.length - 1], start = pts[0];
-  // the tail: two slightly bowed sides down to the tip
-  const side = (from: Pt, to: Pt, b: number): Pt => {
-    const dx = to.x - from.x, dy = to.y - from.y;
-    return { x: (from.x + to.x) / 2 - dy * b, y: (from.y + to.y) / 2 + dx * b };
-  };
-  pts.push(side(end, tip, 0.05 + bow * 0.5), tip, side(tip, start, 0.05 - bow * 0.5), start);
-  const path = (n: number, dx = 0, dy = 0) => {
-    ctx.beginPath();
-    for (let i = 0; i < n; i++) { if (i) ctx.lineTo(pts[i].x + dx, pts[i].y + dy); else ctx.moveTo(pts[i].x + dx, pts[i].y + dy); }
-  };
-  ctx.save();
+  const n = pts.length - 1;
+  const shade = Array.from({ length: n }, () => rand());
+  const head = n * Math.min(1, upTo);
+  ctx.strokeStyle = paint(ctx, color, grain);
   ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  if (fill) {
-    path(pts.length);
-    ctx.closePath();
-    ctx.globalAlpha = alpha * 0.97 * clamp01(upTo * 3);
-    ctx.fillStyle = fill;
-    ctx.fill();
-  }
-  ctx.strokeStyle = paint(ctx, color);
-  const stroke = (dx: number, dy: number, w: number, a: number, upto: number) => {
-    const m = 1 + (pts.length - 1) * upto, k = Math.floor(m);
-    path(k, dx, dy);
-    if (k < pts.length) {
-      const f = m - k, a0 = pts[k - 1], a1 = pts[k];
-      ctx.lineTo(a0.x + (a1.x - a0.x) * f + dx, a0.y + (a1.y - a0.y) * f + dy);
-    }
-    ctx.globalAlpha = a;
-    ctx.lineWidth = w;
+  for (let i = 0; i < Math.ceil(head); i++) {
+    const a = pts[i], b0 = pts[i + 1], f = Math.min(1, head - i);
+    const b = { x: a.x + (b0.x - a.x) * f, y: a.y + (b0.y - a.y) * f };
+    const ends = Math.min(1, (i + 0.5) / 1.5, (n - i - 0.5) / 1.5); // light in, light out
+    ctx.globalAlpha = alpha * (0.55 + shade[i] * 0.35) * (0.45 + 0.55 * Math.max(0.2, ends));
+    ctx.lineWidth = width * (0.8 + shade[i] * 0.45);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
     ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// A bowed path from `a` to `b` in `n` steps, the way a hand drifts off a
+// straight line: `bend` is the bow as a fraction of the length.
+export function bowed(a: Pt, b: Pt, bend: number, n = 10): Pt[] {
+  const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1;
+  const c = { x: (a.x + b.x) / 2 - (dy / l) * bend * l, y: (a.y + b.y) / 2 + (dx / l) * bend * l };
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const t = i / n, u = 1 - t;
+    return { x: u * u * a.x + 2 * u * t * c.x + t * t * b.x, y: u * u * a.y + 2 * u * t * c.y + t * t * b.y };
+  });
+}
+
+// An eraser rubbing out what's already drawn inside the box (x0,y0)-(x1,y1) on
+// this canvas. Two scrubs of zigzag strokes across it, the first leaving a
+// ghost, the second lifting the rest; the lead it drags is a faint smudge
+// along the scrub, and a few crumbs lie where the eraser has been, brushed off
+// at the end. `e` (0..1) is how far the rubbing has got; at 1 nothing is left.
+// Seeded, so a frame draws the same way every time.
+export function rubOut(ctx: Ctx, x0: number, y0: number, x1: number, y1: number, seed: number, e: number, size: number, color: string, crumbs = 7) {
+  if (e <= 0) return;
+  const rand = rng(seed);
+  const w = size * 0.6; // the eraser's edge
+  const gap = w * 0.7;
+  const pad = w * 0.45;
+  const bx0 = x0 - pad, by0 = y0 - pad, bx1 = x1 + pad, by1 = y1 + pad;
+  const tilt = 0.1 + (rand() - 0.5) * 0.08; // the scrub runs a little off the horizontal
+  const dir = rand() < 0.5 ? 1 : -1;
+  const ph = [rand() * 6.28, rand() * 6.28];
+  // the strokes of one scrub: back and forth down the box, each stroke running a little past its sides
+  const strokes = (off: number, jit: number): Pt[][] => {
+    const out: Pt[][] = [];
+    const reach = (bx1 - bx0) * Math.tan(tilt) * 0.5;
+    for (let y = by0 + off, i = 0; y < by1 + gap * 0.5; y += gap, i++) {
+      const l = { x: bx0 - w * 0.15, y: y - reach * dir }, r = { x: bx1 + w * 0.15, y: y + reach * dir };
+      const wob = (t: number) => Math.sin(t * 5 + ph[0] + i) * jit + Math.sin(t * 9 + ph[1] * i) * jit * 0.5;
+      const pts: Pt[] = [];
+      for (let k = 0; k <= 6; k++) { const t = k / 6, p = i % 2 ? { x: r.x + (l.x - r.x) * t, y: r.y + (l.y - r.y) * t } : { x: l.x + (r.x - l.x) * t, y: l.y + (r.y - l.y) * t }; pts.push({ x: p.x, y: p.y + wob(t) }); }
+      out.push(pts);
+    }
+    return out;
   };
-  stroke(0, 0, width, alpha * 0.92, clamp01(upTo));
-  // a lighter second pass, a hair off, over the first part again
-  stroke((jit[0] - 0.5) * width * 1.4, (jit[1] - 0.5) * width * 1.4, width * 0.65, alpha * 0.5, clamp01((upTo - 0.6) / 0.4) * 0.42);
-  ctx.restore();
+  const one = strokes(0, w * 0.1), two = strokes(gap * 0.5, w * 0.12);
+  const p1 = Math.min(1, e / 0.58), p2 = Math.max(0, (e - 0.5) / 0.5);
+  const scrub = (set: Pt[][], p: number, alpha: number, width: number, op: GlobalCompositeOperation, style: string | CanvasPattern) => {
+    if (p <= 0) return;
+    const head = set.length * p;
+    ctx.globalCompositeOperation = op;
+    ctx.strokeStyle = style;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = width;
+    ctx.globalAlpha = alpha;
+    for (let i = 0; i < Math.ceil(head); i++) {
+      const pts = set[i], f = Math.min(1, head - i), m = (pts.length - 1) * f, k = Math.floor(m);
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let j = 1; j <= k; j++) ctx.lineTo(pts[j].x, pts[j].y);
+      if (k < pts.length - 1) { const a = pts[k], b = pts[k + 1], t = m - k; ctx.lineTo(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t); }
+      ctx.stroke();
+    }
+  };
+  // first scrub: most of the lead comes off, a ghost stays
+  scrub(one, p1, 0.72, w, "destination-out", "#000");
+  // the lead it dragged: a faint smudge along the strokes, rubbed off in turn by the second scrub
+  const smear = 0.04 * Math.min(1, p1 * 1.4) * Math.max(0, 1 - p2 * 1.25);
+  if (smear > 0.003) scrub(one, p1, smear, w * 1.1, "source-over", paint(ctx, color, 0.35));
+  // second scrub: the rest
+  scrub(two, p2, 1, w * 1.1, "destination-out", "#000");
+  if (p2 >= 1) scrub(one, 1, 1, w * 1.1, "destination-out", "#000");
+  // crumbs: gathered under the rub, until they're brushed off
+  if (e < 0.96 && crumbs > 0) {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = paint(ctx, color, 0.4);
+    for (let i = 0; i < crumbs; i++) {
+      const at = 0.15 + rand() * 0.75, x = x0 + rand() * (x1 - x0), y = by1 - w * 0.5 + rand() * w * 0.8, r = size * (0.03 + rand() * 0.035), a = 0.3 + rand() * 0.35, tw = rand() * 3.14;
+      if (e < at) continue;
+      ctx.globalAlpha = a;
+      ctx.beginPath();
+      ctx.ellipse(x, y, r * 1.7, r, tw, 0, 6.29);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
 }
 
 // Handwriting on the page (Caveat). `upTo` reveals it left to right, as if
 // being written; `rot` tilts the line the way a hand drifts.
 export function handText(
   ctx: Ctx, text: string, x: number, y: number, size: number, color: string,
-  o: { upTo?: number; alpha?: number; weight?: number; rot?: number; align?: "left" | "center" | "right" } = {},
+  o: { upTo?: number; alpha?: number; weight?: number; rot?: number; align?: "left" | "center" | "right"; grain?: number } = {},
 ) {
-  const { upTo = 1, alpha = 1, weight = 700, rot = 0, align = "left" } = o;
+  const { upTo = 1, alpha = 1, weight = 700, rot = 0, align = "left", grain = theme.ink.grain } = o;
   if (upTo <= 0 || alpha <= 0) return 0;
   ctx.save();
   ctx.translate(x, y);
@@ -463,7 +514,7 @@ export function handText(
     ctx.clip();
   }
   ctx.globalAlpha = alpha;
-  ctx.fillStyle = paint(ctx, color);
+  ctx.fillStyle = paint(ctx, color, grain);
   ctx.textBaseline = "alphabetic";
   ctx.fillText(text, x0, 0);
   ctx.restore();

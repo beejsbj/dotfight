@@ -12,9 +12,9 @@
 // style writes and a couple of hundred pixels of gradient, not a repaint.
 
 import { BoilLayer, planBoil, type Plan } from "./boil";
-import type { Pt } from "./game";
+import { rng, type Pt } from "./game";
 import type { AnyState as GameState } from "./record";
-import { INK, handText, inkBalloon, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop } from "./ink";
+import { INK, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilStroke, rubOut } from "./ink";
 import { Life } from "./life";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
@@ -77,10 +77,10 @@ export interface Frame {
   /** A volley (life.ts): the defenders' jabs, drawn on and glinting away, and the intruder's cross if the rules haven't drawn one. */
   jabs?: { pts: Pt[]; p: number; alpha: number; owner: 0 | 1; seed: number }[];
   stamp?: { x: number; y: number; owner: 0 | 1; seed: number; p: number };
-  /** A soldier's line (bubble.ts), a balloon drawn on the page beside him with its tail to him: how much is written (p) and how faded. */
-  /** Screen height and the HUD's top and bottom bars (css px), to keep balloons clear of them. */
+  /** Screen height and the HUD's top and bottom bars (css px), to keep notes clear of them. */
   hud?: { h: number; top: number; bottom: number };
-  bubble?: { text: string; at: Pt; p: number; alpha: number; side: 1 | -1; seed: number; owner: 0 | 1 };
+  /** A soldier's line (bubble.ts), pencilled on the page beside him with a tail to him: how much is written (p) and how much rubbed out (e). */
+  bubble?: { text: string; at: Pt; p: number; e: number; side: 1 | -1; seed: number; owner: 0 | 1 };
   /** The line boil: whether the living boil at all, wall time (ms) for its frame, and how bold (boil.ts boldAt). */
   boil?: { on: boolean; ms: number; bold: number };
 }
@@ -98,7 +98,7 @@ export interface Els {
   pageHost: HTMLElement;
   boilHost: HTMLElement;
   live: HTMLCanvasElement;
-  /** Balloons: normal blend, so they can knock out the ink under them. */
+  /** Notes: pencil on the same sheet, the theme's blend like the live layer; its own dirty box, hidden when no one's talking. */
   talk: HTMLCanvasElement;
   light: HTMLCanvasElement;
   haze: HTMLCanvasElement;
@@ -304,7 +304,7 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
   liveDirty = x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
 }
 
-/** The balloon layer: nothing on it but a soldier's line, so it's hidden the rest of the time. */
+/** The note layer: nothing on it but a soldier's line, so it's hidden the rest of the time. */
 function renderTalk(g: Ctx, el: HTMLCanvasElement, f: Frame, dpr: number) {
   if (!f.bubble && !talkDirty) return;
   g.setTransform(1, 0, 0, 1, 0, 0);
@@ -313,7 +313,7 @@ function renderTalk(g: Ctx, el: HTMLCanvasElement, f: Frame, dpr: number) {
   if (!f.bubble) { if (el.style.visibility !== "hidden") el.style.visibility = "hidden"; return; }
   const v = f.view, box = new Box();
   worldTransform(g, v, dpr);
-  drawBalloon(g, f, f.bubble, box);
+  drawNote(g, f, f.bubble, box);
   if (el.style.visibility === "hidden") el.style.visibility = "";
   const pts = [[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]].map(([x, y]) => toLocal(v, x, y));
   const x0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.x)) * dpr) - 4), y0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.y)) * dpr) - 4);
@@ -442,15 +442,23 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   }
 }
 
-// A soldier's line: a comic balloon someone drew on the page, in his side's
-// pen, its tail pointing at him and the words handwritten inside. It's a note,
-// not a mark: it lives on its own layer (the balloon is filled with the
-// paper's colour to knock out the ink under it, which the live layer's
-// multiply can't do) and fades, and the page never keeps it. Upright the way
-// you're looking, sized to read from bird's-eye as well as leaning in, and kept
-// on the page and on the screen, with the tail on whichever side has room.
+// A soldier's line: a word or two pencilled in his side's colour in a gap on
+// the page beside him, with a little speech tail to him, the way someone at
+// the desk would scribble it, then rubbed out. Pencil on the same sheet: no
+// fill, no second surface, the theme's blend, under the lamp like every other
+// mark. The gap is found once per note (the emptiest of a ring of spots round
+// him: clear of men, camp rings and lines, on the page and off the HUD) and
+// remembered, so it holds still while the camera moves. Upright the way you're
+// looking, sized to read from bird's-eye as well as leaning in.
+export const NOTE = {
+  /** The lead's tooth, whatever the theme's pen. */
+  grain: 0.5,
+  alpha: 0.9,
+  /** A loose pencil ring round the words (off: just the words and their tail). */
+  ring: true,
+};
 const HUD_INSET = 20;
-function balloonBounds(f: Frame): { x0: number; y0: number; x1: number; y1: number } {
+function noteBounds(f: Frame): { x0: number; y0: number; x1: number; y1: number } {
   const B = { x0: 12, y0: 12, x1: RULES.pageW - 12, y1: RULES.pageH - 12 };
   const v = f.view, hud = f.hud;
   if (!hud) return B;
@@ -466,7 +474,80 @@ function balloonBounds(f: Frame): { x0: number; y0: number; x1: number; y1: numb
   return { x0: Math.max(B.x0, cx - hw), x1: Math.min(B.x1, cx + hw), y0: Math.max(B.y0, cy - hh), y1: Math.min(B.y1, cy + hh) };
 }
 
-function drawBalloon(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box) {
+type Rect = { x0: number; y0: number; x1: number; y1: number };
+const inRect = (r: Rect, x: number, y: number, pad = 0) => x >= r.x0 - pad && x <= r.x1 + pad && y >= r.y0 - pad && y <= r.y1 + pad;
+/** How much of the segment a-b lies inside `r` (Liang-Barsky). */
+function clipped(r: Rect, a: Pt, b: Pt) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  let t0 = 0, t1 = 1;
+  for (const [p, q] of [[-dx, a.x - r.x0], [dx, r.x1 - a.x], [-dy, a.y - r.y0], [dy, r.y1 - a.y]]) {
+    if (p === 0) { if (q < 0) return 0; continue; }
+    const t = q / p;
+    if (p < 0) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+    if (t0 > t1) return 0;
+  }
+  return Math.hypot(dx, dy) * (t1 - t0);
+}
+/** Does the ring (cx, cy, r) cross the rect? */
+function ringCrosses(r: Rect, cx: number, cy: number, rad: number, tol: number) {
+  const nx = Math.max(r.x0, Math.min(r.x1, cx)), ny = Math.max(r.y0, Math.min(r.y1, cy));
+  const near = Math.hypot(nx - cx, ny - cy);
+  const far = Math.max(...[[r.x0, r.y0], [r.x1, r.y0], [r.x0, r.y1], [r.x1, r.y1]].map(([x, y]) => Math.hypot(x - cx, y - cy)));
+  return near <= rad + tol && far >= rad - tol;
+}
+
+// The gap the note goes in, page units from the man, chosen once per note.
+let spotMemo: { key: string; dx: number; dy: number; side: 1 | -1 } | null = null;
+function noteSpot(f: Frame, b: NonNullable<Frame["bubble"]>, hw: number, hh: number, size: number) {
+  const key = `${b.seed}|${b.text}|${b.at.x},${b.at.y}`;
+  if (spotMemo?.key === key) return spotMemo;
+  const { s } = f, R = RULES.soldierRadius, B = noteBounds(f);
+  const rot = f.view.rot, c = Math.cos(rot), sn = Math.sin(rot);
+  const toPage = (lx: number, ly: number): Pt => ({ x: b.at.x + lx * c + ly * sn, y: b.at.y - lx * sn + ly * c });
+  // the rect's reach on the page, whichever way the screen is turned
+  const ex = Math.abs(c) * hw + Math.abs(sn) * hh, ey = Math.abs(sn) * hw + Math.abs(c) * hh;
+  // only the marks near him matter: crosses as points, strokes and roads as their segments
+  const reach = R + Math.max(hw, hh) * 2.2 + size * 3;
+  const near = (p: Pt) => Math.hypot(p.x - b.at.x, p.y - b.at.y) < reach + size * 6;
+  const crosses: Pt[] = [], lines: Pt[][] = [];
+  for (const m of s.marks) {
+    if (m.t === "cross") { if (near(m)) crosses.push(m); }
+    else if (m.t === "walk") { if (near(m.a) || near(m.b)) lines.push([m.a, m.b]); }
+    else if (m.t === "stand") { for (const p of m.at) if (near(p)) crosses.push(p); }
+    else if (m.pts.some(near)) lines.push(m.pts);
+  }
+  let best: { cost: number; dx: number; dy: number; side: 1 | -1 } | null = null;
+  const seed = rng(b.seed ^ 0x5eed);
+  for (let ring = 0; ring < 2; ring++) {
+    for (let i = 0; i < 12; i++) {
+      const a = -Math.PI / 2 + (i / 12) * Math.PI * 2; // up first
+      const gap = size * (ring ? 1.7 : 0.85); // room for the tail
+      const lx = Math.cos(a) * (R + hw + gap), ly = Math.sin(a) * (R + hh + gap);
+      const p = toPage(lx, ly);
+      const q = { x: Math.max(B.x0 + ex, Math.min(B.x1 - ex, p.x)), y: Math.max(B.y0 + ey, Math.min(B.y1 - ey, p.y)) };
+      const miss = Math.hypot(q.x - p.x, q.y - p.y);
+      const r: Rect = { x0: q.x - ex, y0: q.y - ey, x1: q.x + ex, y1: q.y + ey };
+      // over his own dot once clamped: no good
+      if (inRect(r, b.at.x, b.at.y, R)) continue;
+      let cost = (miss / size) * 4 + (miss > size * 1.5 ? 30 : 0);
+      cost += 2.5 * (1 + Math.sin(a)) / 2 + (ring ? 1.5 : 0) + seed() * 0.6; // above him for choice, close for choice
+      for (const x of s.soldiers) if (inRect(r, x.x, x.y, R + 3)) cost += 10;
+      for (const k of s.bases) if (ringCrosses(r, k.x, k.y, k.r, 5)) cost += 8;
+      for (const x of crosses) if (inRect(r, x.x, x.y, 9)) cost += 6;
+      for (const pts of lines) {
+        let l = 0;
+        for (let j = 1; j < pts.length; j++) l += clipped(r, pts[j - 1], pts[j]);
+        cost += (2.5 * l) / size;
+      }
+      if (!best || cost < best.cost) best = { cost, dx: q.x - b.at.x, dy: q.y - b.at.y, side: lx < 0 ? -1 : 1 };
+    }
+  }
+  const up = toPage(0, -(R + hh + size));
+  spotMemo = { key, ...(best ?? { dx: up.x - b.at.x, dy: up.y - b.at.y, side: 1 as const }) };
+  return spotMemo;
+}
+
+function drawNote(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box) {
   const pen = INK.pens[b.owner];
   const size = Math.max(30, Math.min(70, 25 / f.view.z)); // page units: about 25 screen px
   g.save();
@@ -474,32 +555,51 @@ function drawBalloon(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box
   const w = g.measureText(b.text).width;
   g.restore();
   const R = RULES.soldierRadius;
-  const ry = size * 0.82, rx = Math.max(w / 2 + size * 0.8, ry * 1.15);
+  const hw = w / 2 + size * 0.1, hh = size * 0.5;
   const rot = f.view.rot, c = Math.cos(rot), sn = Math.sin(rot);
-  // local (screen-upright, at the soldier) <-> page
+  const spot = noteSpot(f, b, hw + (NOTE.ring ? size * 0.5 : 0), hh + (NOTE.ring ? size * 0.3 : 0), size);
+  // local (screen-upright, at the man) <-> page
   const toPage = (lx: number, ly: number): Pt => ({ x: b.at.x + lx * c + ly * sn, y: b.at.y - lx * sn + ly * c });
-  const toLocal_ = (x: number, y: number): Pt => ({ x: (x - b.at.x) * c - (y - b.at.y) * sn, y: (x - b.at.x) * sn + (y - b.at.y) * c });
-  const ex = Math.abs(c) * (rx + 4) + Math.abs(sn) * (ry + 4), ey = Math.abs(sn) * (rx + 4) + Math.abs(c) * (ry + 4);
-  const B = balloonBounds(f);
-  const place = (side: 1 | -1) => {
-    const l = { x: side * (R * 0.6 + rx * 0.72), y: -(R + ry + size * 1.7) };
-    const p = toPage(l.x, l.y);
-    const q = { x: Math.max(B.x0 + ex, Math.min(B.x1 - ex, p.x)), y: Math.max(B.y0 + ey, Math.min(B.y1 - ey, p.y)) };
-    return { at: toLocal_(q.x, q.y), miss: Math.hypot(q.x - p.x, q.y - p.y), side };
-  };
-  const one = place(b.side), two = place(-b.side as 1 | -1);
-  const use = two.miss + 1 < one.miss ? two : one;
-  const tip = { x: use.side * R * 0.55, y: -(R + 3) };
-  const outline = Math.min(1, b.p / 0.5), words = Math.max(0, (b.p - 0.4) / 0.6);
+  const L = { x: spot.dx * c - spot.dy * sn, y: spot.dx * sn + spot.dy * c };
+  // the tail: from the words' near edge to just short of him, two strokes closing on him
+  const d = Math.hypot(L.x, L.y) || 1, u = { x: L.x / d, y: L.y / d };
+  const rx = hw + (NOTE.ring ? size * 0.5 : size * 0.05), ry = hh + (NOTE.ring ? size * 0.3 : size * 0.1);
+  const t = Math.min(rx / Math.max(1e-6, Math.abs(u.x)), ry / Math.max(1e-6, Math.abs(u.y)));
+  const start = { x: L.x - u.x * (t + size * 0.1), y: L.y - u.y * (t + size * 0.1) };
+  const tip = { x: u.x * (R + 4), y: u.y * (R + 4) };
+  const len = Math.hypot(start.x - tip.x, start.y - tip.y);
+  const perp = { x: -u.y, y: u.x }, half = Math.min(size * 0.36, len * 0.5);
+  // written the way a hand would: the words, the ring round them, then the tail
+  const words = Math.min(1, b.p / (NOTE.ring ? 0.58 : 0.78)), ring = Math.max(0, (b.p - 0.5) / 0.4), tail = Math.max(0, (b.p - (NOTE.ring ? 0.86 : 0.78)) / (NOTE.ring ? 0.14 : 0.22));
+  const lw = Math.max(2.2, size * 0.065);
   g.save();
   g.translate(b.at.x, b.at.y);
   g.rotate(-rot);
-  inkBalloon(g, use.at.x, use.at.y, rx, ry, tip, pen, theme.paper.colour, b.seed, Math.max(2.4, size * 0.08) * theme.ink.width, outline, b.alpha);
-  handText(g, b.text, use.at.x, use.at.y + size * 0.27, size, pen, { upTo: words, alpha: b.alpha * 0.95, weight: 700, rot: -0.03 * use.side, align: "center" });
+  if (NOTE.ring) {
+    const r = rng(b.seed + 3), ph = [r() * 6.28, r() * 6.28], a0 = r() * 6.28;
+    const pts: Pt[] = [];
+    for (let i = 0; i <= 40; i++) {
+      const a = a0 + (i / 40) * Math.PI * 2.04, k = 1 + Math.sin(a * 2 + ph[0]) * 0.04 + Math.sin(a * 5 + ph[1]) * 0.02;
+      pts.push({ x: L.x + Math.cos(a) * rx * k, y: L.y + Math.sin(a) * ry * k });
+    }
+    pencilStroke(g, pts, pen, b.seed + 5, lw * 0.9, ring, NOTE.alpha * 0.8, NOTE.grain);
+  }
+  handText(g, b.text, L.x, L.y + size * 0.3, size, pen, { upTo: words, alpha: NOTE.alpha, weight: 700, rot: -0.03 * spot.side, align: "center", grain: NOTE.grain });
+  if (len > size * 0.2 && tail > 0) {
+    const a = { x: start.x + perp.x * half, y: start.y + perp.y * half }, k = { x: start.x - perp.x * half, y: start.y - perp.y * half };
+    pencilStroke(g, bowed(a, tip, 0.16, 8), pen, b.seed + 7, lw, Math.min(1, tail / 0.55), NOTE.alpha, NOTE.grain);
+    pencilStroke(g, bowed(tip, k, 0.16, 8), pen, b.seed + 9, lw * 0.9, Math.max(0, (tail - 0.5) / 0.5), NOTE.alpha, NOTE.grain);
+  }
+  if (b.e > 0) {
+    // the words, then the tail, each under its own rub
+    rubOut(g, L.x - rx, L.y - ry, L.x + rx, L.y + ry, b.seed + 11, b.e, size, pen);
+    const tx0 = Math.min(start.x, tip.x) - half, ty0 = Math.min(start.y, tip.y) - half, tx1 = Math.max(start.x, tip.x) + half, ty1 = Math.max(start.y, tip.y) + half;
+    rubOut(g, tx0, ty0, tx1, ty1, b.seed + 13, Math.min(1, b.e * 1.15), size * 0.7, pen, 1);
+  }
   g.restore();
-  const m = toPage(use.at.x, use.at.y);
-  box.add(m.x, m.y, Math.max(rx, ry) + size * 0.4);
-  box.add(b.at.x, b.at.y, R + 8);
+  const m = toPage(L.x, L.y);
+  box.add(m.x, m.y, Math.max(rx, ry) + size * 1.4);
+  box.add(b.at.x, b.at.y, R + size * 0.6);
 }
 
 // A pencilled ring that closes while you hold the phone still, and gets its

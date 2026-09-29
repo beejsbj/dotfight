@@ -37,7 +37,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #desk, #page-host > canvas, #boil-host > canvas { position: fixed; left: 0; top: 0; transform-origin: 0 0; display: block; will-change: transform; }
 #boil-host > canvas { mix-blend-mode: var(--live-blend); }
 #live { position: fixed; display: block; mix-blend-mode: var(--live-blend); will-change: transform; }
-#talk { position: fixed; display: block; will-change: transform; }
+#talk { position: fixed; display: block; mix-blend-mode: var(--live-blend); will-change: transform; }
 #light, #haze { position: fixed; inset: 0; width: 100vw; height: 100dvh; display: block; }
 #light { mix-blend-mode: multiply; }
 #over { position: fixed; inset: 0; width: 100vw; height: 100dvh; touch-action: none; display: block; }

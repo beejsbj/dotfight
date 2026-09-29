@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BUBBLE, Bubbles, LINES, bubbleAt } from "./bubble";
 import { LIFE } from "./life";
 
-describe("comic bubbles", () => {
+describe("pencil notes", () => {
   it("one at a time, with a long gap between", () => {
     const b = new Bubbles();
     // idle always speaks when offered, so the gap is what's tested
@@ -25,18 +25,21 @@ describe("comic bubbles", () => {
     expect(LINES.idle).toContain(a!.text);
   });
 
-  it("writes on, holds, fades, on twos; gone after its time", () => {
+  it("is written, held, rubbed out, on twos; gone after its time", () => {
     const b = new Bubbles().offer("idle", 1, 0, 7)!;
     expect(bubbleAt(b, 0)!.p).toBe(0);
     expect(bubbleAt(b, BUBBLE.writeMs + 100)!.p).toBe(1);
-    expect(bubbleAt(b, 900)!.alpha).toBe(1);
-    expect(bubbleAt(b, BUBBLE.showMs - 50)!.alpha).toBeLessThan(0.5);
+    expect(bubbleAt(b, 900)!.e).toBe(0);
+    expect(bubbleAt(b, BUBBLE.showMs - 50)!.e).toBeGreaterThan(0.5);
+    expect(bubbleAt(b, BUBBLE.showMs - 1)!.e).toBeGreaterThan(0.8); // the last frame on the 12 fps grid
     expect(bubbleAt(b, BUBBLE.showMs)).toBeNull();
     // the look changes only on the 12 fps grid, and not at all while it holds
     const keys = new Set<string>();
     for (let ms = 700; ms < 1400; ms += 7) keys.add(bubbleAt(b, ms)!.key);
     expect(keys.size).toBe(1);
-    expect(bubbleAt(b, 10, true)!.p).toBe(1); // reduced motion: written at once
+    // reduced motion: written at once, and no scrub: there, then gone
+    expect(bubbleAt(b, 10, true)!.p).toBe(1);
+    expect(bubbleAt(b, BUBBLE.showMs - 10, true)!.e).toBe(0);
   });
 
   it("switches off", () => {

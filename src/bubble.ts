@@ -1,15 +1,16 @@
-// Comic bubbles: now and then, a soldier says something in writing.
+// Pencil notes: now and then, a soldier says something in writing.
 //
-// A word or two written on the page beside the man who said it, in his side's
-// pen inside a hand-drawn balloon whose tail points at him: "I'm ready" when you pick him
-// up, "phew" after a near miss, "!" when a pen points at him, and the odd
-// stray thought. Rare on purpose: one on screen at most, a long gap between
+// A word or two pencilled on the page in a gap beside the man who said it, in
+// his side's colour, with a little speech tail to him: "I'm ready" when you
+// pick him up, "phew" after a near miss, "!" when a pen points at him, and the
+// odd stray thought. Rare on purpose: one on screen at most, a long gap between
 // them, and most chances pass. Seeded, cosmetic, never game state.
 //
-// It's a note, not a mark: drawn on the live layer (page space, the theme's
-// pens and blend), written on, then faded, and the append-only page never
-// keeps it, so a long war isn't cluttered with talk. It only redraws while
-// being written or fading, on the 12 fps grid, or while the camera moves.
+// It's pencil, not ink: written stroke by stroke on the same sheet, read, then
+// rubbed out with an eraser (a scrub that lifts it, a smudge, a few crumbs),
+// so the append-only page never keeps it and a long war isn't cluttered with
+// talk. It only redraws while being written or rubbed out, on the 12 fps grid,
+// or while the camera moves.
 
 import { LIFE, unit } from "./life";
 
@@ -18,10 +19,10 @@ export type BubbleKind = "ready" | "phew" | "dread" | "idle";
 export const BUBBLE = {
   /** At least this long between one bubble and the next (ms). */
   gapMs: 11000,
-  /** On screen this long, all told (ms): written on, read, faded. */
-  showMs: 1900,
-  writeMs: 420,
-  fadeMs: 360,
+  /** On the page this long, all told (ms): written, read, rubbed out. */
+  showMs: 2500,
+  writeMs: 560,
+  eraseMs: 720,
   /** Stray thoughts: a chance this often (ms), on your go while nothing's happening. */
   idleEveryMs: 8000,
   idleChance: 0.2,
@@ -50,14 +51,18 @@ export interface Bubble {
   seed: number;
 }
 
-/** What a bubble looks like at wall `ms`: how much is written, how faded, and a key that changes only when that does. Pure. */
+/**
+ * What a note looks like at wall `ms`: how much is written (p), how much the
+ * eraser has rubbed out (e), and a key that changes only when that does. Pure.
+ * Reduced motion: written at once, and gone at once (no scrub).
+ */
 export function bubbleAt(b: Bubble, ms: number, reduced = false) {
   const dt = ms - b.t0;
   if (dt < 0 || dt >= BUBBLE.showMs) return null;
   const f = Math.floor((dt * BUBBLE.fps) / 1000), q = (f * 1000) / BUBBLE.fps;
   const p = reduced ? 1 : Math.min(1, q / BUBBLE.writeMs);
-  const alpha = Math.min(1, (BUBBLE.showMs - q) / BUBBLE.fadeMs);
-  return { p, alpha, key: `${b.seed}|${p.toFixed(3)}|${alpha.toFixed(3)}` };
+  const e = reduced ? 0 : Math.max(0, Math.min(1, (q - (BUBBLE.showMs - BUBBLE.eraseMs)) / BUBBLE.eraseMs));
+  return { p, e, key: `${b.seed}|${p.toFixed(3)}|${e.toFixed(3)}` };
 }
 
 /** One bubble at a time, rarely. */
