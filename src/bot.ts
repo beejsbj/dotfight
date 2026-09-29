@@ -10,7 +10,7 @@
 import { sigma } from "./flick";
 import {
   canArrange, canSend, dist, flickers, garrison, hand, hitReach, isRing, other, powerFor, preview, reachOf, sendMax, whoGoes, columnSpots, roadBetween,
-  type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
+  type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
 } from "./game";
 import { gauss, rng } from "./geom";
 import { FEEL, RULES } from "./rules";
@@ -140,10 +140,35 @@ function bestShot(c: Ctx, shooters: Pt[], targets: Dot[], steady = 1): number {
   return best;
 }
 
-/** How much a soldier standing here is worth as a target: behind a wall a line is weaker; in the open a lunger can take him and live. */
-function worth(s: GameState, x: Pt & { owner: Player }): number {
-  for (const b of s.bases) if (b.owner === x.owner && dist(b, x) <= b.r * 1.05) return 0.9;
+/**
+ * How much a soldier standing here is worth as a target. In the open a lunger
+ * can take him and live, and nothing slows the line. Inside his own base a
+ * lunger who lands among them is shot, and the wall takes its toll: with
+ * garrisoned walls, the fuller his base (`men` of its own standing in it),
+ * the more a line through it falls short or shakes, so the less he's worth
+ * aiming at. A thinned base is worth going after; an empty ring is barely a
+ * wall. On flat walls every wall is the same (0.9).
+ */
+function worth(s: GameState, x: Pt & { owner: Player }, men?: (b: Base) => number): number {
+  for (const b of s.bases) {
+    if (b.owner !== x.owner || dist(b, x) > b.r * 1.05) continue;
+    const G = s.rules.garrison;
+    if (!G) return 0.9;
+    const n = men ? men(b) : garrison(s, b).length;
+    const f = Math.pow(Math.min(1, n / Math.max(1, s.size.soldiers)), G.curve);
+    // the snipe's loss at this wall, against the flat 0.1 that made a man inside worth 0.9
+    const loss = G.snipeLoss[0] + (G.snipeLoss[1] - G.snipeLoss[0]) * f;
+    const shake = G.lungeShake[0] + (G.lungeShake[1] - G.lungeShake[0]) * f;
+    return Math.max(0.3, Math.min(1.25, 1.3 - 0.3 - 1.0 * loss - 0.5 * shake));
+  }
   return 1.3;
+}
+
+/** Soldiers of `p` inside each of their bases, among these dots. */
+function manning(s: GameState, p: Player, ds: Pt[]) {
+  const n = new Map<number, number>();
+  for (const b of s.bases) if (b.owner === p) n.set(b.id, ds.filter((d) => dist(b, d) <= b.r * 1.05).length);
+  return (b: Base) => n.get(b.id) ?? 0;
 }
 
 function dots(s: GameState, p: Player, drop: Set<number>, moved?: { id: number; to: Pt }): Dot[] {
@@ -152,8 +177,11 @@ function dots(s: GameState, p: Player, drop: Set<number>, moved?: { id: number; 
     if (!x.alive || x.owner !== p || drop.has(x.id)) continue;
     const at = moved && moved.id === x.id ? { ...x, ...moved.to } : x;
     const walk = x.convoy !== undefined;
-    out.push({ x: at.x, y: at.y, id: x.id, w: walk ? 1.3 : worth(s, at), ...(walk && { walk }) });
+    out.push({ x: at.x, y: at.y, id: x.id, w: 1.3, ...(walk && { walk }) });
   }
+  // a wall is as tough as whoever is left standing in it
+  const men = manning(s, p, out.filter((d) => !d.walk));
+  for (const d of out) if (!d.walk) d.w = worth(s, { ...d, owner: p }, men);
   return out;
 }
 
@@ -197,11 +225,20 @@ function intents(c: Ctx, rand: () => number): Intent[] {
   const cy = foes.reduce((a, t) => a + t.y, 0) / Math.max(1, foes.length);
   const ranked = [...mine].sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
   const pickMine = () => ranked[Math.floor(Math.pow(rand(), 1.6) * ranked.length)];
+  // targets by what they're worth: men in the open and in thinned bases get more looks than a full base's
+  const ws = dots(s, other(c.me), new Set());
+  const wt = new Map(ws.map((d) => [d.id, d.w * d.w]));
+  const total = foes.reduce((a, f) => a + (wt.get(f.id) ?? 1), 0);
+  const pickFoe = (r: () => number) => {
+    let u = r() * total;
+    for (const f of foes) { u -= wt.get(f.id) ?? 1; if (u <= 0) return f; }
+    return foes[foes.length - 1];
+  };
   for (let i = 0; i < c.sk.tries; i++) {
     const me = pickMine();
     const kind: Kind = must || rand() < 0.35 ? "lunge" : "snipe";
     if (foes.length && rand() > 0.06) {
-      const foe = foes[Math.floor(rand() * foes.length)];
+      const foe = pickFoe(rand);
       const d = dist(me, foe);
       const angle = Math.atan2(foe.y - me.y, foe.x - me.x) + gauss(rand) * 0.025;
       // just past the target (steadier), or well past it (catch whatever's behind; a lunger through and out the far side)
@@ -252,8 +289,10 @@ function scoreSend(c: Ctx, a: Send, base: { mine: Dot[]; theirs: Dot[] }, before
     const ang = k * 2.4;
     return { x: to.x + Math.cos(ang) * to.r * 0.5, y: to.y + Math.sin(ang) * to.r * 0.5, id: x.id, w: 0.9 };
   });
-  const onRoad = outlook(c, [...mine, ...walkers], base.theirs, false);
-  const later = outlook(c, [...mine, ...there], base.theirs, false);
+  // with garrisoned walls, both bases' walls change: the one left thinner, the one manned up
+  const reweigh = (ds: Dot[]) => { const men = manning(s, c.me, ds.filter((d) => !d.walk)); for (const d of ds) if (!d.walk) d.w = worth(s, { ...d, owner: c.me }, men); return ds; };
+  const onRoad = outlook(c, reweigh([...mine.map((d) => ({ ...d })), ...walkers]), base.theirs, false);
+  const later = outlook(c, reweigh([...mine.map((d) => ({ ...d })), ...there]), base.theirs, false);
   // a ring manned again is a wall between them and a lunge; a base left empty is not
   const refill = isRing(s, to) ? 0.4 * a.n : 0;
   const left = garrison(s, from).filter((x) => !ids.has(x.id)).length;
@@ -327,14 +366,26 @@ export function botAction(s: GameState, level: Level | Skill = 1, seed = Date.no
 // --- positioning ----------------------------------------------------------------
 
 /**
+ * How many of each base's men stand inside its wall when the first flick
+ * comes, as shares of the base: at least `minIn`, at most `maxIn`. Within
+ * that, where each man stands is the bot's own judgement.
+ * - HALF (Dawood-bot's own): never fewer than half inside, the rest free.
+ * - ALL: everyone stays inside.
+ * - SPREAD: at most a quarter inside, the rest on the paper just outside.
+ */
+export interface Stance { minIn: number; maxIn: number }
+export const STANCES = { half: { minIn: 0.5, maxIn: 1 }, all: { minIn: 1, maxIn: 1 }, spread: { minIn: 0, maxIn: 0.25 } } as const satisfies Record<string, Stance>;
+
+/**
  * How Dawood-bot arranges his soldiers before the first flick: one at a
  * time, each to whichever of a few spots near his base leaves the enemy the
  * worst best line, keeping clear of his mates (a line through two earns a
- * snipe another flick). Unlike the lab's bot he never empties a base: at
- * least half of each garrison stays inside its wall, where a lunger who lands
- * among them is shot. Returns the arrange actions, then ready.
+ * snipe another flick). A man inside is worth less to the enemy the fuller
+ * his base's wall (garrisoned walls), and a lunger who lands among them is
+ * shot; he never empties a base unless the stance says so. Returns the
+ * arrange actions, then ready.
  */
-export function botArrange(s: GameState, seed = Date.now()): Action[] {
+export function botArrange(s: GameState, seed = Date.now(), stance: Stance = STANCES.half): Action[] {
   if (s.phase !== "position") return [{ t: "ready" }];
   const rand = rng(seed);
   const me = s.current;
@@ -343,9 +394,12 @@ export function botArrange(s: GameState, seed = Date.now()): Action[] {
   const out: Action[] = [];
   const pos = new Map(s.soldiers.filter((x) => x.alive && x.owner === me).map((x) => [x.id, { x: x.x, y: x.y }]));
   const foes = s.soldiers.filter((x) => x.alive && x.owner !== me).map((x) => ({ x: x.x, y: x.y }));
-  const insideHome = (id: number, p: Pt) => { const h = s.bases[s.soldiers[id].home!]; return dist(h, p) <= h.r * 1.05 - RULES.soldierRadius; };
+  // inside as the wall's garrison counts it (the engine's `inside`)
+  const insideHome = (id: number, p: Pt) => { const h = s.bases[s.soldiers[id].home!]; return dist(h, p) <= h.r * 1.05; };
   const score = (id: number, p: Pt) => {
-    const mine: Dot[] = [...pos].map(([k, q]) => { const at = k === id ? p : q; return { ...at, id: k, w: worth(s, { ...at, owner: me }) }; });
+    const at = [...pos].map(([k, q]) => ({ ...(k === id ? p : q), id: k }));
+    const men = manning(s, me, at);
+    const mine: Dot[] = at.map((d) => ({ ...d, w: worth(s, { ...d, owner: me }, men) }));
     let crowd = 0;
     for (const [k, q] of pos) if (k !== id) { const d = dist(p, q); if (d < 60) crowd += (60 - d) / 60; }
     return bestShot(c, foes, mine) + 0.15 * crowd;
@@ -357,12 +411,17 @@ export function botArrange(s: GameState, seed = Date.now()): Action[] {
     if (!home) continue;
     const mates = [...pos].filter(([k]) => s.soldiers[k].home === home.id);
     const inNow = mates.filter(([k, q]) => k !== id && insideHome(k, q)).length;
-    const mayLeave = inNow >= Math.ceil(mates.length / 2);
-    let bestP = pos.get(id)!, bestV = score(id, bestP);
-    for (let t = 0; t < 10; t++) {
-      const a = rand() * Math.PI * 2, r = Math.sqrt(rand()) * (home.r + reach * 0.9);
+    const mayLeave = inNow >= Math.ceil(mates.length * stance.minIn);
+    const mayStay = inNow + 1 <= Math.floor(mates.length * stance.maxIn);
+    const ok = (p: Pt) => (insideHome(id, p) ? mayStay : mayLeave);
+    let bestP = pos.get(id)!, bestV = ok(bestP) ? score(id, bestP) : Infinity;
+    const tries = bestV === Infinity ? 40 : 10;
+    for (let t = 0; t < tries; t++) {
+      const a = rand() * Math.PI * 2;
+      // forced out: a spot on the paper just outside the wall
+      const r = bestV === Infinity && !mayStay ? home.r * 1.05 + 1 + rand() * Math.max(0, home.r * -0.05 + reach - 2) : Math.sqrt(rand()) * (home.r + reach * 0.9);
       const p = { x: home.x + Math.cos(a) * r, y: home.y + Math.sin(a) * r };
-      if (!mayLeave && !insideHome(id, p)) continue;
+      if (!ok(p)) continue;
       if ([...pos].some(([k, q]) => k !== id && dist(q, p) < RULES.soldierRadius * 2.6)) continue;
       const trial = { ...s, soldiers: s.soldiers.map((o) => (pos.has(o.id) ? { ...o, ...pos.get(o.id)! } : o)) };
       if (canArrange(trial, id, p.x, p.y)) continue;
