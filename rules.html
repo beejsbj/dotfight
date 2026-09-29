@@ -99,7 +99,7 @@
             <canvas data-fig="setup" role="img" aria-label="A blue base drawn and jotted full of soldiers; one soldier is placed just outside its wall, inside a dashed pencil limit."></canvas>
             <figcaption>fig. 1 · a base, jotted full, one man stepping out</figcaption>
           </figure>
-          <p>Nobody has to stay in, but it pays. Walls protect: a snipe loses power going through one and a lunger's hand shakes. And a lunger who lands among your soldiers gets shot.</p>
+          <p>Nobody has to stay in, but it pays. <strong>A wall is as strong as the men inside it</strong>: a full base's wall eats most of a snipe and throws a lunger off his line. Men stepped outside don't hold it. And a lunger who lands among your soldiers gets shot.</p>
         </section>
 
         <section id="turn" class="rule" data-no="3">
@@ -124,7 +124,7 @@
         <section id="snipe" class="rule" data-no="5">
           <h2>Snipe</h2>
           <p>Your soldier stays put and the ink does the work. The line crosses out <strong>every</strong> enemy soldier it crosses. It goes straight through them.</p>
-          <p><strong>Power loss.</strong> The paper fights back. Going through a base wall costs the line a lot of its power; going through a soldier costs less. The line thins and falls short. <i class="tag">to test</i> <span class="lab">10% of what's left at a wall, 5% at a man; the wall at your back is free</span></p>
+          <p><strong>Power loss.</strong> The paper fights back. Going through a base wall costs the line power, as much as the men inside make it; going through a soldier costs a little. The line thins and falls short. <i class="tag">to test</i> <span class="lab">3% of what's left at an empty ring up to 85% at a full base, 5% at a man; the wall at your back is free</span></p>
           <figure>
             <canvas data-fig="snipe" role="img" aria-label="A blue line enters a red base, crosses out two soldiers inside, thinning at the wall and at each man, and runs out of ink before the red soldier beyond."></canvas>
             <figcaption>fig. 3 · a snipe tapers through a wall and two men</figcaption>
@@ -136,7 +136,7 @@
           <h2>Lunge <small>formerly “move”</small></h2>
           <p>Your soldier runs along his own ink, as far as a shot can go, and crosses out every enemy he runs through. He stands where the ink stops.</p>
           <ul class="points">
-            <li><strong>Walls shake him.</strong> Crossing a wall shakes his hand; crossing a soldier shakes it a little. It's the snipe's power loss, paid in shake instead. <i class="tag">to test</i> <span class="lab">about 4.6° at a wall, 2.3° at a man</span></li>
+            <li><strong>Walls shake him.</strong> Crossing a wall shakes his hand, as hard as the men inside make it; crossing a soldier shakes it a little. It's the snipe's power loss, paid in shake instead. <i class="tag">to test</i> <span class="lab">about 1° at an empty ring up to 57° at a full base, 2.3° at a man</span></li>
             <li><strong>Lunge again.</strong> Each kill earns another lunge by the same soldier, a little shakier every time <span class="lab">+0.05 rad, about 3°, a link</span>. You can always stop.</li>
           </ul>
           <figure>
@@ -145,7 +145,7 @@
           </figure>
           <ul class="points">
             <li><strong>Where he lands decides.</strong> Inside an enemy base with enemy soldiers in it, they shoot him on the spot. In an empty enemy ring nothing happens: there's nobody left to shoot him (and if he crossed out the last man inside on his way in, there's nobody by the time he lands). Off the page, he's gone. Whoever he crossed out on the way stays crossed out.</li>
-            <li><strong>Through a base.</strong> He may cut right through an enemy base, crossing out the soldiers inside, as long as he doesn't land in it. He pays shake at both walls and at every man he crosses: costly, but legal.</li>
+            <li><strong>Through a base.</strong> He may cut right through an enemy base, crossing out the soldiers inside, as long as he doesn't land in it. He pays shake at both walls and at every man he crosses: through a full base it's a wild gamble, through one shot down to a man or two it's cheap.</li>
           </ul>
           <figure>
             <canvas data-fig="lunge-through" role="img" aria-label="A blue lunger cuts straight through a red base, crossing out two soldiers inside, with a jolt at each wall, and lands safely on the far side."></canvas>
@@ -176,7 +176,11 @@
             <canvas data-fig="ring" role="img" aria-label="A blue base whose soldiers are all crossed out, with 'empty' pencilled under it; a blue soldier walks in from another base and mans it again."></canvas>
             <figcaption>fig. 7 · an empty ring, manned again</figcaption>
           </figure>
-          <p>Walls have friction: snipes lose power through them and lungers shake.</p>
+          <p><strong>A wall is as strong as the men inside it.</strong> Snipes lose power through a wall and lungers shake, and how much depends on who's standing inside it when the line crosses. A full base's wall is thick; every man lost thins it; an empty ring is nearly paper. So shooting a base down makes it easier to hit, even within one line: men crossed out on the way in don't hold the far wall. <i class="tag">to test</i> <span class="lab">a straight line from empty to full</span></p>
+          <figure>
+            <canvas data-fig="garrison" role="img" aria-label="Two red bases. A blue snipe into the full one thins hard at its wall and dies inside. A blue snipe through the other, shot down to two men, barely thins, runs out the far side and crosses out a red soldier beyond."></canvas>
+            <figcaption>fig. 8 · a full wall and a shot-down one</figcaption>
+          </figure>
         </section>
 
         <section id="last-stand" class="rule" data-no="9">
@@ -184,7 +188,7 @@
           <p>When a side is down to its <strong>last 4</strong>, they've lost their comrades, and they fight like it: that side flicks <strong>twice a turn, with a steadier hand</strong>.</p>
           <figure>
             <canvas data-fig="last-stand" role="img" aria-label="Four blue survivors circled in pencil among crossed-out comrades; two of them flick in the same turn, each with a narrow aim, and each crosses out a red soldier."></canvas>
-            <figcaption>fig. 8 · the last four</figcaption>
+            <figcaption>fig. 9 · the last four</figcaption>
           </figure>
         </section>
 
@@ -233,7 +237,8 @@
           <h2>Tactics</h2>
           <p>Nobody makes these rules up; they fall out of the ones above. Every one of them was a trick at the back of a classroom first.</p>
           <ul class="points">
-            <li><strong>Stay behind the wall.</strong> A wall costs a snipe power and shakes a lunger's hand. Men inside a ring are hard to reach; men standing out on the open paper are free.</li>
+            <li><strong>Stay behind the wall.</strong> A full base's wall eats most of a snipe and throws a lunger off his line, and every man inside makes it tougher for the rest. Men standing out on the open paper are free.</li>
+            <li><strong>Shoot the base down.</strong> Thin a base and its wall thins with it: the last few inside are far easier to reach than the first. And man a thinned base again before they finish it.</li>
             <li><strong>Look for a row.</strong> Two with one bullet: find enemy soldiers standing in a line and you flick again. So never leave yours in one.</li>
             <li><strong>Bait the lunge.</strong> One man stepped just outside your base looks like an easy kill. A lunger who runs through him and lands among the rest gets shot.</li>
             <li><strong>Catch the convoy.</strong> A send is on the open paper for exactly one of your turns. Five walking together is the row you were looking for. Send small, and send behind a base.</li>
@@ -246,12 +251,12 @@
           <h2>Still to test</h2>
           <p>Every number in this book is a guess from the rules lab, where a bot played itself a few thousand times. None of them has been felt at a real table yet.</p>
           <ul class="open">
-            <li><b>Snipe power loss</b>, 10% a wall and 5% a man. In the lab it keeps snipe streaks short.</li>
+            <li><b>Garrisoned walls</b>, from nearly paper when empty to 85% of a snipe and 57° of shake when full. In the lab a man inside is half as likely to be crossed out as one outside, and games run a third longer.</li>
             <li><b>Two with one bullet, with nothing else holding it back.</b> The longest turns (6 or 7 flicks on average, up to 15) come from lunge chains, not snipes.</li>
-            <li><b>Lunge shake</b> at walls and at men, and 3° a link. In the lab, lunges are seven flicks in ten: is cutting through a base too cheap?</li>
-            <li><b>How far outside</b> the walls you may stand. Inside only changed nothing; further out turned the game into lunges.</li>
+            <li><b>Lunge shake</b> at men, and 3° a link. In the lab, lunges are still seven flicks in ten: they go after men outside, and a kill earns another.</li>
+            <li><b>How far outside</b> the walls you may stand. Further out turned the game into lunges.</li>
             <li><b>Sends</b>: one enemy turn on the road, and the limit of 5.</li>
-            <li><b>Quick at 3 bases of 8</b>: about 16 turns in the lab; Classic about 28.</li>
+            <li><b>Quick at 3 bases of 8</b>: about 22 turns in the lab with garrisoned walls; Classic about 36.</li>
           </ul>
         </section>
 
