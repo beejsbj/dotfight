@@ -16,6 +16,15 @@ import { theme, type Theme } from "./theme";
 
 type Ctx = CanvasRenderingContext2D;
 
+/**
+ * How the spent (the dead, and the spots men have left) recede so the living
+ * stand out. The page is append-only, so this is decided when a dot is inked:
+ * a living soldier is held off the page (boil sprite) until he dies or moves,
+ * and only then is his dot put down, faded (or, with `hollow`, as an empty
+ * ring). `ring` puts an ink ring round each living man, on his sprite.
+ */
+export const CLARITY = { fade: 0.38, hollow: true, ring: false };
+
 /** How far along each mark is being drawn. Keys: `b<id>` base, `d<soldier>` dot, `m<index>` mark, `sign`. */
 export interface Ink {
   p(key: string): number; // 0..1; anything not scheduled is settled (1)
@@ -331,12 +340,12 @@ export function drawMark(g: Ctx, m: Mark, p = 1, wob = 0, to?: Pt) {
     m.at.forEach((q, j) => inkCircle(g, q.x, q.y, RULES.soldierRadius + 9, pen, m.seed + j * 17, 1.7 * k, 1, p));
   } else if (m.kind === "moved") {
     // the old dot stays, and a small arrow leaves it: he went that way (a cross means dead, so never a cross)
-    inkDot(g, m.x, m.y, RULES.soldierRadius, pen, m.seed, 1, 1, wob);
+    if (m.id === undefined) inkDot(g, m.x, m.y, RULES.soldierRadius, pen, m.seed, 1, 1, wob); // (his dot is the page's own, from dotSpots)
     if (to) inkLeft(g, m.x, m.y, to, pen, m.seed + 3, RULES.soldierRadius * 1.6, RULES.soldierRadius * 2.6, 1.9 * k, 0.85, p);
   } else if (m.kind === "kill") {
-    // crossed out and blotted: the cross, then the scribble over it
-    inkCross(g, m.x, m.y, RULES.soldierRadius * 2.1, pen, m.seed, 2.8 * k, 1, Math.min(1, p / 0.6), wob);
-    inkScribble(g, m.x, m.y, RULES.soldierRadius * 1.5, pen, m.seed + 5, 2.1 * k, 1, (p - 0.4) / 0.6);
+    // crossed out: a thin cross, and a light scribble over it. Quiet next to the living, but never a cross without it
+    inkCross(g, m.x, m.y, RULES.soldierRadius * 2.0, pen, m.seed, 2 * k, 0.6, Math.min(1, p / 0.6), wob);
+    inkScribble(g, m.x, m.y, RULES.soldierRadius * 1.3, pen, m.seed + 5, 1.3 * k, 0.5, (p - 0.4) / 0.6);
   } else inkCross(g, m.x, m.y, RULES.soldierRadius * 1.6, pen, m.seed, 2 * k, 1, p, wob);
 }
 
@@ -362,6 +371,15 @@ export function drawWalk(g: Ctx, a: Pt, b: Pt, color: string, seed: number, p = 
     g.stroke();
   }
   g.globalAlpha = 1;
+}
+
+/** The dot a man leaves on the page when he dies or moves on: faded, or hollow (see CLARITY). */
+export function drawSpent(g: Ctx, x: Pt & Dotted, at: Pt) {
+  if (CLARITY.hollow) {
+    g.globalAlpha = 0.7;
+    inkCircle(g, at.x, at.y, RULES.soldierRadius * 0.9, INK.pens[x.owner], x.id * 131 + 7, 1.7 * theme.ink.width, 1);
+    g.globalAlpha = 1;
+  } else inkDot(g, at.x, at.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, CLARITY.fade, 1);
 }
 
 export function drawDot(g: Ctx, x: Pt & Dotted, alpha = 1, grow = 1, at: { x: number; y: number } = x, wob = 0, amp = 1) {
@@ -519,7 +537,8 @@ export class PageLayer {
     for (const d of spots) {
       if (this.dots.has(d.key) || ink.live.has(`d${d.id}`) || hold?.dots.has(d.key)) continue;
       const x = s.soldiers[d.id];
-      added.push((g) => drawDot(g, x, 1, 1, d));
+      // held-then-released (the boil is on): he was alive until now, so his dot goes down spent
+      added.push((g) => (hold?.ghost ? drawSpent(g, x, d) : drawDot(g, x, 1, 1, d)));
       this.dots.add(d.key);
     }
     // a coffee ring darkens whatever the paper, so it always multiplies

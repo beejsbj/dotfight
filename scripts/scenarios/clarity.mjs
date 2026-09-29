@@ -30,11 +30,14 @@ export default async function (T, out) {
     return best;
   });
   console.log("war:", JSON.stringify(pick));
+  const variant = process.env.VARIANT ?? "ring";
+  await page.evaluate((v) => { const c = window.pft.CLARITY; c.ring = v === "ring"; c.hollow = v === "hollow"; }, variant);
   await page.evaluate(({ seed, turns }) => { window.pft.slow = false; window.pft.boilOn = true; const r = window.pft.fileWar(seed, turns); r.mode = { kind: "pnp" }; window.pft.resumeRecord(r); }, pick);
   await idle(T);
   await page.waitForFunction(() => window.pft.boil?.settled !== false, undefined, { timeout: 60000 });
   await page.waitForTimeout(800);
-  const shot = (name, clip) => page.screenshot({ path: `${out}/${tag}-${theme}-${name}.png`, clip });
+  await page.waitForTimeout(3000); // the lamp comes on
+  const shot = (name, clip) => page.screenshot({ path: `${out}/${tag}-${variant}-${theme}-${name}.png`, clip });
   await shot("bird");
   const spots = await page.evaluate(() => {
     const s = window.pft.s;

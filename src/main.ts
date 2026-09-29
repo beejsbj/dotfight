@@ -18,7 +18,7 @@ import { inkTime, wallTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
-import { drawPaper, drawYellow, PageLayer, SETTLED, type Ink } from "./page";
+import { drawPaper, drawYellow, CLARITY, PageLayer, SETTLED, type Ink } from "./page";
 import { LIFT_MS, SETTLE_MS, leaning, lift, PEN, settle, shiver, type PenPose } from "./pen";
 import { gunPull, tip, type Pose as Held } from "./motion";
 import * as motion from "./motion-input";
@@ -2458,7 +2458,7 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    stageStats, boil, life, LIFE, NOTE, noteSpot: noteSpotNow, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
+    stageStats, boil, life, LIFE, CLARITY, NOTE, noteSpot: noteSpotNow, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
     set boilClock(ms: number | undefined) { boilClock = ms; },
     /** Frame-exact captures: `pft.hand(true)`, then `pft.step(ms)` moves the game and the boil on together. */
     hand: (on: boolean) => { handClock = on ? { due: 0 } : null; if (on) boilClock ??= wall; else boilClock = undefined; },
