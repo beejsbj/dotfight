@@ -19,10 +19,20 @@ export default async function (T, out) {
     window.pft.resumeRecord(r);
   });
   await idle(T);
+  // a touch on a soldier picks him up; on a loaded box the first one can land before the page is ready, so try again
+  const pickUp = async (at) => {
+    for (let i = 0; i < 4; i++) {
+      await T.tap(at.x, at.y, 40);
+      const ok = await page.waitForFunction(() => window.pft.selected !== undefined, undefined, { timeout: 5000 }).then(() => true, () => false);
+      if (ok) return;
+      console.log("pick-up retry", i + 1, JSON.stringify(await T.state()));
+      await T.shot(`${out}/pickup-miss-${i}.png`);
+    }
+    throw new Error("could not pick a soldier up");
+  };
   const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).sort((a, b) => b.y - a.y)[0]; });
   const a = await T.world(me.x, me.y);
-  await T.tap(a.x, a.y, 40);
-  await page.waitForFunction(() => window.pft.selected !== undefined, undefined, { timeout: 20000 });
+  await pickUp(a);
   await page.waitForFunction(() => window.pft.cam.settled);
   await page.waitForTimeout(300);
   const settle = async () => { await page.waitForTimeout(700); };
@@ -34,6 +44,9 @@ export default async function (T, out) {
   }, [me.id]);
   const read = () => page.evaluate(() => ({ marks: window.pft.s.marks.length, busy: window.pft.busy, selected: window.pft.selected, status: document.querySelector("#status").textContent, mark: !document.querySelector("#cancel-ring").hidden, ring: document.querySelector("#cancel-ring").classList.contains("in") }));
   const before = await read();
+  // straight up the screen for this player (the other seat holds the page upside down)
+  const base = await page.evaluate(() => -(Math.PI / 2 + (window.pft.s.current === 1 ? Math.PI : 0)));
+  console.log(`player ${await page.evaluate(() => window.pft.s.current)}: forward is ${deg(base)}`);
   const W = 390, x0 = 195, y0 = 520;
   const k = (Math.PI * 2) / (W - 16);
   const moveTo = async (x, y, n = 14) => {
@@ -49,7 +62,7 @@ export default async function (T, out) {
   await moveTo(x0 - 98, y0);
   await settle();
   let u = await up();
-  const want1 = -Math.PI / 2 - (98 - 8) * k;
+  const want1 = base - (98 - 8) * k;
   check(Math.abs(wrap(u.angle - want1)) < 0.02, "slid left 98px: aim swung left", `angle ${deg(u.angle)} want ${deg(want1)}`);
   check(Math.abs(u.dx) < 1, "  and points straight up the screen", `dx ${u.dx.toFixed(2)} dy ${u.dy.toFixed(1)}`);
   await T.shot(`${out}/turn-1-left.png`);
@@ -58,14 +71,14 @@ export default async function (T, out) {
   await moveTo(x0 + 98, y0, 24);
   await settle();
   u = await up();
-  check(Math.abs(wrap(u.angle - (-Math.PI / 2 + 90 * k))) < 0.02 && Math.abs(u.dx) < 1, "slid right 98px: aim swung right, still straight up", `angle ${deg(u.angle)} dx ${u.dx.toFixed(2)}`);
+  check(Math.abs(wrap(u.angle - (base + 90 * k))) < 0.02 && Math.abs(u.dx) < 1, "slid right 98px: aim swung right, still straight up", `angle ${deg(u.angle)} dx ${u.dx.toFixed(2)}`);
   await T.shot(`${out}/turn-2-right.png`);
 
   // 3. all the way left from the middle of the screen: straight backwards, toward your own side
   await moveTo(1, y0, 30);
   await settle();
   u = await up();
-  check(Math.abs(wrap(u.angle - Math.PI / 2)) < 0.12 && Math.abs(u.dx) < 1, "thumb to the left edge: aim straight backwards, page upside down", `angle ${deg(u.angle)} dx ${u.dx.toFixed(2)}`);
+  check(Math.abs(wrap(u.angle - (base + Math.PI))) < 0.12 && Math.abs(u.dx) < 1, "thumb to the left edge: aim straight backwards, page upside down", `angle ${deg(u.angle)} dx ${u.dx.toFixed(2)}`);
   await T.shot(`${out}/turn-3-backwards.png`);
   await moveTo(1, y0 + 100, 10);
   await page.waitForTimeout(500);
@@ -78,8 +91,8 @@ export default async function (T, out) {
   await moveTo(x0, y0 + 112, 12);
   await settle();
   u = await up();
-  check(Math.abs(wrap(u.angle + Math.PI / 2)) < 0.02, "back at the middle: aim is forward again", `angle ${deg(u.angle)}`);
-  check(Math.abs(wrap(u.tgt)) < 0.05 && Math.abs(u.dx) < 1, "  page is upright", `rot ${deg(u.tgt)}`);
+  check(Math.abs(wrap(u.angle - base)) < 0.02, "back at the middle: aim is forward again", `angle ${deg(u.angle)}`);
+  check(Math.abs(wrap(u.tgt - (base === -Math.PI / 2 ? 0 : Math.PI))) < 0.05 && Math.abs(u.dx) < 1, "  page is facing its player", `rot ${deg(u.tgt)}`);
   check(u.fy > 0.68 && u.fy < 0.8, "soldier is pinned low on the screen", `fy ${u.fy.toFixed(2)}`);
   await T.shot(`${out}/turn-5-forward-pulled.png`);
   await page.evaluate(() => { window.pft.speed = 0.3; });
@@ -96,8 +109,7 @@ export default async function (T, out) {
   // 5. cancel still works after turning: turn, pull, back off, let go
   const me2 = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).sort((a, b) => window.pft.cam.toScreen(b.x, b.y).y - window.pft.cam.toScreen(a.x, a.y).y)[0]; });
   const b2 = await T.world(me2.x, me2.y);
-  await T.tap(b2.x, b2.y, 40);
-  await page.waitForFunction(() => window.pft.selected !== undefined, undefined, { timeout: 20000 });
+  await pickUp(b2);
   await page.waitForFunction(() => window.pft.cam.settled);
   const m1 = (await read()).marks;
   moveTo.at = [x0, y0];

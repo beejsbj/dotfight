@@ -45,6 +45,13 @@ export default async function (T, out) {
     if (j % 10 === 9) await check(`aiming, sweep ${j + 1}`);
     if (j === 44) await T.shot(`${out}/aiming.png`);
   }
+  // and swung right round: sliding sideways turns the sheet under the thumb (a full turn across the screen)
+  for (let j = 0; j < 50; j++) {
+    await T.touch("touchMove", [[195 + Math.sin(j / 6) * 180, 600 + 100]]);
+    await page.waitForTimeout(50);
+    if (j % 10 === 9) await check(`aiming, turning ${j + 1}`);
+    if (j === 29) await T.shot(`${out}/aiming-turned.png`);
+  }
   await T.touch("touchEnd", []);
   if (fails.length) { console.log(`MISMATCH: ${fails.join(", ")}`); process.exitCode = 1; }
   else console.log("all layers match a full redraw");
