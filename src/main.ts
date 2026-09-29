@@ -276,25 +276,33 @@ function canSendAny(c0: GameState) {
   return c0.bases.some((a) => a.owner === c0.current && sendMax(c0, a.id) > 0 && c0.bases.some((b) => b !== a && !canSend(c0, a.id, b.id, 1)));
 }
 
-// A pencilled ring at the height the pull began, once the thumb is back inside the dead
-// zone (no downward pull) after a real pull: let go there and the aim is dropped, nothing fired.
-// One small DOM circle (screen space), so no page or canvas layer is touched.
-let ringOn = false;
-let thumbX = 0; // where the thumb is across the screen (the ring rides under it, at the height the pull began)
+// A pencilled mark for the whole pull: a dot where the thumb went down, and the
+// dead zone drawn faintly as a ring at that height, riding under the thumb (the
+// page turns as you slide sideways; the pull is only the way down). With no
+// downward pull left after a real pull, the ring firms up (and ticks): let go
+// and the aim is dropped, nothing fired. One small fixed DOM element in screen
+// space, so no page or canvas layer is touched.
+let ringOn = false; // the thumb is inside the ring
+let markOn = false;
+let thumbX = 0; // where the thumb is across the screen
 const ringEl = document.createElement("div");
 ringEl.id = "cancel-ring";
 ringEl.hidden = true;
+ringEl.innerHTML = "<i></i>";
 document.body.append(ringEl);
 function syncRing() {
-  const on = !!aim && aim.charged && g.t === "aim" && !pull(aim).live;
-  if (on && g.t === "aim") {
+  const shown = !!aim && g.t === "aim";
+  if (shown && g.t === "aim") {
     const r = FEEL.minPullPx;
     ringEl.style.transform = `translate(${thumbX - r}px, ${g.sy - r}px)`;
     ringEl.style.width = ringEl.style.height = `${r * 2}px`;
+    (ringEl.firstElementChild as HTMLElement).style.transform = `translate(${g.sx - thumbX}px, 0)`; // the dot stays where the thumb began
   }
+  if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
+  const on = shown && !!aim && aim.charged && !pull(aim).live;
   if (on === ringOn) return;
   ringOn = on;
-  ringEl.hidden = !on;
+  ringEl.classList.toggle("in", on);
   if (on) { haptic("brink"); learn("cancel"); }
 }
 
