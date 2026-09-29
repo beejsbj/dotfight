@@ -460,12 +460,12 @@ function drawChain(g: Ctx, f: Frame, c: { at: Pt; link: number }, px: number, bo
 
 /** An earned flick waiting: `n` pencil tally strokes beside the man who earned it. */
 function drawTally(g: Ctx, f: Frame, t: { at: Pt; n: number }, px: number, box: Box) {
-  const w = Math.max(2.4, px * 2), h = 20;
+  const w = Math.max(3.2, px * 2.6), h = 34, gap = 12;
   for (let i = 0; i < t.n; i++) {
-    const a = upright(f, t.at, 20 + i * 8, -h * 0.5 - 6), b = upright(f, t.at, 20 + i * 8 + 1.5, h * 0.5 - 6);
+    const a = upright(f, t.at, 26 + i * gap, -h * 0.5 - 8), b = upright(f, t.at, 26 + i * gap + 2, h * 0.5 - 8);
     pencilLine(g, a, b, w, 91 + i, false);
   }
-  box.add(t.at.x, t.at.y, 60);
+  box.add(t.at.x, t.at.y, 80);
 }
 
 /** A lunger at speed: three short pencil streaks trailing from him, the way a kid draws a fast thing. */

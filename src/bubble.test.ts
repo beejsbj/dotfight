@@ -40,7 +40,7 @@ describe("pencil notes", () => {
 
   it("every moment has lines, in its mood unless a line says otherwise", () => {
     for (const k of Object.keys(LINES) as (keyof typeof LINES)[]) {
-      expect(LINES[k].length).toBeGreaterThan(3);
+      if (!["stand", "twoFor", "chain"].includes(k)) expect(LINES[k].length).toBeGreaterThan(3); // (the moments write their own words)
       for (let seed = 0; seed < 40; seed++) {
         const l = lineFor(k, seed);
         expect(l.text.length).toBeGreaterThan(0);
@@ -79,5 +79,34 @@ describe("pencil notes", () => {
     LIFE.bubbles = false;
     expect(new Bubbles().offer("idle", 1, 0, 3)).toBeNull();
     LIFE.bubbles = true;
+  });
+});
+
+describe("moments the field must announce", () => {
+  it("are always written, and chatter gives way to them", () => {
+    const b = new Bubbles();
+    const chat = b.offer("idle", 1, 1000, 3)!;
+    expect(chat).not.toBeNull();
+    const m = b.moment("stand", 2, 1500, 9, "LAST STAND!")!;
+    expect(b.showing(1600)?.text).toBe("LAST STAND!");
+    expect(m.important).toBe(true);
+    expect(b.pending).toHaveLength(0);
+  });
+
+  it("wait their turn rather than talk over each other, in order", () => {
+    const b = new Bubbles();
+    const a = b.moment("twoFor", 1, 1000, 1, "2 for 1!")!;
+    const c = b.moment("stand", 2, 1100, 2, "LAST STAND!")!;
+    expect(c.t0).toBeGreaterThanOrEqual(1000 + showOf(a));
+    expect(b.showing(1200)?.text).toBe("2 for 1!");
+    expect(b.showing(c.t0 + showOf(a) + 1 > 0 ? 1000 + showOf(a) + 1 : 0)).toBeNull(); // the gap between them
+    expect(b.showing(c.t0 + 10)?.text).toBe("LAST STAND!");
+  });
+
+  it("keep chatter quiet while one is waiting", () => {
+    const b = new Bubbles();
+    b.moment("twoFor", 1, 1000, 1, "2 for 1!");
+    b.moment("stand", 2, 1100, 2, "LAST STAND!");
+    expect(b.offer("idle", 3, 1000 + 20000, 5)).toBeNull();
   });
 });
