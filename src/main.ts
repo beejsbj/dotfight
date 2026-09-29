@@ -1270,7 +1270,7 @@ function roomNext() {
 function remoteArranges() {
   const l = link!, c0 = core()!;
   const walkers: Walk[] = [];
-  for (let e = l.peek(); e && (e.a as Payload).a.t === "arrange" && !roomCheck(c0, e.seat, e.a); e = l.peek()) {
+  for (let e = l.peek(); e && (e.a as Partial<Payload> | null)?.a?.t === "arrange" && !roomCheck(c0, e.seat, e.a); e = l.peek()) {
     const a = (e.a as Payload).a as Extract<Action, { t: "arrange" }>;
     const x = c0.soldiers[a.soldier];
     const from = { x: x.x, y: x.y };
