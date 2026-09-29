@@ -30,6 +30,7 @@ import { boldAt } from "./boil";
 import { boil, boilSeen, boilTick, forgetDrawn, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
+import { keepIcon, paperIcon, tearIcon } from "./icons";
 import { orderGames, type GameLine } from "./games";
 import { forgetRoom, listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
 import { apply as roomApply, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
@@ -832,12 +833,12 @@ function coverMenu() {
   const draw = () => {
     const carry = canResume ? (tearing === "local" ? `
       <div class="carry tearing">
-        <p class="struck">${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}</p>
-        <p class="ask">tear this page out? it's gone for good.</p>
-        <p class="acts"><button data-a="tear" data-code="local" class="rip">tear it out</button><button data-a="keep" class="pencil">keep it</button></p>
+        <div class="say"><p class="struck">${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}</p>
+        <p class="ask">tear this page out for good?</p></div>
+        <span class="acts"><button data-a="tear" data-code="local" class="ico rip" aria-label="tear this page out for good">${tearIcon()}</button><button data-a="keep" class="ico" aria-label="keep it">${keepIcon()}</button></span>
       </div>` : `
       <div class="carry">
-        <button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>
+        <span class="carry-icon">${paperIcon(themeOf(saved!.s.page?.theme).paper, -2)}</span><button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>
         <button data-a="ask" data-code="local" class="x" aria-label="tear this page out">×</button>
       </div>`) : "";
     menu.innerHTML = `${carry}${friendsList()}
@@ -1416,16 +1417,22 @@ function coverNote(t: string) {
 }
 
 function friendsList() {
-  const { running, finished } = orderGames(listRooms(localStorage));
+  const all = listRooms(localStorage);
+  const rooms = new Map(all.map((r) => [r.code, r]));
+  const { running, finished } = orderGames(all);
   if (!running.length && !finished.length) return "";
+  const tilt = (c: string) => [...c].reduce((n, ch) => n + ch.charCodeAt(0), 0) % 7 - 3;
+  const acts = (code: string, tear: string, keep: string) =>
+    `<span class="acts"><button data-a="tear" data-code="${esc(code)}" class="ico rip" aria-label="${tear}">${tearIcon()}</button><button data-a="keep" class="ico" aria-label="${keep}">${keepIcon()}</button></span>`;
   const row = (g: GameLine) => {
+    const r = rooms.get(g.code)!;
     if (tearing === g.code) return `<li class="game tearing">
-      <p class="struck">${esc(g.foe)}</p>
-      <p class="ask">tear it out of this phone? only your copy goes: ${esc(g.foe)} keeps theirs.</p>
-      <p class="acts"><button data-a="tear" data-code="${esc(g.code)}" class="rip">tear it out</button><button data-a="keep" class="pencil">keep it</button></p>
+      <div class="say"><p class="struck">${esc(g.foe)}</p>
+      <p class="ask">tear it out of this phone? ${esc(g.foe)} keeps theirs.</p></div>
+      ${acts(g.code, `tear ${esc(g.foe)}'s game out of this phone`, "keep it")}
     </li>`;
     return `<li class="game ${g.yours ? "yours" : g.running ? "theirs" : "done"}">
-      <button data-room="${esc(g.code)}" class="go"><b>${esc(g.foe)}</b>${g.standing ? `<span>${g.standing}</span>` : ""}${g.turn && g.running ? `<small>turn ${g.turn}</small>` : ""}</button>
+      <button data-room="${esc(g.code)}" class="go">${paperIcon(themeOf(r.theme ?? r.setup?.page?.theme).paper, tilt(g.code))}<b>${esc(g.foe)}</b>${g.standing ? `<span>${g.standing}</span>` : ""}${g.turn && g.running ? `<small>turn ${g.turn}</small>` : ""}</button>
       <button data-a="ask" data-code="${esc(g.code)}" class="x" aria-label="tear ${esc(g.foe)}'s game out of this phone">×</button>
     </li>`;
   };
