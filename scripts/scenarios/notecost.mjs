@@ -1,0 +1,34 @@
+// The cost of a soldier's line: script ms per rendered frame over its whole
+// life (written, read, gone), bird's-eye and leaning in, against the same
+// span with nothing said. THROTTLE=6 node scripts/playtest.mjs notecost <url>
+import { idle } from "../lib/phone.mjs";
+export default async function (T) {
+  const { page, cdp } = T;
+  await page.waitForTimeout(1000);
+  await page.evaluate(() => window.pft.theme?.apply("lamplight"));
+  await page.evaluate(() => { window.pft.slow = false; window.pft.boilOn = true; const r = window.pft.fileWar(7, 12); r.mode = { kind: "pnp" }; window.pft.resumeRecord(r); });
+  await idle(T);
+  await page.waitForFunction(() => window.pft.boil?.settled !== false, undefined, { timeout: 30000 });
+  const rate = +(process.env.THROTTLE ?? 1);
+  if (rate > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate });
+  const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.find((x) => x.alive && x.owner === s.current); });
+  const rows = [];
+  const span = async (label, note) => {
+    await page.evaluate(() => window.pft.bubbles.reset());
+    await page.waitForTimeout(400);
+    await page.evaluate(() => window.pft.frames(true));
+    if (note) await page.evaluate((id) => { const p = window.pft; for (let k = 0; k < 400 && !p.bubbles.cur; k++) { p.bubbles.reset(); p.speak("idle", id, p.wall, 1000 + k * 7); } p.poke(); }, me.id);
+    await page.waitForTimeout(2600);
+    const r = await page.evaluate(() => window.pft.frames());
+    rows.push(`${label.padEnd(30)} script p50 ${r.script.p50.toFixed(2)}ms p95 ${r.script.p95.toFixed(2)}ms max ${r.script.max.toFixed(1)}ms | n ${r.script.n}`);
+  };
+  await span("bird's-eye, nothing said", false);
+  await span("bird's-eye, a note", true);
+  await page.evaluate((at) => { window.pft.cam.sit(at, 2.4, 0, 0.5); window.pft.cam.snap(); window.pft.poke(); }, { x: me.x, y: me.y });
+  await page.waitForTimeout(600);
+  await span("leaning in, nothing said", false);
+  await span("leaning in, a note", true);
+  if (rate > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  console.log(`throttle ${rate}x`);
+  console.log(rows.join("\n"));
+}
