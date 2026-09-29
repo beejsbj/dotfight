@@ -509,6 +509,58 @@ export default async function (T, out) {
       await page.evaluate(() => window.pft.bubbles.reset());
     }
   }
+  // --- exchanges: two men talking --------------------------------------------------
+  //   exchange-<style>-<theme>          both lines up, bird's-eye at phone size
+  //   exchange-<style>-<theme>-lean     the same, leaning in on the pair
+  //   exchange-<style>-<theme>-beat     the beat, frame by frame (GIF, and a strip of six)
+  if (want("exchange")) {
+    const pair = (id) => page.evaluate((id) => {
+      // as main.ts picks: a comrade near enough to talk to, not so near their dots read as one
+      const s = window.pft.s, me = s.soldiers[id], d = (x) => Math.hypot(x.x - me.x, x.y - me.y);
+      const near = s.soldiers.filter((x) => x.alive && x.owner === me.owner && x.id !== id && d(x) <= 62 * 2.5).sort((a, b) => d(a) - d(b));
+      return (near.filter((x) => d(x) >= 42).sort((a, b) => Math.abs(d(a) - 80.6) - Math.abs(d(b) - 80.6))[0] ?? near[0])?.id;
+    }, id);
+    const say = (id, mate, text) => page.evaluate(({ id, mate, text }) => {
+      const p = window.pft;
+      for (let k = 0; k < 20000; k++) { p.bubbles.reset(); p.speak("chat", id, p.wall, 1000 + k * 7, mate); if (p.bubbles.cur?.reply && (!text || p.bubbles.cur.text === text)) { p.poke(); return `${p.bubbles.cur.text} / ${p.bubbles.cur.reply.text}`; } }
+      return null;
+    }, { id, mate, text });
+    for (const theme of (process.env.THEMES ?? "lamplight,blueprint").split(",")) {
+      await page.evaluate((id) => window.pft.theme?.apply(id), theme);
+      await war(7, 12);
+      { const style = "face";
+        await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
+        await step(0, 150);
+        const camp = await fullest("mine");
+        const men = await menIn(camp);
+        const lines = [["what's the plan", men[0].id], ["where's Dawood?", men[3].id], [undefined, men[5].id]];
+        for (const [i, [text, id]] of lines.entries()) {
+          const mate = await pair(id);
+          console.log(`exchange ${style} ${theme} ${i}:`, await say(id, mate, text));
+          await step(2300, 150);
+          const name = `exchange-${style}-${theme}${i ? `-${i}` : ""}`;
+          await page.screenshot({ path: `${out}/${name}.png` }); console.log("shot", name);
+          await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100);
+        }
+        // the beat, clipped round the pair
+        const id = men[0].id, mate = await pair(id);
+        const a = await page.evaluate(({ id, mate }) => { const s = window.pft.s, x = s.soldiers[id], y = s.soldiers[mate]; return { x: (x.x + y.x) / 2, y: (x.y + y.y) / 2 }; }, { id, mate });
+        await say(id, mate, "what's the plan");
+        const beat = `exchange-${style}-${theme}-beat`;
+        await seq(beat, 56, 1000 / 12, { [beat]: await box(a, 190) });
+        const fs = await import("node:fs");
+        const pick = [4, 11, 17, 26, 42, 51].map((k) => `${out}/${beat}-${String(k).padStart(3, "0")}.png`).filter((f) => fs.existsSync(f));
+        if (pick.length === 6) spawnSync("ffmpeg", ["-loglevel", "error", "-y", ...pick.flatMap((f) => ["-i", f]), "-filter_complex", "hstack=inputs=6", `${out}/${beat}-strip.png`], { stdio: "inherit" });
+        await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100);
+        // leaning in on the pair
+        await flat(a, 2.4);
+        await say(id, mate, "what's the plan");
+        await step(2300, 150);
+        await page.screenshot({ path: `${out}/exchange-${style}-${theme}-lean.png`, clip: await box(a, 190) }); console.log("shot lean");
+        await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100);
+      }
+    }
+  }
   await page.evaluate(() => window.pft.hand(false));
 }
 
