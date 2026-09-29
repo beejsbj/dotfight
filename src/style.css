@@ -185,7 +185,8 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 /* bookmarks: paper index tabs sticking out of the top edge */
 .tabs { position: absolute; z-index: 2; left: 34px; right: 14px; top: -31px; height: 44px; display: flex; gap: 5px; pointer-events: none; }
 .mark {
-  pointer-events: auto; flex: 0 1 auto; min-width: 48px; height: 44px; padding: 5px 9px 0; text-decoration: none; text-align: center;
+  pointer-events: auto; flex: 0 1 auto; min-width: 48px; height: 44px; padding: 0 9px 3px; text-decoration: none;
+  display: flex; align-items: center; justify-content: center; box-sizing: border-box;
   font-family: var(--hand); font-weight: 700; font-size: 19px; line-height: 1.05; color: #3a3530; white-space: nowrap;
   background: linear-gradient(180deg, color-mix(in srgb, var(--tab-c) 92%, #fff) 0, var(--tab-c) 100%);
   border-radius: 6px 6px 0 0; box-shadow: 0 -1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.35);
