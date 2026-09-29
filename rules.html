@@ -23,7 +23,14 @@
     <meta name="twitter:description" content="Dawood's school paper game, written down at last." />
     <meta name="twitter:image" content="https://dotfight.vercel.app/og-rules.jpg" />
     <script>
-      if (/[?&]og\b/.test(location.search)) document.documentElement.classList.add("og");
+      // a book you turn, unless it's the share card (?og) or you asked for one long page (?read=all)
+      (function (h, q) {
+        if (/[?&]og\b/.test(q)) return h.classList.add("og");
+        if (/[?&]read=all\b/.test(q)) return h.classList.add("scroll");
+        h.classList.add("paged");
+        // if the book hasn't bound itself in a few seconds, show the long page
+        setTimeout(function () { if (!h.classList.contains("ready")) { h.classList.remove("paged"); h.classList.add("scroll"); } }, 6000);
+      })(document.documentElement, location.search);
     </script>
   </head>
   <body class="book-1">
@@ -31,6 +38,10 @@
     <div class="dark" aria-hidden="true"></div>
 
     <a class="back" href="/" aria-label="Back to the game">← play</a>
+    <nav class="tools" aria-label="How to read">
+      <a class="as-page" href="?read=all">read as one page</a>
+      <a class="as-book" href="/rules" onclick="this.hash=location.hash">read as a book</a>
+    </nav>
 
     <header class="book">
       <div class="label">
@@ -56,9 +67,10 @@
           <li><a href="#winning">Winning</a></li>
           <li><a href="#quick-battle">Quick battle</a></li>
           <li><a href="#how-you-play">How you play</a></li>
+          <li><a href="#tactics">Tactics</a></li>
           <li><a href="#open">Still to test</a></li>
         </ol>
-        <a class="other-book" href="/rules/advanced">Book 2: advanced rules →</a>
+        <a class="other-book" href="/rules/advanced">Book 2: long war rules →</a>
       </nav>
     </header>
 
@@ -203,7 +215,7 @@
               <p>pick the bases, and the soldiers in each</p>
             </div>
           </div>
-          <a class="pointer" href="/rules/advanced"><b>There's more in the advanced rules.</b> Long war: bases with shapes, grooves and jolts, ink cover, bigger armies. <span>Book 2 →</span></a>
+          <a class="pointer" href="/rules/advanced"><b>There's more in the long war rules.</b> Long war: bases with shapes, grooves and jolts, ink cover, bigger armies. <span>Book 2 →</span></a>
         </section>
 
         <section id="how-you-play" class="rule" data-no="12">
@@ -217,7 +229,20 @@
           </ul>
         </section>
 
-        <section id="open" class="rule" data-no="13">
+        <section id="tactics" class="rule" data-no="13">
+          <h2>Tactics</h2>
+          <p>Nobody makes these rules up; they fall out of the ones above. Every one of them was a trick at the back of a classroom first.</p>
+          <ul class="points">
+            <li><strong>Stay behind the wall.</strong> A wall costs a snipe power and shakes a lunger's hand. Men inside a ring are hard to reach; men standing out on the open paper are free.</li>
+            <li><strong>Look for a row.</strong> Two with one bullet: find enemy soldiers standing in a line and you flick again. So never leave yours in one.</li>
+            <li><strong>Bait the lunge.</strong> One man stepped just outside your base looks like an easy kill. A lunger who runs through him and lands among the rest gets shot.</li>
+            <li><strong>Catch the convoy.</strong> A send is on the open paper for exactly one of your turns. Five walking together is the row you were looking for. Send small, and send behind a base.</li>
+            <li><strong>Soft to finish, hard to gamble.</strong> A soft flick is short and sure; save the hard, wild one for when a miss costs nothing.</li>
+            <li><strong>Mind the last four.</strong> Get a side down to four and they flick twice, steadier. Take the last few in one turn if you can, or be ready for it.</li>
+          </ul>
+        </section>
+
+        <section id="open" class="rule" data-no="14">
           <h2>Still to test</h2>
           <p>Every number in this book is a guess from the rules lab, where a bot played itself a few thousand times. None of them has been felt at a real table yet.</p>
           <ul class="open">
@@ -233,7 +258,7 @@
         <footer class="sign">
           <p class="signed">Dawood's game.</p>
           <p class="links">
-            <a href="/rules/advanced">→ book 2: advanced rules</a>
+            <a href="/rules/advanced">→ book 2: long war rules</a>
             <a href="/">→ play it</a>
             <a href="https://github.com/beejsbj/dotfight/blob/main/RULES.md">→ the rules as plain text</a>
           </p>

@@ -60,6 +60,20 @@ describe("the rulebooks", () => {
     for (const id of ["long-war", "send", "ink", "cover", "shapes", "circle", "prism", "cushion", "square", "soldiers", "open"]) expect(ids(advanced).has(id), id).toBe(true);
   });
 
+  it("calls book 2 the long war rules, at its old address", () => {
+    expect(advanced).toContain("<title>Long war rules");
+    expect(advanced).toContain("<b>Long War Rules</b>");
+    expect(core).toContain("Book 2: long war rules");
+    for (const text of [core, advanced]) expect(text.toLowerCase()).not.toMatch(/advanced rules/);
+  });
+
+  it("ends each book with its tactics, in the contents, before what's still to test", () => {
+    for (const text of [core, advanced]) {
+      expect(text).toContain('<a href="#tactics">Tactics</a>');
+      expect(text.indexOf('id="tactics"')).toBeLessThan(text.indexOf('id="open"'));
+    }
+  });
+
   it("links each book to the other", () => {
     expect(core).toContain('href="/rules/advanced"');
     expect(advanced).toContain('href="/rules"');

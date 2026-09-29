@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0b0706" />
-    <title>Advanced rules · %GAME_NAME%</title>
+    <title>Long war rules · %GAME_NAME%</title>
     <meta name="description" content="Book 2 of Dawood's pen-and-paper flick war: the long war, with bases that have shapes, grooves and jolts, ink that becomes cover, and bigger armies." />
     <link rel="canonical" href="https://dotfight.vercel.app/rules/advanced" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
@@ -12,18 +12,25 @@
     <meta property="og:type" content="article" />
     <meta property="og:site_name" content="%GAME_NAME%" />
     <meta property="og:url" content="https://dotfight.vercel.app/rules/advanced" />
-    <meta property="og:title" content="Advanced rules · %GAME_NAME%" />
+    <meta property="og:title" content="Long war rules · %GAME_NAME%" />
     <meta property="og:description" content="Book 2: the long war. Camps that bend lines round them, prisms, billiard cushions, grooves, jolts and ink cover." />
     <meta property="og:image" content="https://dotfight.vercel.app/og-rules-advanced.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="A second hand-written rulebook on the desk, with a drawing of ink lines bending hard round a full camp and barely round a thinned one." />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Advanced rules · %GAME_NAME%" />
+    <meta name="twitter:title" content="Long war rules · %GAME_NAME%" />
     <meta name="twitter:description" content="Book 2: the long war." />
     <meta name="twitter:image" content="https://dotfight.vercel.app/og-rules-advanced.jpg" />
     <script>
-      if (/[?&]og\b/.test(location.search)) document.documentElement.classList.add("og");
+      // a book you turn, unless it's the share card (?og) or you asked for one long page (?read=all)
+      (function (h, q) {
+        if (/[?&]og\b/.test(q)) return h.classList.add("og");
+        if (/[?&]read=all\b/.test(q)) return h.classList.add("scroll");
+        h.classList.add("paged");
+        // if the book hasn't bound itself in a few seconds, show the long page
+        setTimeout(function () { if (!h.classList.contains("ready")) { h.classList.remove("paged"); h.classList.add("scroll"); } }, 6000);
+      })(document.documentElement, location.search);
     </script>
   </head>
   <body class="book-2">
@@ -31,13 +38,17 @@
     <div class="dark" aria-hidden="true"></div>
 
     <a class="back" href="/" aria-label="Back to the game">← play</a>
+    <nav class="tools" aria-label="How to read">
+      <a class="as-page" href="?read=all">read as one page</a>
+      <a class="as-book" href="/rules/advanced" onclick="this.hash=location.hash">read as a book</a>
+    </nav>
 
     <header class="book">
       <div class="label">
         <p class="school">EXERCISE BOOK · SQUARED</p>
         <h1>%GAME_NAME_HTML%</h1>
         <p class="field"><span>Name</span><b>Dawood &amp; Burooj</b></p>
-        <p class="field"><span>Subject</span><b>Advanced Rules</b></p>
+        <p class="field"><span>Subject</span><b>Long War Rules</b></p>
         <p class="field"><span>Class</span><b>the long war</b></p>
         <p class="vol" aria-label="Book 2">2</p>
       </div>
@@ -50,6 +61,7 @@
           <li><a href="#cover">Ink as cover</a></li>
           <li><a href="#shapes">Shaped bases</a></li>
           <li><a href="#soldiers">Shaped soldiers</a></li>
+          <li><a href="#tactics">Tactics</a></li>
           <li><a href="#open">Still to test</a></li>
         </ol>
         <a class="other-book" href="/rules">← Book 1: core rules</a>
@@ -162,7 +174,21 @@
           <p>Their shape's power might wake up only in a last stand. <i class="tag">idea</i></p>
         </section>
 
-        <section id="open" class="rule" data-no="7">
+        <section id="tactics" class="rule" data-no="7">
+          <h2>Tactics</h2>
+          <p>The long war's page is a table to play off. What the shapes and the ink make possible:</p>
+          <ul class="points">
+            <li><strong>Curve it round a camp.</strong> A full camp bends every line near it, so a shot can swing round it into a base you can't see straight. Your own camps bend your lines too.</li>
+            <li><strong>Shoot the well down.</strong> A camp's pull is its garrison. Thin it and it stops bending, and your straight shots come back.</li>
+            <li><strong>Bank off a cushion.</strong> A glancing line bounces off a hexagon, so you can reach behind a wall; come in square and you go through instead.</li>
+            <li><strong>Put the prism in front.</strong> Your lines passing out through a triangle split in two. One flick through it covers two targets.</li>
+            <li><strong>Ride your own grooves.</strong> Meet your old line shallow and it carries you on; meet theirs steep and take the jolt rather than be cut short.</li>
+            <li><strong>Let the page fill.</strong> Ink piles up round bases and becomes cover. The open game is early; late on, you're shooting through scribble.</li>
+            <li><strong>Walk the long road behind something.</strong> A convoy is out for several turns. Route it behind a cushion or a wall of ink.</li>
+          </ul>
+        </section>
+
+        <section id="open" class="rule" data-no="8">
           <h2>Still to test</h2>
           <ul class="open">
             <li><b>Jolts and grooves</b>: how hard they shake and pull. Friendly ink carrying you and enemy ink slowing you was the least fair thing the lab tried (62% to whoever shot first).</li>
@@ -180,7 +206,7 @@
           <p class="links">
             <a href="/rules">← book 1: core rules</a>
             <a href="/">→ play it</a>
-            <a href="https://github.com/beejsbj/dotfight/blob/main/RULES.md#advanced-rules-long-war">→ the rules as plain text</a>
+            <a href="https://github.com/beejsbj/dotfight/blob/main/RULES.md#long-war-rules">→ the rules as plain text</a>
           </p>
         </footer>
       </article>

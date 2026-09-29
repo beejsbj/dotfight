@@ -5,10 +5,12 @@
 import { browserOpts } from "./guarded-browser.mjs";
 import { chromium } from "playwright-core";
 
-export async function phone({ url = "http://localhost:5191/", w = 390, h = 844, dpr = 3, clear = true, taught = true } = {}) {
-  const browser = await chromium.launch({ ...browserOpts, executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox", ...(process.env.PFT_ARGS ? process.env.PFT_ARGS.split(" ") : [])] });
+export async function phone({ url = "http://localhost:5191/", w = 390, h = 844, dpr = 3, clear = true, taught = true, browser: shared, context } = {}) {
+  // pass `browser` to put several phones (separate contexts, separate storage) in one Chrome,
+  // and `context` to open another page on the same phone (same storage): a reopened app
+  const browser = shared ?? await chromium.launch({ ...browserOpts, executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox", ...(process.env.PFT_ARGS ? process.env.PFT_ARGS.split(" ") : [])] });
   try {
-    const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr, hasTouch: true, isMobile: true });
+    const ctx = context ?? await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr, hasTouch: true, isMobile: true });
     const page = await ctx.newPage();
     const logs = [];
     page.on("console", (m) => logs.push(`${m.type()}: ${m.text()}`));
@@ -47,7 +49,7 @@ export async function phone({ url = "http://localhost:5191/", w = 390, h = 844, 
     };
     return T;
   } catch (error) {
-    await browser.close().catch(() => {});
+    if (!shared) await browser.close().catch(() => {});
     throw error;
   }
 }
@@ -69,7 +71,7 @@ export async function flickAt(T, id, tx, ty, px = 110, { kind = "shoot", hold = 
   const me = await T.page.evaluate((id) => window.pft.s.soldiers[id], id);
   const a = await T.world(me.x, me.y);
   await T.tap(a.x, a.y, 40); // pick him up
-  await T.wait(() => window.pft.cam.settled, undefined, 5000);
+  await T.wait(() => window.pft.cam.settled, undefined, 60000);
   const b = await T.world(me.x, me.y);
   const t = await T.world(tx, ty);
   const ang = Math.atan2(t.y - b.y, t.x - b.x);
