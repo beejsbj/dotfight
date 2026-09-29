@@ -25,7 +25,7 @@ import { leaning, PEN, type PenPose } from "./pen";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
-import { CUSTOM, RULES, SIZES, type Size } from "./rules";
+import { CUSTOM, FEEL, RULES, SIZES, type Size } from "./rules";
 import { boldAt } from "./boil";
 import { boil, boilSeen, boilTick, forgetDrawn, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
@@ -262,6 +262,7 @@ function acts() {
       html = `<span>send</span>${Array.from({ length: max }, (_, i) => `<button data-act="n" data-n="${i + 1}">${i + 1}</button>`).join("")}<button data-act="cancel" class="x">cancel</button>`;
     } else if (sending) html = `<button data-act="cancel" class="x">cancel the send</button>`;
     else {
+      if (selected !== undefined && !c0.chain) html += `<button data-act="down" class="x">put down</button>`;
       if (c0.chain) html += `<button data-act="stop" class="go">stop here</button>`;
       if (!c0.sent && canSendAny(c0)) html += `<button data-act="send">send men <small>free</small></button>`;
     }
@@ -272,6 +273,27 @@ function acts() {
 /** Is there any send the current player could make? */
 function canSendAny(c0: GameState) {
   return c0.bases.some((a) => a.owner === c0.current && sendMax(c0, a.id) > 0 && c0.bases.some((b) => b !== a && !canSend(c0, a.id, b.id, 1)));
+}
+
+// A pencilled ring where the pull began, once the thumb is back inside the dead
+// zone after a real pull: let go there and the aim is dropped, nothing fired.
+// One small DOM circle (screen space), so no page or canvas layer is touched.
+let ringOn = false;
+const ringEl = document.createElement("div");
+ringEl.id = "cancel-ring";
+ringEl.hidden = true;
+document.body.append(ringEl);
+function syncRing() {
+  const on = !!aim && aim.charged && g.t === "aim" && !pull(aim).live;
+  if (on && g.t === "aim") {
+    const r = FEEL.minPullPx;
+    ringEl.style.transform = `translate(${g.sx - r}px, ${g.sy - r}px)`;
+    ringEl.style.width = ringEl.style.height = `${r * 2}px`;
+  }
+  if (on === ringOn) return;
+  ringOn = on;
+  ringEl.hidden = !on;
+  if (on) { haptic("brink"); learn("cancel"); }
 }
 
 function status(msg?: string) {
@@ -288,13 +310,14 @@ function status(msg?: string) {
     else if (res || lapse) t = "";
     else if (isBot(s.current)) t = `${who} is lining up…`;
     else if (sending) t = sending.to !== undefined ? "how many go?" : sending.from !== undefined ? "…to another of your camps" : "drag from one of your camps to another";
-    else if (aim) t = pull(aim).live ? `let go to ${turn.verb(s, kind)}` : "pull back further…";
+    else if (aim) t = pull(aim).live ? (taught("cancel") ? `let go to ${turn.verb(s, kind)}` : `let go to ${turn.verb(s, kind)}, or slide back to the start to cancel`) : aim.charged ? "let go to cancel" : "pull back further…";
     else if (c0?.chain) t = "he lunges again, or stop";
     else if (motion.gun) t = motion.gun.armed < 1 ? "point the phone, hold it still…" : "flick your wrist to fire";
     else if (selected !== undefined) t = motion.live("gun") ? "pull back, or tap him and raise the phone" : `pull back from anywhere, let go`;
     else if (c0 && c0.left > 1) t = `${who}: ${c0.left} flicks this turn`;
     else t = lastNote ? `${lastNote}` : `${who}: pick up a soldier`;
   }
+  syncRing();
   $("#status").textContent = t;
   $("#status").classList.toggle("tap", t === RESEND);
 }
@@ -599,6 +622,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   selected = undefined;
   aim = null;
   busy = true;
+  acts();
   sfx.creak(0);
   // convoys marching as the pen changes hands wait for the ink to land
   holdLapse(o, before, first);
@@ -1584,6 +1608,7 @@ function select(id: number) {
   selected = id;
   sitOn(s.soldiers[id]);
   dirty = true;
+  acts();
   status();
 }
 
@@ -1592,6 +1617,7 @@ function standUp() {
   motion.lower();
   cam.overview();
   dirty = true;
+  acts();
   status();
 }
 
@@ -1835,6 +1861,16 @@ function up(e: PointerEvent) {
     const tapped = Math.hypot(p.x - g.sx, p.y - g.sy) < TAP;
     if (aim && e.type === "pointerup") {
       updateAim(p.x, p.y);
+      if (aim.charged && !pull(aim).live) {
+        // thumb back at the start: a cancel, quietly. He stays picked up.
+        aim = null;
+        sfx.creak(0);
+        g = { t: "none" };
+        acts();
+        status();
+        dirty = true;
+        return;
+      }
       const f = release(aim, T, (pw) => turn.lengthFor(s, kind, pw), turn.handFor(s, aim.soldierId, kind));
       const pw = pull(aim).power;
       const lean = penLean(pw);
@@ -1892,6 +1928,7 @@ $("#acts").onclick = (e) => {
   sfx.tap();
   const a = b.dataset.act;
   if (a === "ready") return perform({ t: "ready" }, () => handOver());
+  if (a === "down") { learn("cancel"); standUp(); dirty = true; return; }
   if (a === "send") { sending = {}; selected = undefined; cam.overview(); }
   else if (a === "cancel") { sending = null; arrowTo = null; }
   else if (a === "n" && sending?.to !== undefined) {

@@ -347,3 +347,11 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 
 /* the hand-off card is one big button (a haptic tap target on iPhone) */
 .handoff-tap { all: unset; display: block; width: 100%; cursor: pointer; }
+
+/* the cancel ring: where the pull began, drawn in pencil once you slide back onto it */
+#cancel-ring {
+  position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; box-sizing: border-box;
+  border: 2px dashed rgba(var(--desk-rgb), .8); border-radius: 48% 52% 46% 54% / 54% 46% 52% 48%;
+  background: rgba(var(--desk-rgb), .1);
+}
+#cancel-ring[hidden] { display: none; }

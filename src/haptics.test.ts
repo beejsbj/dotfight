@@ -4,7 +4,7 @@ import {
   type Backend, type BackendKind, type HapticEvent, type Pattern,
 } from "./haptics";
 
-const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "over"];
+const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "brink", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "over"];
 
 describe("pattern", () => {
   it("gives every event a playable pattern on both backends", () => {

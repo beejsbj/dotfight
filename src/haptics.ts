@@ -23,6 +23,7 @@ export type HapticEvent =
   | "notch" // a detent while pulling back (arg: power 0..1)
   | "wobble" // the hand starts to shake on a held flick
   | "flick" // let go (arg: power 0..1)
+  | "brink" // the pull is back at the start: let go to cancel
   | "settle" // a camp is drawn (under a tap)
   | "land" // a flicked line reaches its end (after a drag)
   | "kill" // a cross drawn (arg: which cross on this line, 1-based)
@@ -66,6 +67,7 @@ export function pattern(ev: HapticEvent, arg = 0): Pattern {
     // a tremor: uneven, fading in
     case "wobble": return { android: [12, 40, 16, 60, 20, 40, 14], ios: [0, 70, 170], priority: 2 };
     case "flick": return { android: [Math.round(32 + 30 * clamp01(arg))], ios: [0], priority: 3 };
+    case "brink": return { android: [10], ios: [0], priority: 1 };
     case "settle": case "land": return { android: [16], ios: [0], priority: 1 };
     case "kill": {
       const n = Math.max(1, Math.round(arg) || 1);
