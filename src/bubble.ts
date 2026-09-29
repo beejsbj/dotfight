@@ -5,8 +5,9 @@
 // his dot so you can tell who from bird's-eye. The big stuff (battle cries,
 // chants, a camp shooting an intruder, the last stand, the win) comes from a
 // camp instead: written arcing along its ring, so the speaker is obvious from
-// above. Rare on purpose: one on the page at most (plus one quick reply in an
-// exchange), a long gap between them, and most chances pass. Seeded,
+// above. Rare on purpose: one on the page at most (an exchange is two men,
+// each line at its own man's far side from the other, the answer a beat after
+// the question), a long gap between them, and most chances pass. Seeded,
 // cosmetic, never game state.
 //
 // Each line has a mood, and each mood its own hand: tiny (only caught leaning
@@ -45,8 +46,13 @@ export const BUBBLE = {
     shout: { showMs: 2900, writeMs: 420, eraseMs: 760 },
     chant: { showMs: 3400, writeMs: 1100, eraseMs: 800 },
   } as Record<Mood, { showMs: number; writeMs: number; eraseMs: number }>,
-  /** A reply in an exchange starts this far into the first line's time (fraction), and is read this long. */
-  replyAt: 0.55,
+  /**
+   * An exchange is two beats: the first line is written and read on its own,
+   * then the answer comes (`replyMs` after it starts). The first is held
+   * `holdMs` longer than a lone line so the two are read together, and it's
+   * rubbed out a moment before the answer (`replyHoldMs`).
+   */
+  exchange: { replyMs: 1150, holdMs: 1250, replyHoldMs: 450 },
   /** Stray thoughts: a chance this often (ms), on your go while nothing's happening. */
   idleEveryMs: 8000,
   idleChance: 0.2,
@@ -128,7 +134,13 @@ export const LINES: Record<BubbleKind, readonly Line[]> = {
   // tiny whispers, only caught leaning in
   tiny: ["psst", "I like you", "don't tell", "I'm scared", "he's cute", "is it me or", "shh", "I hid a sweet", "I can't feel my dot", "I miss Dawood", "the pen is huge", "I've never lunged"],
   // an exchange: a line and a nearby comrade's reply
-  chat: [chat("what's the plan", "no idea"), chat("you alright?", "no"), chat("is it lunch?", "it's always lunch"), chat("who's Dawood?", "the boss"), chat("did you see that", "I saw nothing"), chat("I'm going to lunge", "don't"), chat("cover me", "with what"), chat("are we winning", "define winning"), chat("I spy…", "a dot"), chat("nice weather", "it's a lamp"), chat("psst", "what"), chat("hold the line", "which line"), chat("left or right", "yes"), chat("scared?", "obviously"), chat("this page is nice", "it's fine")],
+  chat: [chat("what's the plan", "no idea"), chat("you alright?", "no"), chat("is it lunch?", "it's always lunch"), chat("who's Dawood?", "the boss"), chat("did you see that", "I saw nothing"), chat("I'm going to lunge", "don't"), chat("cover me", "with what"), chat("are we winning", "define winning"), chat("I spy…", "a dot"), chat("nice weather", "it's a lamp"), chat("psst", "what"), chat("hold the line", "which line"), chat("left or right", "yes"), chat("scared?", "obviously"), chat("this page is nice", "it's fine"),
+    chat("I've got a plan", "oh no"), chat("any sweets?", "one. mine."), chat("what if we lose", "new page"), chat("we're outnumbered", "count again"),
+    chat("my feet hurt", "you're a dot"), chat("is this the front?", "it's all front"), chat("where's Dawood?", "holding the pen"), chat("we're winning!", "don't jinx it"),
+    chat("any last words?", "lunch?"), chat("you blinked", "I don't have eyes"), chat("shall we sing?", "please don't"), chat("I think I'm smudged", "suits you"),
+    chat("tell my mum", "tell her what"), chat("they're coming", "they're dots"), chat("did he miss?", "he always misses"), chat("why are we round", "ask the pen"),
+    chat("is that a cross?", "don't look"), chat("whose go is it", "not ours"), chat("I'm knackered", "you've not moved"), chat("{them} look scared", "so do you"),
+    chat("do erasers hurt?", "shh"), chat("I'll go first", "after you")],
   // the last few (from their camp)
   last: ["hold the line!", "to the last!", "we few", "it's just us", grow("for Dawood!", "fooor Dawooood!"), "not like this", "stand fast!", whisper("it's been an honour"), "they shall not pass", "remember the camp"],
   // the war is won (from the winners' camp)
@@ -194,8 +206,10 @@ export interface Bubble {
   /** Which side of him it sits (screen): 1 right, -1 left. */
   side: 1 | -1;
   seed: number;
+  /** Held this much longer than its mood's time (ms): the first line of an exchange. */
+  hold?: number;
   /** An exchange: a nearby comrade's reply, written as this line is read. */
-  reply?: { text: string; mood: Mood; id: number; t0: number; seed: number };
+  reply?: { text: string; mood: Mood; id: number; t0: number; seed: number; hold: number };
 }
 
 const fill = (t: string, c: Context) => t.replace(/\{me\}/g, c.me).replace(/\{them\}/g, c.them).replace(/\{paper\}/g, c.paper);
@@ -221,8 +235,8 @@ export function lineFor(kind: BubbleKind, seed: number, c: Context): { text: str
  * eraser has rubbed out (e), and a key that changes only when that does. Pure.
  * Reduced motion: written at once, and gone at once (no scrub).
  */
-export function noteAt(mood: Mood, t0: number, seed: number, ms: number, reduced = false) {
-  const { showMs, writeMs, eraseMs } = BUBBLE.timing[mood];
+export function noteAt(mood: Mood, t0: number, seed: number, ms: number, reduced = false, hold = 0) {
+  const { writeMs, eraseMs } = BUBBLE.timing[mood], showMs = BUBBLE.timing[mood].showMs + hold;
   const dt = ms - t0;
   if (dt < 0 || dt >= showMs) return null;
   const f = Math.floor((dt * BUBBLE.fps) / 1000), q = (f * 1000) / BUBBLE.fps;
@@ -230,11 +244,11 @@ export function noteAt(mood: Mood, t0: number, seed: number, ms: number, reduced
   const e = reduced ? 0 : Math.max(0, Math.min(1, (q - (showMs - eraseMs)) / eraseMs));
   return { p, e, key: `${seed}|${p.toFixed(3)}|${e.toFixed(3)}` };
 }
-export const bubbleAt = (b: Bubble, ms: number, reduced = false) => noteAt(b.mood, b.t0, b.seed, ms, reduced);
-export const replyAt = (b: Bubble, ms: number, reduced = false) => (b.reply ? noteAt(b.reply.mood, b.reply.t0, b.reply.seed, ms, reduced) : null);
+export const bubbleAt = (b: Bubble, ms: number, reduced = false) => noteAt(b.mood, b.t0, b.seed, ms, reduced, b.hold);
+export const replyAt = (b: Bubble, ms: number, reduced = false) => (b.reply ? noteAt(b.reply.mood, b.reply.t0, b.reply.seed, ms, reduced, b.reply.hold) : null);
 
 /** How long a note stays, all told, its reply included. */
-export const showOf = (b: Bubble) => Math.max(BUBBLE.timing[b.mood].showMs, b.reply ? b.reply.t0 - b.t0 + BUBBLE.timing[b.reply.mood].showMs : 0);
+export const showOf = (b: Bubble) => Math.max(BUBBLE.timing[b.mood].showMs + (b.hold ?? 0), b.reply ? b.reply.t0 - b.t0 + BUBBLE.timing[b.reply.mood].showMs + b.reply.hold : 0);
 
 /** One note at a time, rarely. */
 export class Bubbles {
@@ -256,7 +270,11 @@ export class Bubbles {
     if (t0 - this.last < (loud ? BUBBLE.loudGapMs : BUBBLE.gapMs)) return null;
     if (unit(seed, 5) >= CHANCE[kind]) return null;
     this.cur = { kind, id, anchor: ANCHOR[kind], text, mood, t0, side: unit(seed, 11) < 0.5 ? -1 : 1, seed };
-    if (reply && mate !== undefined) this.cur.reply = { text: reply, mood: "say", id: mate, t0: t0 + BUBBLE.timing[mood].showMs * BUBBLE.replyAt, seed: seed + 101 };
+    if (reply && mate !== undefined) {
+      const x = BUBBLE.exchange;
+      this.cur.hold = x.holdMs;
+      this.cur.reply = { text: reply, mood: "say", id: mate, t0: t0 + x.replyMs, seed: seed + 101, hold: x.replyHoldMs };
+    }
     this.last = t0;
     return this.cur;
   }

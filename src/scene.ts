@@ -90,7 +90,13 @@ export interface Frame {
   boil?: { on: boolean; ms: number; bold: number };
 }
 
-export interface Note { text: string; mood: Mood; anchor: Anchor; at: Pt; r?: number; p: number; e: number; side: 1 | -1; seed: number; owner: 0 | 1 }
+export interface Note {
+  text: string; mood: Mood; anchor: Anchor; at: Pt; r?: number; p: number; e: number; side: 1 | -1; seed: number; owner: 0 | 1;
+  /** An exchange: the other speaker. */
+  with?: Pt;
+  /** An exchange's answer: the first line's key (seed|text), whose spot it must keep clear of. */
+  answers?: string;
+}
 
 export const page = new PageLayer();
 export const pageState = { epoch: 0, S: 1.6 };
@@ -520,6 +526,11 @@ class Clutter {
     const n = Math.max(8, Math.ceil((Math.PI * 2 * r) / (this.cell * 0.5)));
     for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; this.add(x + Math.cos(a) * r, y + Math.sin(a) * r, w); }
   }
+  /** Paint `w` over a rectangle turned by `ang`, a step every half cell. */
+  rect(cx: number, cy: number, hw: number, hh: number, ang: number, w: number) {
+    const ca = Math.cos(ang), sa = Math.sin(ang), d = this.cell * 0.5;
+    for (let v = -hh; v <= hh + 1e-6; v += d) for (let u = -hw; u <= hw + 1e-6; u += d) this.add(cx + u * ca - v * sa, cy + u * sa + v * ca, w);
+  }
   at(x: number, y: number) { const k = this.idx(x, y); return k < 0 ? 0 : this.g[k]; }
 }
 
@@ -542,7 +553,7 @@ const ANGLES: [number, number][] = [[0, 0], [0.22, 0.5], [-0.22, 0.5], [0.5, 1.4
 
 // The gap the note goes in (page units from the man) and the angle it's
 // written at (screen-relative), chosen once per note and remembered.
-type Spot = { key: string; dx: number; dy: number; ang: number; side: 1 | -1 };
+type Spot = { key: string; dx: number; dy: number; ang: number; side: 1 | -1; at: Pt; hw: number; hh: number };
 const spots: Spot[] = []; // the last few notes' spots (a line and its reply are up together)
 /** Dev: where the note showing was put (page offset from the man, its angle), or null. */
 export const noteSpotNow = () => spots[spots.length - 1] ?? null;
@@ -567,6 +578,11 @@ function noteSpot(f: Frame, b: Note, hw: number, hh: number, size: number, angK 
     else if (m.t === "stand") { for (const p of m.at) if (near(p)) { const q = L_(p); grid.disc(q.x, q.y, 9, 6); } }
     else if (m.pts.some(near)) { const pts = thin(m.pts, cell).map(L_); for (let j = 1; j < pts.length; j++) grid.seg(pts[j - 1], pts[j], 0.6); }
   }
+  // an exchange: the other man's ring is taken, and so is the line he's already said
+  const P = b.with ? L_(b.with) : null;
+  if (P) grid.disc(P.x, P.y, R + size * 0.4, 10);
+  const first = b.answers ? spots.find((m) => m.key.startsWith(`${b.answers}|`)) : undefined;
+  if (first) { const q = L_({ x: first.at.x + first.dx, y: first.at.y + first.dy }); grid.rect(q.x, q.y, first.hw + cell, first.hh + cell, first.ang, 14); }
   let best: { cost: number; dx: number; dy: number; ang: number; side: 1 | -1 } | null = null;
   const seed = rng(b.seed ^ 0x5eed);
   const nu = Math.max(2, Math.ceil((hw * 2) / cell)), nv = Math.max(2, Math.ceil((hh * 2) / cell));
@@ -590,6 +606,11 @@ function noteSpot(f: Frame, b: Note, hw: number, hh: number, size: number, angK 
         if (Math.abs(mx) <= hw + R && Math.abs(my) <= hh + R) continue;
         let cost = angCost * angK + (miss / size) * 4 + (miss > size * 1.5 ? 30 : 0);
         cost += 2.5 * (1 + Math.sin(a)) / 2 + (ring ? 1.5 : 0) + seed() * 0.6; // above him for choice, close for choice
+        if (P) {
+          // an exchange: on his own side, away from the other man, so each line is plainly its speaker's
+          const dM = Math.hypot(L.x, L.y) || 1, dP = Math.hypot(P.x, P.y) || 1;
+          cost += (Math.hypot(L.x - P.x, L.y - P.y) < dM ? 25 : 0) + 6 * (1 + (L.x * P.x + L.y * P.y) / (dM * dP)) / 2;
+        }
         // what the turned rect covers, a sample per cell
         for (let v = 0; v <= nv; v++) {
           const y = -hh + (v / nv) * hh * 2;
@@ -603,7 +624,7 @@ function noteSpot(f: Frame, b: Note, hw: number, hh: number, size: number, angK 
     }
   }
   const up = toPage(0, -(R + hh + size));
-  const spot: Spot = { key, ...(best ?? { dx: up.x - b.at.x, dy: up.y - b.at.y, ang: 0, side: 1 as const }) };
+  const spot: Spot = { key, at: { x: b.at.x, y: b.at.y }, hw, hh, ...(best ?? { dx: up.x - b.at.x, dy: up.y - b.at.y, ang: 0, side: 1 as const }) };
   spots.push(spot);
   if (spots.length > 4) spots.shift();
   return spot;
@@ -723,7 +744,8 @@ function drawNote(g: Ctx, f: Frame, b: Note, box: Box) {
   const rot = f.view.rot, c = Math.cos(rot), sn = Math.sin(rot);
   const ringOn = NOTE.ring && M.ring > 0;
   const rx = hw + (ringOn ? size * 0.5 : size * 0.05), ry = hh + (ringOn ? size * 0.3 : size * 0.1);
-  // a burst's spikes reach past the ring; a shout is yelled upright unless the paper's really full
+  // a burst's spikes reach past the ring; a shout is yelled upright unless the paper's really full.
+  // An exchange's two lines each sit on their own man's far side from the other (noteSpot).
   const spot = noteSpot(f, b, rx * (M.spiky ? 1.14 : 1), ry * (M.spiky ? 1.14 : 1), size, M.spiky ? 1.7 : 1);
   const ang = spot.ang, ca = Math.cos(ang), sa = Math.sin(ang);
   // local (screen-upright, at the man) <-> page

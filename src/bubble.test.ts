@@ -90,6 +90,13 @@ describe("pencil notes", () => {
     expect(replyAt(a, a.reply!.t0 + 50)).not.toBeNull();
     expect(showOf(a)).toBeGreaterThan(BUBBLE.timing[a.mood].showMs);
     expect(b.offer("idle", 3, a.reply!.t0 + 100, 5, ctx)).toBeNull();
+    // two beats: the answer comes once the line is written; the line is rubbed out before the answer
+    expect(a.reply!.t0).toBeGreaterThan(BUBBLE.timing[a.mood].writeMs);
+    const firstEnd = BUBBLE.timing[a.mood].showMs + a.hold!, replyEnd = a.reply!.t0 + BUBBLE.timing[a.reply!.mood].showMs + a.reply!.hold;
+    expect(replyEnd).toBeGreaterThan(firstEnd);
+    expect(bubbleAt(a, firstEnd - 1)).not.toBeNull();
+    expect(bubbleAt(a, firstEnd)).toBeNull();
+    expect(showOf(a)).toBe(replyEnd);
     // no mate about: no reply
     expect(new Bubbles().offer("chat", 1, 0, seed, ctx)!.reply).toBeUndefined();
   });

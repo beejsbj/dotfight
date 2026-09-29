@@ -2227,7 +2227,10 @@ function frame(now: number) {
       const c0 = core();
       let kind = strayKind(seeded(s.seed, s.turn, Math.floor(wall / 1000), 3), { lead, waited, inBase, heat: noteContext(me.owner).heat });
       if (kind === "chant" && c0 && inLastStand(c0, me.owner)) kind = "chantLast";
-      const mate = comrades(s, me.owner, me, RULES.baseRadius * 2.5, me.id)[0]?.id;
+      // an exchange wants a comrade near enough to talk to, but not so near their two dots read as one from above
+      const near = comrades(s, me.owner, me, RULES.baseRadius * 2.5, me.id);
+      const far = (x: Soldier) => Math.abs(Math.hypot(x.x - me.x, x.y - me.y) - RULES.baseRadius * 1.3);
+      const mate = (near.filter((x) => Math.hypot(x.x - me.x, x.y - me.y) >= RULES.soldierRadius * 6).sort((a, b) => far(a) - far(b))[0] ?? near[0])?.id;
       if (ANCHOR[kind] === "base") { const camp = campOf(me.id); if (camp !== undefined) speak(kind, camp); }
       else speak(kind, me.id, wall, undefined, mate);
     }
@@ -2273,10 +2276,10 @@ function currentFrame(): Frame {
     const bs = bubbleAt(bb, wall, reduced);
     if (bs) {
       if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
-      else { const x = s.soldiers[bb.id]; if (x?.alive) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: x, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner }; }
+      else { const x = s.soldiers[bb.id]; if (x?.alive) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: x, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && s.soldiers[bb.reply.id] }; }
     }
     const rs = replyAt(bb, wall, reduced), rx = bb.reply && s.soldiers[bb.reply.id];
-    if (rs && rx?.alive) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rx, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner };
+    if (rs && rx?.alive) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rx, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: s.soldiers[bb.id], answers: `${bb.seed}|${bb.text}` };
   }
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
