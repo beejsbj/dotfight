@@ -1,7 +1,8 @@
 import { guardBrowserJob, browserOpts } from "./lib/guarded-browser.mjs";
 await guardBrowserJob();
 
-// Screenshots of both rulebooks (/rules and /rules/advanced) and their share cards.
+// Screenshots of both rulebooks (/rules, and /rules/advanced: the long war) and their share cards.
+// The books open as books you turn; "-full" shots are the one-long-page reading (?read=all).
 // Needs the dev server running and a Chrome/Chromium binary:
 //   npm run dev -- --port 5173 &
 //   node scripts/rules-page.mjs http://localhost:5173/          # shots into docs/shots/rules-page/
@@ -41,7 +42,7 @@ for (const [book, path, stops] of books) {
       const { ctx, p } = await open(viewport, dpr, "reduce", "", path);
       await p.screenshot({ path: `${out}/${name}-top.jpg`, type: "jpeg", quality: 82 });
       await ctx.close();
-      const flat = await open(viewport, 1, "reduce", "", path);
+      const flat = await open(viewport, 1, "reduce", "", `${path}?read=all`);
       await flat.p.screenshot({ path: `${out}/${name}-full.jpg`, fullPage: true, type: "jpeg", quality: 78 });
       await flat.ctx.close();
     }

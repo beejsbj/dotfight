@@ -7,12 +7,19 @@ import "@fontsource/caveat/latin-700.css";
 import "@fontsource/patrick-hand/latin-400.css";
 import "@fontsource/special-elite/latin-400.css";
 import "./rulebook.css";
+import "./book.css";
 import { INK, inkCircle, inkPolygon, paperGrain } from "../ink";
 import { woodTexture } from "../textures";
 import { FIGURES, type Figure } from "./figures";
+import { clock } from "./clock";
+import { openBook } from "./flip";
 
 const root = document.documentElement;
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches || root.classList.contains("og");
+// Read as a book (turning pages) unless asked for one long page (?read=all) or the share card (?og).
+const paged = root.classList.contains("paged");
+// (the page can fall back to one long page after this is read, if the fonts are slow)
+const inBook = () => paged && root.classList.contains("paged");
 
 // --- the desk and the paper, painted by the game's own texture code ------------
 
@@ -26,6 +33,8 @@ interface Live {
   fig: Figure;
   t: number;
   from?: number;
+  /** in a book, the finished drawing as a picture on its page */
+  img?: HTMLImageElement;
 }
 
 const lives: Live[] = [];
@@ -45,36 +54,115 @@ function paint(l: Live) {
   l.fig.draw(g, l.t);
 }
 
+// In a book, a finished drawing is swapped for a picture of itself. A canvas is
+// a compositor layer of its own and a picture isn't, so a turning leaf moves as
+// one piece: on a throttled phone that about halves the time a turning frame takes.
+function freeze(l: Live) {
+  // (a drawing not yet drawn is a blank picture until its page opens)
+  if (!inBook() || l.from !== undefined || (l.t > 0 && l.t < 1)) return;
+  l.el.toBlob((b) => {
+    if (!b || l.from !== undefined) return;
+    let img = l.img;
+    if (!img) {
+      img = l.img = document.createElement("img");
+      img.className = "fig";
+      img.alt = l.el.getAttribute("aria-label") ?? "";
+      img.style.aspectRatio = l.el.style.aspectRatio;
+      if (!still) { img.title = "tap to draw it again"; img.addEventListener("click", () => again(l)); }
+      l.el.after(img);
+    } else URL.revokeObjectURL(img.src);
+    const done = img;
+    done.hidden = true;
+    done.src = URL.createObjectURL(b);
+    done.decode().then(() => { if (l.from === undefined) { done.hidden = false; l.el.hidden = true; } }, () => {});
+  });
+}
+function thaw(l: Live) {
+  if (!l.img || !l.el.hidden) return;
+  l.el.hidden = false;
+  l.img.hidden = true;
+}
+function again(l: Live) {
+  if (l.from !== undefined) return;
+  thaw(l);
+  l.t = 0;
+  play(l);
+}
+
 function fit(l: Live) {
-  const w = l.el.clientWidth;
+  const w = l.el.hidden && l.img ? l.img.clientWidth : l.el.clientWidth;
   if (!w) return;
   const dpr = Math.min(2.5, window.devicePixelRatio || 1);
   const pw = Math.round(w * dpr), ph = Math.round((w * dpr * l.fig.h) / l.fig.w);
   if (l.el.width !== pw || l.el.height !== ph) { l.el.width = pw; l.el.height = ph; }
   paint(l);
+  freeze(l);
 }
 
 let running = false;
-function tick(now: number) {
+function tick() {
+  const now = clock.now();
   running = false;
   for (const l of lives) {
     if (l.from === undefined) continue;
     l.t = Math.min(1, (now - l.from) / l.fig.dur);
     paint(l);
-    if (l.t >= 1) l.from = undefined;
+    if (l.t >= 1) { l.from = undefined; freeze(l); }
     else running = true;
   }
   if (running) requestAnimationFrame(tick);
 }
 function play(l: Live) {
   if (still) return;
-  l.from = performance.now();
+  thaw(l);
+  l.from = clock.now();
   if (!running) { running = true; requestAnimationFrame(tick); }
 }
 
-// Handwriting in the figures needs the fonts first.
-Promise.all([document.fonts.load("400 18px Caveat"), document.fonts.load("700 18px Caveat")]).finally(() => {
+/** A figure drawn finished and faint, for the ink showing through the back of its page. */
+function ghost(el: HTMLCanvasElement) {
+  const fig = FIGURES[el.dataset.ghost!];
+  const w = el.clientWidth;
+  if (!fig || !w) return;
+  const k = Math.min(1.5, window.devicePixelRatio || 1);
+  el.width = Math.round(w * k);
+  el.height = Math.round((w * k * fig.h) / fig.w);
+  const g = el.getContext("2d")!;
+  g.setTransform(el.width / fig.w, 0, 0, el.width / fig.w, 0, 0);
+  fig.draw(g, 1);
+  el.toBlob((b) => {
+    if (!b) return;
+    const img = document.createElement("img");
+    img.className = "fig";
+    img.alt = "";
+    img.style.aspectRatio = el.style.aspectRatio;
+    img.src = URL.createObjectURL(b);
+    img.decode().then(() => el.replaceWith(img), () => {});
+  });
+}
+
+function book() {
+  try {
+    openBook({
+      still,
+      laidOut: () => lives.forEach(fit),
+      // a drawing draws itself when its page opens
+      opened: (sides) => { for (const l of lives) if (l.t === 0 && l.from === undefined && sides.some((s) => s?.contains(l.el))) play(l); },
+      ghost,
+    });
+    root.classList.add("ready");
+  } catch (e) {
+    // if the book can't be bound, read it as one long page
+    console.error(e);
+    location.replace(`${location.pathname}?read=all${location.hash}`);
+  }
+}
+
+function scroll() {
   for (const l of lives) fit(l);
+  // the fonts have moved things since the browser jumped to the address: jump again
+  const at = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+  if (at) at.scrollIntoView({ behavior: "instant", block: "start" });
   if (!still && "IntersectionObserver" in window) {
     const seen = new IntersectionObserver((entries) => {
       for (const e of entries) {
@@ -86,11 +174,18 @@ Promise.all([document.fonts.load("400 18px Caveat"), document.fonts.load("700 18
     }, { threshold: 0.45 });
     for (const l of lives) seen.observe(l.el);
   } else for (const l of lives) { l.t = 1; paint(l); }
+}
+
+// Handwriting in the figures, and the pages' measurements, need the fonts first.
+const fonts = ["400 18px Caveat", "700 18px Caveat", "400 18px 'Patrick Hand'", "400 12px 'Special Elite'"];
+Promise.all(fonts.map((f) => document.fonts.load(f))).finally(() => {
+  if (inBook()) book();
+  else scroll();
   // tap a drawing to watch it again
   for (const l of lives) {
     if (still) continue;
     l.el.title = "tap to draw it again";
-    l.el.addEventListener("click", () => { if (l.from === undefined) { l.t = 0; play(l); } });
+    l.el.addEventListener("click", () => again(l));
   }
   document.body.classList.add("drawn");
 });
@@ -116,6 +211,7 @@ icons();
 
 let resizing = 0;
 addEventListener("resize", () => {
+  if (inBook()) return;
   cancelAnimationFrame(resizing);
   resizing = requestAnimationFrame(() => lives.forEach(fit));
 });
