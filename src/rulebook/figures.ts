@@ -276,15 +276,15 @@ const snipe: Figure = {
 
 /** Garrisoned walls: a full base's wall eats a snipe; a base shot down is paper. */
 const garrisonWalls: Figure = {
-  w: 400, h: 240, dur: 3800,
+  w: 400, h: 256, dur: 3800,
   draw(g, t) {
     const r = 46;
     // left: a full base. The line pays most of its power at the wall and dies inside.
-    const A = P(112, 104), sa = P(92, 228);
+    const A = P(112, 100), sa = P(94, 212);
     const la = bowed(sa, P(128, 8), 0.02);
     const inA = la.findIndex((p) => Math.hypot(p.x - A.x, p.y - A.y) < r) / (la.length - 1);
     const stopA = inA + 0.1;
-    const menA = jot(A, r, 9, 0.3).filter((p) => !onLine(la, p));
+    const menA = jot(A, r * 1.1, 13, 0.3).filter((p) => distToPath(p, la).d > DOT + 5).slice(0, 8);
     inkCircle(g, A.x, A.y, r, RED, 610);
     menA.forEach((p, i) => dot(g, p, RED, 611 + i));
     dot(g, sa, BLUE, 620);
@@ -294,12 +294,12 @@ const garrisonWalls: Figure = {
     const ghostA = seg(t, 0.36, 0.46);
     if (ghostA > 0) pencilLine(g, at(la, stopA + 0.01), at(la, stopA + 0.01 + (0.97 - stopA) * ghostA), 1.1, 622, true);
     // right: the same base shot down to two. Its wall is nearly paper; the line runs on and takes the man behind.
-    const B = P(292, 104), sb = P(272, 228);
+    const B = P(292, 100), sb = P(274, 212);
     const lb = bowed(sb, P(308, 8), 0.02);
     const inB = lb.findIndex((p) => Math.hypot(p.x - B.x, p.y - B.y) < r) / (lb.length - 1);
     const insideB = lb.map((p) => Math.hypot(p.x - B.x, p.y - B.y) < r);
     const outB = insideB.lastIndexOf(true) / (lb.length - 1);
-    const menB = jot(B, r, 9, 1.7).filter((p) => !onLine(lb, p));
+    const menB = jot(B, r * 1.1, 13, 1.7).filter((p) => distToPath(p, lb).d > DOT + 5).slice(0, 8);
     const far = at(lb, 0.9);
     inkCircle(g, B.x, B.y, r, RED, 630);
     menB.forEach((p, i) => { dot(g, p, RED, 631 + i); if (i >= 2) kill(g, p, BLUE, 640 + i); });
@@ -309,10 +309,12 @@ const garrisonWalls: Figure = {
     const headB = ease(seg(t, 0.44, 0.78));
     taperLine(g, lb, wb, BLUE, 652, headB);
     if (headB > along(lb, far)) kill(g, far, BLUE, 653, seg(t, 0.44 + along(lb, far) * 0.34, 0.52 + along(lb, far) * 0.34));
-    // notes
-    note(g, "full: a thick wall", A.x, A.y + r + 20, seg(t, 0.3, 0.42), { align: "center" });
-    note(g, "shot down: paper", B.x, B.y + r + 20, seg(t, 0.8, 0.9), { align: "center" });
-    note(g, "a wall is as strong as the men inside it", 200, 234, seg(t, 0.88, 1), { align: "center", color: BLUE, weight: 700, size: 18, rot: -0.015 });
+    // notes, clear of the lines: outside each base
+    note(g, "full:", A.x - 22, A.y + r + 22, seg(t, 0.3, 0.38), { align: "right", size: 17 });
+    note(g, "a thick wall", A.x - 22, A.y + r + 42, seg(t, 0.32, 0.42), { align: "right", size: 17 });
+    note(g, "shot down:", B.x + 14, B.y + r + 22, seg(t, 0.8, 0.86), { size: 17 });
+    note(g, "paper", B.x + 14, B.y + r + 42, seg(t, 0.82, 0.9), { size: 17 });
+    note(g, "a wall is as strong as the men inside it", 200, 246, seg(t, 0.88, 1), { align: "center", color: BLUE, weight: 700, size: 18, rot: -0.015 });
   },
 };
 
