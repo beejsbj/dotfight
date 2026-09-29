@@ -20,6 +20,8 @@ import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
 import { drawPaper, drawYellow, PageLayer, SETTLED, type Ink } from "./page";
 import { LIFT_MS, SETTLE_MS, leaning, lift, PEN, settle, shiver, type PenPose } from "./pen";
+import { gunPull, tip, type Pose as Held } from "./motion";
+import * as motion from "./motion-input";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
@@ -52,6 +54,11 @@ let kind: Kind = "snipe";
 let selected: number | undefined;
 let aim: Pull | null = null;
 let aimAngle = 0; // world angle of the current pull
+let byThumb = { angle: 0, dist: 0 }; // the pull as the thumb has it, before the phone's nudge
+let nudgeFrom: Held | null = null; // how the phone was held when the pull began
+let penSide = 0; // the pen's sideways lean from the nudge
+let gunFwd = 0; // pen falcon: straight ahead on the page when the phone was raised
+let gunTap = false; // this touch put a raised phone down: the tap does nothing else
 let botAim: { soldierId: number; angle: number; power: number; t0: number } | null = null;
 let ghost: Frame["ghost"];
 let busy = false; // a flick is resolving, the bot is thinking, or the page is turning
@@ -302,7 +309,8 @@ function status(msg?: string) {
     else if (aim) t = pull(aim).live ? `let go to ${turn.verb(s, kind)}` : "pull back further…";
     else if (c0?.chain) t = "he lunges again, or stop";
     else if (unit) t = "";
-    else if (selected !== undefined) t = LIFE.unitCam && !taught("unitcam") && taught("aim") ? "pull back and let go, or tap him again" : `pull back from anywhere, let go`;
+    else if (motion.gun) t = motion.gun.armed < 1 ? "point the phone, hold it still…" : "flick your wrist to fire";
+    else if (selected !== undefined) t = motion.live("gun") ? "pull back, or tap him and raise the phone" : LIFE.unitCam && !taught("unitcam") && taught("aim") ? "pull back and let go, or tap him again" : `pull back from anywhere, let go`;
     else if (c0 && c0.left > 1) t = `${who}: ${c0.left} flicks this turn`;
     else t = lastNote ? `${lastNote}` : `${who}: pick up a soldier`;
   }
@@ -332,6 +340,7 @@ function reset() {
   ghost = undefined;
   selected = undefined;
   lastNote = "";
+  motion.lower();
   lapse = null;
   lapseDue = null;
   sending = null;
@@ -1126,6 +1135,7 @@ function showSettings() {
     ${row("sound", !sfx.muted, "sound", "pen, paper, lamp")}
     ${haptics.supported ? row("haptics", haptics.enabled, "haptics", "the pen felt under your thumb") : ""}
     ${row("voices", voice.level > 0, `voices: ${voice.levelName()}`, "the soldiers' little voices")}
+    ${motion.settingsHtml(row)}
     <h3>Paper</h3>
     ${row("surprise", !chosen, "a surprise each time", chosen ? `always the ${themeOf(chosen).name.toLowerCase()}` : "a different book every time you open it")}
     <div class="papers" role="radiogroup" aria-label="Paper"></div>
@@ -1149,6 +1159,7 @@ function showSettings() {
     const b = (e.target as HTMLElement).closest("button");
     if (!b) return;
     sfx.tap();
+    if (motion.settingsClick(b, () => { if (!$("#sheet").hidden) showSettings(); })) return;
     const k = b.dataset.set;
     if (b.dataset.theme || k === "surprise") {
       const id = b.dataset.theme ?? null;
@@ -1755,6 +1766,7 @@ function select(id: number) {
 function standUp() {
   if (selected !== undefined && LIFE.pen && screen === "game") { const me = s.soldiers[selected]; penLift = { t0: T, x: me.x, y: me.y, owner: me.owner }; }
   selected = undefined;
+  motion.lower();
   cam.overview();
   dirty = true;
   status();
@@ -1771,6 +1783,9 @@ over.addEventListener("pointerdown", (e) => {
   sfx.unlock();
   const cut = !!unit && !unit.rising;
   skipUnitCam();
+  // touching the screen puts a raised phone down (the touch then does what it always did)
+  gunTap = !!motion.gun;
+  if (motion.gun) lowerGun();
   over.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 2) {
@@ -1880,6 +1895,7 @@ over.addEventListener("pointermove", (e) => {
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
       ratchet.reset();
       acts();
+      nudgeFrom = motion.held();
     }
     updateAim(e.clientX, e.clientY);
     status();
@@ -1893,9 +1909,8 @@ function updateAim(x: number, y: number) {
   if (!aim || g.t !== "aim") return;
   const dx = g.sx - x, dy = g.sy - y, dist = Math.hypot(dx, dy);
   const me = s.soldiers[aim.soldierId];
-  aimAngle = screenDirToWorld(cam.view(), me, dx, dy);
-  aim.x = -Math.cos(aimAngle) * dist;
-  aim.y = -Math.sin(aimAngle) * dist;
+  byThumb = { angle: screenDirToWorld(cam.view(), me, dx, dy), dist };
+  steer();
   aim.kind = kind;
   const p = pull(aim);
   if (p.live && !aim.charged) { aim.charged = true; aim.t0 = T; }
@@ -1903,6 +1918,52 @@ function updateAim(x: number, y: number) {
   if (ratchet.step(p.power, p.live) !== null) haptic("notch", p.power);
 }
 const ratchet = new Ratchet();
+
+// The thumb sets the aim; with the motion levels on, the phone's tilt trims it
+// and the hand's tremor sets the wobble. Either way it ends up in the pull, so
+// the flick that's released (and recorded) already has it.
+function steer() {
+  if (!aim) return;
+  const n = motion.nudged(nudgeFrom);
+  aimAngle = byThumb.angle + n.angle;
+  penSide = n.side;
+  aim.x = -Math.cos(aimAngle) * byThumb.dist;
+  aim.y = -Math.sin(aimAngle) * byThumb.dist;
+  aim.steady = motion.steady();
+}
+
+// Pen falcon: tap a soldier, raise the phone and point it; a flick of the wrist fires.
+function raiseGun() {
+  if (selected === undefined || !motion.raise()) return;
+  gunFwd = screenDirToWorld(cam.view(), s.soldiers[selected], 0, -1); // straight up the screen
+  lastArmed = false;
+  status();
+  dirty = true;
+}
+function lowerGun(why?: string) {
+  motion.lower();
+  status(why);
+  dirty = true;
+}
+let lastArmed = false;
+function stepGun() {
+  // the soldier was put down (send, stop), a sheet opened, or the turn moved on: the raised phone goes with it
+  if (selected === undefined || screen !== "game" || away(s.current) || !$("#sheet").hidden) return lowerGun();
+  const e = motion.gun!.take();
+  if (e?.t === "lowered") return lowerGun("phone lowered: pull back, or tap him to raise it again");
+  if (e?.t === "fire") {
+    const id = selected;
+    motion.lower();
+    if (id === undefined || !humanTurn() || !turn.canFlick(s, id, kind)) return;
+    learn("aim");
+    const f = release(gunPull(id, kind, gunFwd + e.delta, e.power, T), T, (pw) => turn.lengthFor(s, kind, pw), turn.handFor(s, id, kind))!;
+    haptic("flick", e.power);
+    return fire(f, e.power, penLean(e.power));
+  }
+  const armed = motion.gun!.armed >= 1;
+  // the sight has closed: a detent you feel
+  if (armed !== lastArmed) { lastArmed = armed; if (armed) haptic("notch", 1); status(); }
+}
 
 function up(e: PointerEvent) {
   if (!ptrs.has(e.pointerId)) return;
@@ -1962,10 +2023,14 @@ function up(e: PointerEvent) {
       sfx.creak(0);
       if (f && turn.canFlick(s, f.soldier, f.kind)) { learn("aim"); haptic("flick", pw); fire(f, pw, lean); }
       else { status("too soft: pull back further"); if (selected !== undefined) lastPull = { id: selected, angle: aimAngle }; }
+    } else if (tapped && gunTap) {
+      // that tap put the raised phone down
     } else if (tapped && g.tapOn === undefined) {
       standUp(); // tap on empty paper puts the pen down
-    } else if (tapped && g.again && selected !== undefined) {
-      startUnitCam(selected);
+    } else if (tapped) {
+      // tap your pick again: raise the phone to aim by hand, or (no motion sensor) drop to his eye level
+      if (g.again && selected !== undefined && !motion.live("gun")) startUnitCam(selected);
+      else raiseGun();
     }
     aim = null;
     sfx.creak(0);
@@ -1977,7 +2042,7 @@ function up(e: PointerEvent) {
   }
   if (g.t === "pan" && g.id === e.pointerId) {
     const tapped = Math.hypot(p.x - g.sx, p.y - g.sy) < TAP;
-    if (tapped && selected !== undefined && !busy) standUp();
+    if (tapped && selected !== undefined && !busy && !gunTap) standUp();
     g = { t: "none" };
     dirty = true;
   }
@@ -2095,11 +2160,13 @@ function frame(now: number) {
   if (live || wasLive || aim || botAim || lampOn.moving || dawn.moving || T - penDrop < (LIFE.pen ? SETTLE_MS + 240 : 260) || (penLift && T - penLift.t0 < LIFT_MS)) active = true;
   wasLive = live;
   if (aim) {
+    steer();
     const p = pull(aim);
     const w = wobble(aim, T);
     sfx.creak(p.power, Math.abs(w) * 12);
     if (ratchet.shake(w !== 0)) haptic("wobble");
   }
+  if (motion.gun) { stepGun(); active = true; }
   wall = boilClock ?? now;
   const bo = boilOn();
   if (bo !== boilWas) { boilWas = bo; dirty = true; }
@@ -2211,7 +2278,7 @@ function currentFrame(): Frame {
       f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: aimError(pl.power, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pl.power), kind };
       // at full pull it shivers under the finger (the pen only: the aim is the hand's)
       const sh = LIFE.pen && lively() && pl.live ? shiver(T, pl.power) : 0;
-      f.pen = leaning(me.x, me.y, ang + sh * 3, pl.live ? penLean(pl.power) + sh : 0.04, owner, ink);
+      f.pen = tip(leaning(me.x, me.y, ang + sh * 3, pl.live ? penLean(pl.power) + sh : 0.04, owner, ink), ang, penSide);
       // a lunger landing among their men is shot: those camps are hatched while you aim one
       if (kind === "lunge" && c0) f.danger = c0.bases.filter((b) => b.owner !== c0.current && garrison(c0, b).length).map((b) => ({ x: b.x, y: b.y, r: b.r }));
     } else if (botAim) {
@@ -2220,6 +2287,17 @@ function currentFrame(): Frame {
       const tremble = Math.sin(T / 1000 * 7.3) * 0.02 * pw;
       f.aim = { soldierId: selected, angle: botAim.angle + tremble, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind };
       f.pen = leaning(me.x, me.y, botAim.angle + tremble, penLean(pw), owner, ink);
+    } else if (motion.gun) {
+      // the pen points where the phone does; the sight closes as you hold still
+      const ang = gunFwd + motion.gun.delta, pw = 0.6;
+      // the sight sits well out past the pen, but pulled in to stay on screen when you point wide
+      let at = 560;
+      for (; at > 200; at -= 40) {
+        const q = cam.toScreen(me.x + Math.cos(ang) * at, me.y + Math.sin(ang) * at);
+        if (q && q.x > 50 && q.x < W - 50 && q.y > 150 && q.y < H - 190) break;
+      }
+      f.aim = { soldierId: selected, angle: ang, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind, sight: motion.gun.armed, sightAt: at };
+      f.pen = leaning(me.x, me.y, ang, 0.2 + 0.15 * motion.gun.armed, owner, ink);
     } else {
       // set down on the dot: drops in, then rocks a few times finding its balance
       const k = Math.min(1, (T - penDrop) / 240);
@@ -2406,5 +2484,9 @@ if (import.meta.env.DEV) {
     view: (r: Filed) => viewPage(r), replayRecord: (r: Filed) => replay(r),
     theme: { apply: applyTheme, choose: chooseTheme, room: setRoomTheme, get current() { return currentTheme(); }, list: THEMES.map((t) => t.id) },
     resumeRecord: (r: Filed) => resume({ s: unfile(r), mode: r.mode }),
+    // motion aiming: synthetic sensors, and what the aim made of them
+    sensors: motion.simulator(),
+    get aim() { return aim && { angle: aimAngle, thumb: byThumb.angle, wobble: wobble(aim, T), steady: aim.steady, power: pull(aim).power }; },
+    get gun() { return motion.gun && { fwd: gunFwd, delta: motion.gun.delta, armed: motion.gun.armed }; },
   };
 }

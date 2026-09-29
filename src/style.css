@@ -300,6 +300,11 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .card .paper.here span { color: var(--pencil); }
 .card .paper.on canvas { transform: rotate(-1deg) translateY(-3px) scale(1.06); outline: 2.4px solid var(--blue); outline-offset: 3px; border-radius: 1px; }
 .card .paper.on span { color: var(--blue); font-weight: 700; }
+.card .fine.motion { margin: 2px 0 2px; }
+.card .sens { display: flex; gap: 4px; margin: -4px 0 4px 30px; }
+.card .sens button { font-family: var(--hand); font-size: 19px; padding: 1px 8px; color: var(--fine); border-radius: 50%; }
+.card .sens button.on { color: var(--blue); box-shadow: inset 0 0 0 2px var(--blue); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
+.card .toggle.more::before { border-style: dashed; }
 .card.handoff { text-align: center; padding: 34px 20px 34px 44px; }
 .card.over h2 { font-size: 44px; }
 .card.drawer .pages { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; margin: 10px 0 12px; }

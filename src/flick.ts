@@ -15,6 +15,8 @@ export interface Aim {
   y: number;
   t0: number; // when the pull passed the dead zone (ms)
   charged: boolean;
+  /** How steady the hand is, from the phone's gyro: scales the wobble (1 = no sensor). */
+  steady?: number;
 }
 
 export function pull(a: Aim) {
@@ -32,7 +34,7 @@ export function wobble(a: Aim, now: number) {
   const { power } = pull(a);
   const held = now - a.t0 - FEEL.wobbleStartMs;
   if (!a.charged || held <= 0) return 0;
-  const amp = FEEL.wobbleMax * power * Math.min(1, held / FEEL.wobbleGrowMs);
+  const amp = FEEL.wobbleMax * power * Math.min(1, held / FEEL.wobbleGrowMs) * (a.steady ?? 1);
   const t = now / 1000;
   return amp * (Math.sin(t * 5.3) * 0.6 + Math.sin(t * 8.9 + 1.3) * 0.3 + Math.sin(t * 15.1 + 0.4) * 0.1);
 }
