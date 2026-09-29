@@ -66,16 +66,20 @@ export type RulesT = typeof RULES;
  * (docs/rules-lab/round-3.md) measured these exact numbers.
  */
 export const CORE = {
-  /** Bumped when a rule's *logic* changes, so old records can be told apart. */
-  version: 1,
+  /** Bumped when a rule's *logic* changes, so old records can be told apart. 2: garrisoned walls. */
+  version: 2,
   /** Line length from the softest to the hardest flick. A lunge goes as far as a shot. */
   reach: { min: 300, max: 1800 },
-  /** Snipe power loss (to test): the share of what's left of the line lost at each wall it passes, and at each soldier it crosses out. Walls cost more. */
+  /**
+   * Snipe power loss (to test): the share of what's left of the line lost at
+   * each soldier it crosses out, and at each wall *when the game has no
+   * `garrison`* (games begun before garrisoned walls, which keep flat walls).
+   */
   snipeWallLoss: 0.1,
   snipeKillLoss: 0.05,
   /** A snipe that crosses out at least this many earns another flick ("two with one bullet"). */
   snipeEarnAt: 2,
-  /** Lunge shake (to test): radians (1 sd) the lunger's heading jolts at each wall he crosses, and at each soldier he crosses out. */
+  /** Lunge shake (to test): radians (1 sd) the lunger's heading jolts at each soldier he crosses out, and at each wall when the game has no `garrison` (flat walls). */
   lungeWallShake: 0.08,
   lungeKillShake: 0.04,
   /** Each link of a lunge chain adds this much aim error (radians, 1 sd), however soft the flick. */
@@ -88,9 +92,39 @@ export const CORE = {
   lastStandAt: 4,
   lastStandFlicks: 2,
   lastStandSteady: 0.6,
+  /**
+   * Garrisoned walls (to test): a wall is as tough as the men inside it. At
+   * the moment a line crosses, a base's garrison is its own living soldiers
+   * inside the wall (not those just outside it or out on a road, and not the
+   * man flicking), less any this same line already crossed out. With
+   * `f = min(1, garrison / soldiers a base starts with) ^ curve`, a snipe loses
+   * `snipeLoss[0] + (snipeLoss[1] - snipeLoss[0]) * f` of what's left of it,
+   * and a lunger's heading jolts by `lungeShake` the same way (radians, 1 sd).
+   * [0] is an empty ring, [1] a full base. The wall at your back is still free.
+   * `null` (or missing, in a game begun before them): flat walls,
+   * `snipeWallLoss` and `lungeWallShake`.
+   */
+  garrison: { snipeLoss: [0.02, 0.5], lungeShake: [0.01, 0.35], curve: 1 } as Garrison | null,
 };
 
+/** How a wall's toughness follows its garrison (see `CORE.garrison`). */
+export interface Garrison {
+  /** Share of a snipe's remaining length lost at a wall: [empty ring, full base]. */
+  snipeLoss: [number, number];
+  /** A lunger's heading jolt at a wall, radians (1 sd): [empty ring, full base]. */
+  lungeShake: [number, number];
+  /** Shape: 1 straight, below 1 a few men already make it tough, above 1 only a full base is. */
+  curve: number;
+}
+
 export type CoreRules = typeof CORE;
+
+/**
+ * A game's rule numbers from a saved record, room or save: today's CORE fills
+ * any number it lacks, except `garrison`. A record without it was played
+ * before garrisoned walls and keeps its flat walls.
+ */
+export const savedRules = (r: Partial<CoreRules>): CoreRules => ({ ...CORE, ...r, garrison: r.garrison ?? null });
 
 /** A Quick battle's size: bases a side and soldiers in each. */
 export interface Size {

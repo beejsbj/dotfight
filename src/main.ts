@@ -31,7 +31,7 @@ import { boil, boilSeen, boilTick, forgetDrawn, page, pageState, stageStats, ren
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
 import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
-import { apply as roomApply, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
+import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
 import { Timeline, reachFraction } from "./timeline";
 import * as turn from "./turn";
@@ -1451,7 +1451,7 @@ async function openRoom(code: string) {
   } catch (e) {
     return home(e instanceof RoomHttpError && e.status === 404 ? "that page has gone: links last 30 days after the last move" : "couldn't open that page: check your signal and open the link again");
   }
-  if (v.engine !== ENGINE) return home("that page needs a newer copy of the game: reload");
+  if (!roomCanRead(v.engine)) return home("that page needs a newer copy of the game: reload");
   const host = v.names[0];
   const input = v.names[1] === null ? nameOnLabel() : null;
   menu.innerHTML = input ? `

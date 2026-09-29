@@ -113,6 +113,8 @@ export interface TraceEvent {
   soldier?: number;
   /** A wall at the shooter's back (leaving the base he stands in): free. */
   free?: boolean;
+  /** A wall's price: the share of a snipe's length it took, or the lunger's shake (radians, 1 sd). */
+  cost?: number;
   /** Radians the lunger's heading turned here. */
   jolt?: number;
 }
@@ -276,6 +278,28 @@ export function sendable(s: GameState, b: Base) {
   return s.soldiers.filter((x) => x.alive && x.owner === b.owner && x.convoy === undefined && s.chain?.soldier !== x.id && dist(b, x) <= reach);
 }
 
+/**
+ * How tough a base's wall is right now, 0 (an empty ring) to 1 (a full base):
+ * its garrison over the soldiers a base starts with, capped at full and shaped
+ * by the rules' curve. `gone`: soldiers this line already crossed out;
+ * `but`: the man flicking (never his own wall's garrison). 1 on flat walls.
+ */
+export function wallStrength(s: GameState, b: Base, gone?: Set<number>, but?: number) {
+  const G = s.rules.garrison;
+  if (!G) return 1;
+  let n = 0;
+  for (const x of garrison(s, b)) if (x.id !== but && !gone?.has(x.id)) n++;
+  return Math.pow(Math.min(1, n / Math.max(1, s.size.soldiers)), G.curve);
+}
+
+/** What crossing this wall costs a line now: a snipe's share of length lost, or a lunger's jolt (radians, 1 sd). */
+export function wallCost(s: GameState, b: Base, kind: Kind, gone?: Set<number>, but?: number) {
+  const G = s.rules.garrison;
+  if (!G) return kind === "snipe" ? s.rules.snipeWallLoss : s.rules.lungeWallShake;
+  const [lo, hi] = kind === "snipe" ? G.snipeLoss : G.lungeShake;
+  return lo + (hi - lo) * wallStrength(s, b, gone, but);
+}
+
 /** Can this soldier flick now (and flick this kind)? */
 export function canFlick(s: GameState, id: number, kind?: Kind) {
   const x = s.soldiers[id];
@@ -415,8 +439,10 @@ export function trace(s: GameState, f: Flick): { pts: Pt[]; events: TraceEvent[]
     if (ev.kind === "edge") { offPage = true; events.push({ kind: "edge", at, d }); break; }
     if (ev.kind === "wall") {
       if (free.has(ev.base!)) { free.delete(ev.base!); events.push({ kind: "wall", at, d, base: ev.base, free: true }); continue; }
-      if (snipe) { end = d + (end - d) * (1 - R.snipeWallLoss); events.push({ kind: "wall", at, d, base: ev.base }); }
-      else events.push({ kind: "wall", at, d, base: ev.base, jolt: jolt(at, R.lungeWallShake) });
+      // garrisoned walls: as tough as the men inside at this moment (those this line crossed out don't hold it)
+      const cost = wallCost(s, s.bases[ev.base!], f.kind, hit, me.id);
+      if (snipe) { end = d + (end - d) * (1 - cost); events.push({ kind: "wall", at, d, base: ev.base, cost }); }
+      else events.push({ kind: "wall", at, d, base: ev.base, cost, jolt: jolt(at, cost) });
       continue;
     }
     hit.add(ev.soldier!);

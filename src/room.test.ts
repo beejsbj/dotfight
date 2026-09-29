@@ -4,7 +4,7 @@ import { RoomError, rooms, type Rooms } from "../api/_rooms";
 import { botAction, botArrange, botBase } from "./bot";
 import { canPlaceBase, illegal, type Action, type GameState } from "./game";
 import { CORE, SIZES } from "./rules";
-import { ENGINE, apply, check, drifted, fresh, hash, replay, turn, type Payload, type Setup } from "./room-engine";
+import { ENGINE, apply, canRead, check, drifted, fresh, hash, replay, turn, type Payload, type Setup } from "./room-engine";
 import { RoomHttpError, type RoomApi, type Seat } from "./room-protocol";
 import { listRooms, readRoom, RoomLink, type Saved } from "./room";
 
@@ -108,6 +108,31 @@ describe("room engine adapter", () => {
     expect(check(fresh(setup), 0, { a: { t: "nope" } })).toBeTruthy();
     expect(check(fresh(setup), 0, { t: "base", x: 1, y: 1 })).toBe("unknown action");
     expect(check(fresh(setup), 1, { a: { t: "ready" } })).toBe("not their turn");
+  });
+});
+
+describe("room engines", () => {
+  it("new rooms carry garrisoned walls; a core-2 room (before them) still opens and replays on flat walls", () => {
+    expect(ENGINE).toBe("core-3");
+    expect(canRead("core-3") && canRead("core-2")).toBe(true);
+    expect(canRead("core-1")).toBe(false);
+    expect(fresh(setup).rules.garrison).toEqual(CORE.garrison);
+    const { garrison: _g, ...flat } = CORE;
+    void _g;
+    const old: Setup = { ...setup, rules: { ...flat, version: 1 } as typeof CORE };
+    const s = fresh(old);
+    expect(s.rules.garrison).toBeNull();
+    // a war played on flat walls replays to the same page from the old room's setup
+    const log: { seat: Seat; a: Payload }[] = [];
+    while (s.phase !== "over" && log.length < 150) {
+      const a = botMove(s);
+      const seat = turn(s)!;
+      apply(s, { a });
+      log.push({ seat, a: { a, h: hash(s) } });
+    }
+    const r = replay(JSON.parse(JSON.stringify(old)), log);
+    expect(r.s).toEqual(s);
+    expect(r.drift).toBeUndefined();
   });
 });
 
