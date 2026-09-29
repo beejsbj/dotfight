@@ -158,13 +158,13 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 /* --- the cover: a brown-paper exercise book ------------------------------------ */
 
 #cover {
-  position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 16px;
+  position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 46px 16px 16px;
   perspective: 1400px;
 }
 #cover[hidden] { display: none; }
 .book {
-  position: relative; width: min(370px, 100%); max-height: calc(100dvh - 32px); overflow: auto;
-  padding: 26px 20px 20px 30px; transform-origin: left center;
+  position: relative; width: min(370px, 100%); max-height: calc(100dvh - 62px);
+  transform-origin: left center;
   background:
     radial-gradient(ellipse at 30% 20%, rgba(255, 230, 190, .16), transparent 60%),
     repeating-linear-gradient(92deg, rgba(60, 35, 15, .05) 0 1px, transparent 1px 4px),
@@ -174,8 +174,30 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   box-shadow: inset 10px 0 12px -8px rgba(0,0,0,.45), 0 18px 40px rgba(0,0,0,.6), 0 2px 0 rgba(0,0,0,.4);
   transform: rotate(-2.2deg);
   animation: bookIn .7s cubic-bezier(.2,.8,.2,1) both;
-  scrollbar-width: none;
 }
+/* the sheet inside the boards scrolls; the bookmarks stay on the edge */
+.leaf {
+  max-height: calc(100dvh - 62px); overflow: auto; overscroll-behavior: contain; border-radius: inherit;
+  padding: 26px 20px 20px 30px; scrollbar-width: none;
+}
+.leaf::-webkit-scrollbar { display: none; }
+
+/* bookmarks: paper index tabs sticking out of the top edge */
+.tabs { position: absolute; z-index: 2; left: 34px; right: 14px; top: -31px; height: 44px; display: flex; gap: 5px; pointer-events: none; }
+.mark {
+  pointer-events: auto; flex: 0 1 auto; min-width: 48px; height: 44px; padding: 5px 9px 0; text-decoration: none; text-align: center;
+  font-family: var(--hand); font-weight: 700; font-size: 19px; line-height: 1.05; color: #3a3530; white-space: nowrap;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tab-c) 92%, #fff) 0, var(--tab-c) 100%);
+  border-radius: 6px 6px 0 0; box-shadow: 0 -1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.35);
+  transition: transform .12s;
+}
+.mark.m1 { --tab-c: #e8c9a0; transform: rotate(-1deg); }
+.mark.m2 { --tab-c: #cfdcb8; height: 40px; margin-top: 4px; transform: rotate(.8deg); }
+.mark.m3 { --tab-c: #e5b4ac; transform: rotate(-.6deg); }
+.mark.m4 { --tab-c: #b9cfe0; height: 40px; margin-top: 4px; transform: rotate(1deg); }
+.mark:active { transform: translateY(3px); }
+.mark sup { font-size: 13px; margin-left: 2px; color: #6b3b2a; }
+.mark sup:empty { display: none; }
 .book::before { /* the stitched spine */
   content: ""; position: absolute; left: 12px; top: 10px; bottom: 10px;
   border-left: 2px dashed rgba(40, 22, 10, .35);
@@ -221,7 +243,41 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .menu .levels { display: flex; gap: 4px; margin: -2px 0 8px 18px; }
 .menu .levels button { font-family: var(--hand); font-size: 21px; padding: 2px 8px; color: var(--fine); border-radius: 50%; }
 .menu .levels button.on { color: var(--red); box-shadow: inset 0 0 0 2px var(--red); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
-.menu .head { font-family: var(--hand); font-size: 19px; color: var(--pencil); margin: 6px 0 0 18px; letter-spacing: .02em; }
+.menu .head { font-family: var(--hand); font-size: 19px; color: var(--pencil); margin: 2px 0 0 18px; letter-spacing: .02em; }
+/* section headings: inked and underlined twice, like a kid ruling off a new topic */
+.menu .sect {
+  margin: 12px 4px 4px 14px; padding-bottom: 1px; font-family: var(--hand); font-weight: 700; font-size: 30px; line-height: 1.05; color: var(--pencil);
+  border-bottom: 2px solid var(--pencil); box-shadow: 0 4px 0 -1px color-mix(in srgb, var(--pencil) 45%, transparent);
+  transform: rotate(-.6deg);
+}
+.menu .carry { position: relative; display: flex; align-items: flex-start; margin: 0 0 2px; }
+.menu .carry .ink { flex: 1; min-width: 0; }
+.menu .x { flex: none; width: 40px; height: 40px; margin: 0 -4px 0 0; display: grid; place-items: center; font-family: var(--hand); font-size: 30px; line-height: 1; color: var(--pencil); opacity: .7; text-align: center; }
+.menu .x:active { color: var(--red); opacity: 1; }
+.menu .games { list-style: none; margin: 0 0 4px; padding: 0; }
+.menu .game { display: flex; align-items: center; margin: 0 0 0 14px; border-bottom: 1px dashed color-mix(in srgb, var(--pencil) 35%, transparent); }
+.menu .game .go { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: baseline; gap: 10px; padding: 4px 0 4px 4px; font-family: var(--hand); }
+.menu .game .go b { font-size: 26px; font-weight: 700; line-height: 1; flex: none; max-width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu .game .go span { font-size: 22px; line-height: 1; }
+.menu .game .go small { margin-left: auto; padding-right: 2px; font-size: 16px; color: var(--pencil); }
+/* your go: inked, circled, wants you. their go: pencil, waiting. finished: faint */
+.menu .game.yours .go b { color: var(--blue); }
+.menu .game.yours .go span { color: var(--red); font-weight: 700; padding: 1px 9px 2px; box-shadow: inset 0 0 0 2px var(--red); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
+.menu .game.yours { background: linear-gradient(90deg, color-mix(in srgb, var(--red) 9%, transparent), transparent 80%); }
+.menu .game.theirs .go b { color: var(--fine); font-weight: 400; }
+.menu .game.theirs .go span { color: var(--fine); }
+.menu .game.done .go b { color: var(--fine); font-weight: 400; font-size: 22px; opacity: .8; }
+.menu .game.done .go span { color: var(--fine); font-size: 19px; opacity: .8; }
+.menu .game.done .x { opacity: .5; }
+.menu .more { margin-left: 18px; }
+.menu .more .pencil { min-height: 40px; font-size: 20px; }
+.menu .tearing { display: block; padding: 6px 4px 8px 18px; }
+.menu .tearing p { margin: 0; }
+.menu .tearing .struck { font-family: var(--hand); font-size: 26px; font-weight: 700; color: var(--pencil); text-decoration: line-through; text-decoration-color: var(--red); text-decoration-thickness: 3px; }
+.menu .tearing .ask { font-family: var(--hand); font-size: 20px; line-height: 1.1; color: #4a4744; margin: 1px 0 4px; }
+.menu .tearing .acts { display: flex; gap: 18px; align-items: center; }
+.menu .tearing .acts button { min-height: 44px; font-family: var(--hand); font-size: 24px; }
+.menu .tearing .rip { color: var(--red); font-weight: 700; box-shadow: inset 0 -2px 0 var(--red); }
 .menu .sizes { display: flex; gap: 2px; margin: 0 0 4px 12px; }
 .menu .sizes button { font-family: var(--hand); text-align: center; padding: 2px 8px 3px; color: var(--fine); border-radius: 50%; }
 .menu .sizes button b { display: block; font-size: 23px; font-weight: 700; line-height: 1; }
@@ -245,9 +301,6 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .label .field input.pencil-in::placeholder { color: rgba(74, 71, 68, .38); }
 .menu .note { margin: 0 0 6px 18px; font-family: var(--hand); font-size: 22px; line-height: 1.1; color: #4a4744; }
 .menu .note b { color: var(--blue); }
-.menu .friends { display: flex; flex-wrap: wrap; gap: 0 12px; margin: 6px 0 8px 18px; }
-.menu .friends span { width: 100%; font-family: var(--type); font-size: 11px; letter-spacing: .08em; color: #77726c; }
-.menu .friends .pencil { font-size: 21px; }
 .menu button:disabled { opacity: .45; }
 #status.tap { pointer-events: auto; cursor: pointer; text-decoration: underline; text-decoration-color: rgba(243, 236, 220, .35); text-underline-offset: 4px; }
 .card .link { font-family: var(--hand); font-size: 25px; color: #4a4744; margin: 2px 0 10px; word-break: break-all; user-select: all; -webkit-user-select: all; }
@@ -331,7 +384,8 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   #kind button b { font-size: 24px; }
   #kind button i { display: none; }
   /* the cover opens out: label on the left, the slip beside it */
-  .book { width: min(680px, 100%); display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; padding: 18px 16px 16px 28px; }
+  .book { width: min(680px, 100%); }
+  .leaf { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; padding: 18px 16px 16px 28px; }
   .label h1 { font-size: 36px; }
   .menu { margin: 0; }
   .menu .ink { font-size: 26px; }

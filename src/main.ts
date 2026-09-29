@@ -30,7 +30,8 @@ import { boldAt } from "./boil";
 import { boil, boilSeen, boilTick, forgetDrawn, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
-import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
+import { orderGames, type GameLine } from "./games";
+import { forgetRoom, listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
 import { apply as roomApply, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
 import { Timeline, reachFraction } from "./timeline";
@@ -794,8 +795,12 @@ function titleDesk(saved = load()) {
   dirty = true;
 }
 
+let tearing: string | null = null; // a cover row waiting on "tear it out?"
+let showDone = false;
+
 function showTitle() {
   screen = "title";
+  tearing = null;
   leaveRoom();
   restoreLabel();
   reset();
@@ -821,23 +826,27 @@ function coverMenu() {
   // a page started on another paper says so
   const elsewhere = saved && paperOf(saved.s.page) !== currentTheme() ? ` · ${themeOf(saved.s.page?.theme).name.toLowerCase()}` : "";
   const menu = $("#cover .menu");
+  const mark = $("#cover .tabs .m1 sup");
+  mark.textContent = d.length ? String(d.length) : "";
   const where = (x: AnyState) => x.phase === "setup" ? "still drawing camps" : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
   const draw = () => {
-    menu.innerHTML = `
-    ${canResume ? `<button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>` : ""}
-    <p class="head">quick battle</p>
+    const carry = canResume ? (tearing === "local" ? `
+      <div class="carry tearing">
+        <p class="struck">${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}</p>
+        <p class="ask">tear this page out? it's gone for good.</p>
+        <p class="acts"><button data-a="tear" data-code="local" class="rip">tear it out</button><button data-a="keep" class="pencil">keep it</button></p>
+      </div>` : `
+      <div class="carry">
+        <button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>
+        <button data-a="ask" data-code="local" class="x" aria-label="tear this page out">×</button>
+      </div>`) : "";
+    menu.innerHTML = `${carry}${friendsList()}
+    <h2 class="sect">new game</h2>
     ${sizeRow()}
     <button data-a="bot" class="ink red">play Dawood-bot</button>
     <p class="levels">${LEVELS.map((l, i) => `<button data-lvl="${i}" class="${i === botLevel ? "on" : ""}">${l}</button>`).join("")}</p>
     <button data-a="pnp" class="ink blue">pass &amp; play<small>two of you, one phone</small></button>
-    <button data-a="friend" class="ink blue">play a friend<small>send a link: each on your own phone</small></button>
-    ${friendsList()}
-    <p class="row">
-      <button data-a="drawer" class="pencil">the drawer${d.length ? ` (${d.length})` : ""}</button>
-      <button data-a="how" class="pencil">how it's played</button>
-      <a href="/rules" class="pencil">the rulebook</a>
-      <button data-a="settings" class="pencil">settings</button>
-    </p>`;
+    <button data-a="friend" class="ink blue">play a friend<small>send a link: each on your own phone</small></button>`;
   };
   draw();
   menu.onclick = (e) => {
@@ -849,10 +858,17 @@ function coverMenu() {
     if (a === "resume" && saved) resume(saved);
     else if (a === "pnp") start({ kind: "pnp" });
     else if (a === "bot") start({ kind: "bot", level: botLevel });
-    else if (a === "how") showHow();
-    else if (a === "drawer") showDrawer();
-    else if (a === "settings") showSettings();
     else if (a === "friend") newRoomOnCover();
+    else if (a === "ask") { tearing = b.dataset.code!; draw(); }
+    else if (a === "keep") { tearing = null; draw(); }
+    else if (a === "tear") {
+      const code = b.dataset.code!;
+      if (code === "local") { localStorage.removeItem("pft:save"); tearing = null; sfx.rustle(); coverMenu(); return; }
+      forgetRoom(localStorage, code);
+      tearing = null;
+      sfx.rustle();
+      draw();
+    } else if (a === "more") { showDone = !showDone; draw(); }
     else if (b.dataset.room) { const x = readRoom(localStorage, b.dataset.room); if (x) enterRoom(x); }
     else if (b.dataset.lvl) {
       botLevel = +b.dataset.lvl as Level;
@@ -871,6 +887,17 @@ function coverMenu() {
     }
   };
 }
+
+// the bookmarks on the cover's top edge
+$("#cover .tabs").addEventListener("click", (e) => {
+  const b = (e.target as HTMLElement).closest("button");
+  if (!b) return;
+  sfx.unlock();
+  sfx.tap();
+  if (b.dataset.a === "how") showHow();
+  else if (b.dataset.a === "drawer") showDrawer();
+  else if (b.dataset.a === "settings") showSettings();
+});
 
 function switchOn() {
   sfx.lamp();
@@ -1389,15 +1416,26 @@ function coverNote(t: string) {
 }
 
 function friendsList() {
-  const rs = listRooms(localStorage).slice(0, 4);
-  if (!rs.length) return "";
-  return `<p class="friends"><span>games with friends</span>${rs.map((r) => {
-    const foe = r.seat === null ? `${r.names[0]} v ${r.names[1] ?? "?"}` : r.names[r.seat === 0 ? 1 : 0] ?? "your friend";
-    const sm = r.summary;
-    const st = !sm ? "" : sm.next === null ? (r.seat === null ? "done" : sm.winner === r.seat ? "you won" : "they won")
-      : r.seat === null ? "watching" : sm.next === r.seat ? "your go" : "their go";
-    return `<button data-room="${esc(r.code)}" class="pencil">${esc(foe)}${st ? ` · ${st}` : ""}</button>`;
-  }).join("")}</p>`;
+  const { running, finished } = orderGames(listRooms(localStorage));
+  if (!running.length && !finished.length) return "";
+  const row = (g: GameLine) => {
+    if (tearing === g.code) return `<li class="game tearing">
+      <p class="struck">${esc(g.foe)}</p>
+      <p class="ask">tear it out of this phone? only your copy goes: ${esc(g.foe)} keeps theirs.</p>
+      <p class="acts"><button data-a="tear" data-code="${esc(g.code)}" class="rip">tear it out</button><button data-a="keep" class="pencil">keep it</button></p>
+    </li>`;
+    return `<li class="game ${g.yours ? "yours" : g.running ? "theirs" : "done"}">
+      <button data-room="${esc(g.code)}" class="go"><b>${esc(g.foe)}</b>${g.standing ? `<span>${g.standing}</span>` : ""}${g.turn && g.running ? `<small>turn ${g.turn}</small>` : ""}</button>
+      <button data-a="ask" data-code="${esc(g.code)}" class="x" aria-label="tear ${esc(g.foe)}'s game out of this phone">×</button>
+    </li>`;
+  };
+  // up to four running games show; the rest (more running ones, then the finished) fold under one line
+  const shown = running.slice(0, 4);
+  const rest = [...running.slice(4), ...finished];
+  const open = showDone || !shown.length;
+  return `<h2 class="sect">games with friends</h2>
+    <ul class="games">${shown.map(row).join("")}
+    ${rest.length ? (open ? rest.map(row).join("") : `<li class="more"><button data-a="more" class="pencil">${running.length > 4 ? `more games (${rest.length})` : `finished games (${rest.length})`}</button></li>`) : ""}</ul>`;
 }
 
 function newRoomOnCover() {
