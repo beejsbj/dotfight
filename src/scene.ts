@@ -12,10 +12,10 @@
 // style writes and a couple of hundred pixels of gradient, not a repaint.
 
 import { BoilLayer, planBoil, type Plan } from "./boil";
-import type { Mood } from "./bubble";
+import type { Anchor, Mood } from "./bubble";
 import { rng, type Pt } from "./game";
 import type { AnyState as GameState } from "./record";
-import { INK, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilStroke, rubOut } from "./ink";
+import { INK, arcText, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilStroke, rubOut } from "./ink";
 import { Life } from "./life";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
@@ -80,11 +80,17 @@ export interface Frame {
   stamp?: { x: number; y: number; owner: 0 | 1; seed: number; p: number };
   /** Screen height and the HUD's top and bottom bars (css px), to keep notes clear of them. */
   hud?: { h: number; top: number; bottom: number };
-  /** A soldier's line (bubble.ts), pencilled on the page beside him with a tail to him: how much is written (p) and how much rubbed out (e). */
-  bubble?: { text: string; mood: Mood; at: Pt; p: number; e: number; side: 1 | -1; seed: number; owner: 0 | 1 };
+  /** A soldier's (or a camp's) line (bubble.ts), pencilled on the page: beside him with a tail to him, or arcing along the camp's ring (`r`). How much is written (p) and how much rubbed out (e). */
+  bubble?: Note;
+  /** The reply in an exchange, a nearby comrade's, while the first line is read. */
+  reply?: Note;
+  /** How hot the war is (bubble.ts heatOf): a shout grows with it. */
+  heat?: number;
   /** The line boil: whether the living boil at all, wall time (ms) for its frame, and how bold (boil.ts boldAt). */
   boil?: { on: boolean; ms: number; bold: number };
 }
+
+export interface Note { text: string; mood: Mood; anchor: Anchor; at: Pt; r?: number; p: number; e: number; side: 1 | -1; seed: number; owner: 0 | 1 }
 
 export const page = new PageLayer();
 export const pageState = { epoch: 0, S: 1.6 };
@@ -307,14 +313,15 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
 
 /** The note layer: nothing on it but a soldier's line, so it's hidden the rest of the time. */
 function renderTalk(g: Ctx, el: HTMLCanvasElement, f: Frame, dpr: number) {
-  if (!f.bubble && !talkDirty) return;
+  if (!f.bubble && !f.reply && !talkDirty) return;
   g.setTransform(1, 0, 0, 1, 0, 0);
   if (talkDirty) g.clearRect(talkDirty.x, talkDirty.y, talkDirty.w, talkDirty.h);
   talkDirty = null;
-  if (!f.bubble) { if (el.style.visibility !== "hidden") el.style.visibility = "hidden"; return; }
+  if (!f.bubble && !f.reply) { if (el.style.visibility !== "hidden") el.style.visibility = "hidden"; return; }
   const v = f.view, box = new Box();
   worldTransform(g, v, dpr);
-  drawNote(g, f, f.bubble, box);
+  if (f.bubble) drawNote(g, f, f.bubble, box);
+  if (f.reply) drawNote(g, f, f.reply, box);
   if (el.style.visibility === "hidden") el.style.visibility = "";
   const pts = [[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]].map(([x, y]) => toLocal(v, x, y));
   const x0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.x)) * dpr) - 4), y0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.y)) * dpr) - 4);
@@ -519,10 +526,14 @@ class Clutter {
 // How each mood is written: size and weight, how neat the hand is, and what's
 // round the words (a shout's ring is spiky, and it's underlined twice).
 const MOODS: Record<Mood, { size: number; weight: number; alpha: number; tilt: number; skew: number; stretch: number; ring: number; spiky: boolean; under: number }> = {
+  tiny: { size: 0.42, weight: 400, alpha: 0.62, tilt: 0.02, skew: 0, stretch: 1, ring: 0, spiky: false, under: 0 },
   whisper: { size: 0.8, weight: 400, alpha: 0.72, tilt: 0.01, skew: 0, stretch: 1, ring: 0.55, spiky: false, under: 0 },
   say: { size: 1, weight: 700, alpha: 0.9, tilt: 0.03, skew: 0, stretch: 1, ring: 0.8, spiky: false, under: 0 },
-  shout: { size: 1.25, weight: 700, alpha: 1, tilt: 0.08, skew: -0.14, stretch: 1.08, ring: 0.95, spiky: true, under: 2 },
+  shout: { size: 1.2, weight: 700, alpha: 1, tilt: 0.08, skew: -0.14, stretch: 1.08, ring: 0.95, spiky: true, under: 2 },
+  chant: { size: 1.05, weight: 700, alpha: 0.95, tilt: 0.02, skew: 0, stretch: 1.04, ring: 0, spiky: false, under: 0 },
 };
+/** A shout grows with the war's heat (Frame.heat), up to this. */
+const SHOUT_GROW = 0.3;
 
 // The angles a note may be written at, relative to the way you're looking
 // (so never upside down for the reader), and what each costs: upright and
@@ -531,12 +542,14 @@ const ANGLES: [number, number][] = [[0, 0], [0.22, 0.5], [-0.22, 0.5], [0.5, 1.4
 
 // The gap the note goes in (page units from the man) and the angle it's
 // written at (screen-relative), chosen once per note and remembered.
-let spotMemo: { key: string; dx: number; dy: number; ang: number; side: 1 | -1 } | null = null;
+type Spot = { key: string; dx: number; dy: number; ang: number; side: 1 | -1 };
+const spots: Spot[] = []; // the last few notes' spots (a line and its reply are up together)
 /** Dev: where the note showing was put (page offset from the man, its angle), or null. */
-export const noteSpotNow = () => spotMemo;
-function noteSpot(f: Frame, b: NonNullable<Frame["bubble"]>, hw: number, hh: number, size: number, angK = 1) {
+export const noteSpotNow = () => spots[spots.length - 1] ?? null;
+function noteSpot(f: Frame, b: Note, hw: number, hh: number, size: number, angK = 1) {
   const key = `${b.seed}|${b.text}|${b.at.x},${b.at.y}`;
-  if (spotMemo?.key === key) return spotMemo;
+  const had = spots.find((m) => m.key === key);
+  if (had) return had;
   const { s } = f, R = RULES.soldierRadius, B = noteBounds(f);
   const rot = f.view.rot, c = Math.cos(rot), sn = Math.sin(rot);
   const toPage = (lx: number, ly: number): Pt => ({ x: b.at.x + lx * c + ly * sn, y: b.at.y - lx * sn + ly * c });
@@ -590,24 +603,126 @@ function noteSpot(f: Frame, b: NonNullable<Frame["bubble"]>, hw: number, hh: num
     }
   }
   const up = toPage(0, -(R + hh + size));
-  spotMemo = { key, ...(best ?? { dx: up.x - b.at.x, dy: up.y - b.at.y, ang: 0, side: 1 as const }) };
-  return spotMemo;
+  const spot: Spot = { key, ...(best ?? { dx: up.x - b.at.x, dy: up.y - b.at.y, ang: 0, side: 1 as const }) };
+  spots.push(spot);
+  if (spots.length > 4) spots.shift();
+  return spot;
 }
 
-function drawNote(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box) {
+// A camp speaks: its line arcs along the outside of its ring, on the side
+// facing the top of the screen (or the first side that's on the page), so
+// the speaker is plain from bird's-eye. A chant is written in beats, a word
+// at a time; a shout is bigger, stretched and leaning, with shout marks
+// flung out from the ring.
+function drawBaseNote(g: Ctx, f: Frame, b: Note, box: Box) {
   const pen = INK.pens[b.owner], M = MOODS[b.mood];
-  let size = Math.max(30, Math.min(70, 25 / f.view.z)) * M.size; // page units: about 25 screen px
+  const heat = f.heat ?? 0;
+  const base = Math.max(30, Math.min(70, 25 / f.view.z));
+  let size = base * M.size * (b.mood === "shout" ? 1 + SHOUT_GROW * heat : 1);
+  const R = b.r ?? RULES.baseRadius;
+  const rot = f.view.rot;
+  const lw = Math.max(2.2, size * 0.065);
+  const r = rng(b.seed + 3);
+  const gap = size * 0.55, rr = R + gap + size * 0.45; // the letters' baseline, a little off the ring
+  // the run must fit round the ring: written smaller if it wouldn't
   g.save();
   g.font = `${M.weight} ${size}px Caveat, "Patrick Hand", cursive`;
-  let w = g.measureText(b.text).width * M.stretch;
+  let half = (g.measureText(b.text).width * M.stretch) / 2 / rr;
   g.restore();
-  // a long line is written smaller rather than across half the screen
-  const most = (f.sw * 0.5) / f.view.z;
+  const most = Math.PI * 0.72;
+  if (half > most) { size *= most / half; half = most; }
+  // which side of the ring: up the screen for choice, else whichever is on the page
+  const B = noteBounds(f), c = Math.cos(rot), sn = Math.sin(rot);
+  const toPage = (lx: number, ly: number): Pt => ({ x: b.at.x + lx * c + ly * sn, y: b.at.y - lx * sn + ly * c });
+  let mid = -Math.PI / 2, bestMiss = Infinity;
+  [-Math.PI / 2, Math.PI / 2, 0, Math.PI].forEach((m, i) => {
+    // the run's ends and middle: how far off the page (or under the HUD) they'd be, plus a preference for the top
+    let miss = i * size * 0.4;
+    for (const a of [m - half, m, m + half]) {
+      const p = toPage(Math.cos(a) * (rr + size), Math.sin(a) * (rr + size));
+      miss += Math.max(0, B.x0 - p.x, p.x - B.x1) + Math.max(0, B.y0 - p.y, p.y - B.y1);
+    }
+    if (miss < bestMiss) { bestMiss = miss; mid = m; }
+  });
+  // a chant comes in beats: a word at a time; the rest letter by letter
+  let upTo = b.p;
+  if (b.mood === "chant") {
+    const words = b.text.split(" "), n = words.length, k = Math.min(n, Math.floor(b.p * (n + 0.999)));
+    upTo = words.slice(0, k).join(" ").length / b.text.length + (k < n ? 0.0001 : 0);
+  }
+  g.save();
+  g.translate(b.at.x, b.at.y);
+  g.rotate(-rot);
+  // the words read the right way up on the near side of the ring: written on the far side, they'd be upside down, so flip the run
+  const flip = Math.abs(mid - Math.PI / 2) < 1e-6;
+  if (flip) { g.scale(-1, -1); mid = -Math.PI / 2; }
+  const tilt = (r() - 0.5) * 2 * M.tilt;
+  if (M.skew) g.transform(1, 0, M.skew * 0.3, 1, 0, 0);
+  arcText(g, b.text, 0, 0, rr, mid + tilt, size, pen, { upTo, alpha: NOTE.alpha * M.alpha, weight: M.weight, grain: NOTE.grain, stretch: M.stretch, jitter: b.mood === "shout" ? size * 0.12 : size * 0.04, seed: b.seed + 5 });
+  // a shout's marks: short strokes flung out past the words, on as the words finish
+  if (M.spiky) {
+    const n = 5, on = Math.max(0, (b.p - 0.6) / 0.4);
+    for (let i = 0; i < n; i++) {
+      const a = mid - half - 0.25 + ((half * 2 + 0.5) * (i + 0.5)) / n + (r() - 0.5) * 0.1;
+      const r0 = rr + size * 0.5 + r() * size * 0.2, r1 = r0 + size * (0.45 + r() * 0.35);
+      pencilStroke(g, [{ x: Math.cos(a) * r0, y: Math.sin(a) * r0 }, { x: Math.cos(a) * r1, y: Math.sin(a) * r1 }], pen, b.seed + 31 + i, lw * 1.1, Math.min(1, on * n - i), NOTE.alpha, NOTE.grain);
+    }
+  }
+  // a chant's beat marks: a short tick under each word, in time
+  if (b.mood === "chant") {
+    const words = b.text.split(" "), n = words.length, k = Math.min(n, Math.floor(b.p * (n + 0.999)));
+    let acc = 0;
+    g.save();
+    g.font = `${M.weight} ${size}px Caveat, "Patrick Hand", cursive`;
+    const ws = words.map((w) => g.measureText(w + " ").width * M.stretch);
+    g.restore();
+    for (let i = 0; i < n; i++) {
+      const a = mid - half + (acc + ws[i] / 2) / rr;
+      acc += ws[i];
+      if (i >= k) continue;
+      const r0 = rr - size * 0.9, r1 = rr - size * 0.55;
+      pencilStroke(g, [{ x: Math.cos(a - 0.03) * r0, y: Math.sin(a - 0.03) * r0 }, { x: Math.cos(a + 0.03) * r1, y: Math.sin(a + 0.03) * r1 }], pen, b.seed + 41 + i, lw, 1, NOTE.alpha * 0.8, NOTE.grain);
+    }
+  }
+  if (b.e > 0) {
+    // rubbed out: the arc's box, a band round the ring where the words are
+    const ex = rr + size * 1.3;
+    const a0 = mid - half - 0.4, a1 = mid + half + 0.4;
+    const xs = [Math.cos(a0) * (rr - size), Math.cos(a1) * (rr - size), Math.cos(a0) * ex, Math.cos(a1) * ex, Math.cos(mid) * ex], ys = [Math.sin(a0) * (rr - size), Math.sin(a1) * (rr - size), Math.sin(a0) * ex, Math.sin(a1) * ex, Math.sin(mid) * ex];
+    for (const m of [mid - Math.PI / 2, mid + Math.PI / 2]) if (m > a0 && m < a1) { xs.push(Math.cos(m) * ex); ys.push(Math.sin(m) * ex); }
+    rubOut(g, Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), b.seed + 11, b.e, size, pen, 9);
+  }
+  g.restore();
+  box.add(b.at.x, b.at.y, rr + size * 2.4);
+}
+
+function drawNote(g: Ctx, f: Frame, b: Note, box: Box) {
+  if (b.anchor === "base") return drawBaseNote(g, f, b, box);
+  const pen = INK.pens[b.owner], M = MOODS[b.mood];
+  const heat = f.heat ?? 0;
+  let size = Math.max(30, Math.min(70, 25 / f.view.z)) * M.size * (b.mood === "shout" ? 1 + SHOUT_GROW * heat : 1); // page units: about 25 screen px
+  g.save();
+  g.font = `${M.weight} ${size}px Caveat, "Patrick Hand", cursive`;
+  const measure = (t: string) => g.measureText(t).width * M.stretch;
+  // a long line wraps at the space nearest its middle rather than running across a third of the page
+  const most = (f.sw * 0.34) / f.view.z;
+  let rows = [b.text];
+  if (measure(b.text) > most && b.text.includes(" ")) {
+    const words = b.text.split(" ");
+    let best = 1, bestD = Infinity;
+    for (let i = 1; i < words.length; i++) { const d = Math.abs(measure(words.slice(0, i).join(" ")) - measure(words.slice(i).join(" "))); if (d < bestD) { bestD = d; best = i; } }
+    rows = [words.slice(0, best).join(" "), words.slice(best).join(" ")];
+  }
+  let w = Math.max(...rows.map(measure));
+  g.restore();
+  // still too wide (one long word): written smaller
   if (w > most) { size *= most / w; w = most; }
   const R = RULES.soldierRadius;
-  const hw = w / 2 + size * 0.1, hh = size * 0.5 + (M.under ? size * 0.22 : 0);
+  const lineH = size * 0.95;
+  const hw = w / 2 + size * 0.1, hh = (size * 0.5 + (M.under ? size * 0.22 : 0)) + (rows.length - 1) * lineH * 0.5;
   const rot = f.view.rot, c = Math.cos(rot), sn = Math.sin(rot);
-  const rx = hw + (NOTE.ring ? size * 0.5 : size * 0.05), ry = hh + (NOTE.ring ? size * 0.3 : size * 0.1);
+  const ringOn = NOTE.ring && M.ring > 0;
+  const rx = hw + (ringOn ? size * 0.5 : size * 0.05), ry = hh + (ringOn ? size * 0.3 : size * 0.1);
   // a burst's spikes reach past the ring; a shout is yelled upright unless the paper's really full
   const spot = noteSpot(f, b, rx * (M.spiky ? 1.14 : 1), ry * (M.spiky ? 1.14 : 1), size, M.spiky ? 1.7 : 1);
   const ang = spot.ang, ca = Math.cos(ang), sa = Math.sin(ang);
@@ -619,11 +734,12 @@ function drawNote(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box) {
   const ur = { x: u.x * ca + u.y * sa, y: -u.x * sa + u.y * ca }; // toward him, in the ring's frame
   const t = Math.min(rx / Math.max(1e-6, Math.abs(ur.x)), ry / Math.max(1e-6, Math.abs(ur.y)));
   const start = { x: L.x - u.x * (t + size * 0.1), y: L.y - u.y * (t + size * 0.1) };
-  const tip = { x: u.x * (R + 4), y: u.y * (R + 4) };
+  const who = R + Math.max(4, size * 0.12); // the loose ring round his dot: who's talking
+  const tip = { x: u.x * (who + 3), y: u.y * (who + 3) };
   const len = Math.hypot(start.x - tip.x, start.y - tip.y);
   const perp = { x: -u.y, y: u.x }, half = Math.min(size * 0.36, len * 0.5);
-  // written the way a hand would: the words, the ring round them, then the tail
-  const words = Math.min(1, b.p / (NOTE.ring ? 0.58 : 0.78)), ring = Math.max(0, (b.p - 0.5) / 0.4), tail = Math.max(0, (b.p - (NOTE.ring ? 0.86 : 0.78)) / (NOTE.ring ? 0.14 : 0.22));
+  // written the way a hand would: the words, the ring round them, then the tail, then a ring round him
+  const words = Math.min(1, b.p / (ringOn ? 0.55 : 0.7)), ring = Math.max(0, (b.p - 0.48) / 0.34), tail = Math.max(0, (b.p - (ringOn ? 0.76 : 0.66)) / 0.16), circle = Math.max(0, (b.p - 0.88) / 0.12);
   const lw = Math.max(2.2, size * 0.065);
   const r = rng(b.seed + 3);
   const tilt = (r() - 0.5) * 2 * M.tilt;
@@ -633,7 +749,7 @@ function drawNote(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box) {
   g.save();
   g.translate(L.x, L.y);
   g.rotate(ang);
-  if (NOTE.ring) {
+  if (ringOn) {
     const ph = [r() * 6.28, r() * 6.28], a0 = r() * 6.28, N = M.spiky ? 44 : 40;
     const pts: Pt[] = [];
     for (let i = 0; i <= N; i++) {
@@ -646,11 +762,16 @@ function drawNote(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box) {
   }
   g.save();
   g.transform(M.stretch, 0, M.skew, 1, 0, 0); // a shout's letters stretched and leaning
-  handText(g, b.text, 0, size * 0.3 - (M.under ? size * 0.16 : 0), size, pen, { upTo: words, alpha: NOTE.alpha * M.alpha, weight: M.weight, rot: tilt, align: "center", grain: NOTE.grain });
+  const y0 = size * 0.3 - (M.under ? size * 0.16 : 0) - ((rows.length - 1) * lineH) / 2;
+  rows.forEach((row, i) => {
+    // row by row: the first written, then the next
+    const up = Math.max(0, Math.min(1, words * rows.length - i));
+    handText(g, row, 0, y0 + i * lineH, size, pen, { upTo: up, alpha: NOTE.alpha * M.alpha, weight: M.weight, rot: tilt + (i ? (r() - 0.5) * 0.02 : 0), align: "center", grain: NOTE.grain });
+  });
   g.restore();
   for (let i = 0; i < M.under; i++) {
     // underlined, twice, in a hurry: each line its own quick stroke, a little off
-    const y = size * 0.42 + i * size * 0.13, up = Math.max(0, (words - 0.7 - i * 0.15) / 0.3);
+    const y = hh - size * 0.3 + i * size * 0.13, up = Math.max(0, (words - 0.7 - i * 0.15) / 0.3);
     const j = r() * 6.28;
     pencilStroke(g, Array.from({ length: 6 }, (_, k) => ({ x: -hw * 0.95 + (k / 5) * hw * 1.9 + (r() - 0.5) * size * 0.05, y: y + Math.sin(k + j) * size * 0.03 })), pen, b.seed + 21 + i, lw * 1.1, up, NOTE.alpha * M.alpha, NOTE.grain);
   }
@@ -658,18 +779,26 @@ function drawNote(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box) {
   g.restore();
   if (len > size * 0.2 && tail > 0) {
     const a = { x: start.x + perp.x * half, y: start.y + perp.y * half }, k = { x: start.x - perp.x * half, y: start.y - perp.y * half };
-    pencilStroke(g, bowed(a, tip, 0.16, 8), pen, b.seed + 7, lw, Math.min(1, tail / 0.55), NOTE.alpha, NOTE.grain);
-    pencilStroke(g, bowed(tip, k, 0.16, 8), pen, b.seed + 9, lw * 0.9, Math.max(0, (tail - 0.5) / 0.5), NOTE.alpha, NOTE.grain);
+    pencilStroke(g, bowed(a, tip, 0.16, 8), pen, b.seed + 7, lw, Math.min(1, tail / 0.55), NOTE.alpha * Math.max(0.7, M.alpha), NOTE.grain);
+    pencilStroke(g, bowed(tip, k, 0.16, 8), pen, b.seed + 9, lw * 0.9, Math.max(0, (tail - 0.5) / 0.5), NOTE.alpha * Math.max(0.7, M.alpha), NOTE.grain);
+  }
+  // who's talking: a loose pencil ring round his dot, plain from bird's-eye
+  if (circle > 0) {
+    const a0 = Math.atan2(u.y, u.x) + 0.4, N = 22, pts: Pt[] = [];
+    const ph = r() * 6.28;
+    for (let i = 0; i <= N; i++) { const a = a0 + (i / N) * Math.PI * 2.1, k = 1 + Math.sin(a * 3 + ph) * 0.06; pts.push({ x: Math.cos(a) * who * k, y: Math.sin(a) * who * k }); }
+    pencilStroke(g, pts, pen, b.seed + 15, lw * (b.mood === "tiny" ? 1.6 : 1), circle, NOTE.alpha * 0.85, NOTE.grain);
   }
   if (b.e > 0) {
-    // the tail under its own rub
+    // the tail and his ring under their own rubs
     const tx0 = Math.min(start.x, tip.x) - half, ty0 = Math.min(start.y, tip.y) - half, tx1 = Math.max(start.x, tip.x) + half, ty1 = Math.max(start.y, tip.y) + half;
     rubOut(g, tx0, ty0, tx1, ty1, b.seed + 13, Math.min(1, b.e * 1.15), size * 0.7, pen, 1);
+    rubOut(g, -who - lw * 2, -who - lw * 2, who + lw * 2, who + lw * 2, b.seed + 17, Math.min(1, b.e * 1.3), Math.max(size * 0.5, who), pen, 0);
   }
   g.restore();
   const m = toPage(L.x, L.y);
   box.add(m.x, m.y, Math.max(rx, ry) * 1.2 + size * 1.4);
-  box.add(b.at.x, b.at.y, R + size * 0.6);
+  box.add(b.at.x, b.at.y, who + size * 0.8);
 }
 
 // A pencilled ring that closes while you hold the phone still, and gets its
