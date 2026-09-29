@@ -12,7 +12,7 @@
 import { act, illegal, newGame, type Action, type GameState, type Player } from "./game";
 import { CORE, type CoreRules, type Size } from "./rules";
 
-/** The engine a new room is made with. core-3: version-2 rules (a shorter lunge reach, a steeper reach curve). */
+/** The engine a new room is made with. core-3: version-2 rules (a shorter reach on a steeper curve). */
 export const ENGINE = "core-3";
 /** The engines this build can read: core-2 rooms carry version-1 rules in their setup, and replay on those exactly. */
 export const READS: readonly string[] = ["core-2", ENGINE];

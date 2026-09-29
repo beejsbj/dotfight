@@ -53,7 +53,7 @@ export function shake(s: GameState, it: Intent, sk: Skill, rand: () => number): 
     soldier: it.soldier,
     kind: it.kind,
     angle: it.angle + gauss(rand) * sa,
-    length: reachOf(s.rules, it.power, it.kind) * Math.max(0.2, 1 + gauss(rand) * sl),
+    length: reachOf(s.rules, it.power) * Math.max(0.2, 1 + gauss(rand) * sl),
     bend: (rand() * 2 - 1) * FEEL.bendMax * (0.3 + 0.7 * h.wild(it.power)),
     wob: (rand() * 2 ** 32) >>> 0,
   };
@@ -84,7 +84,7 @@ function pHit(c: Ctx, d: number, steady = 1) {
   c.phit.set(steady, table);
   if (table[k] < 0) {
     const dd = Math.max(1, k * 8);
-    const p = wildOfLength(c.s.rules, dd + 60);
+    const p = wildOfLength(dd + 60);
     const sd = Math.hypot(sigma(p) * c.sk.hand, c.sk.aim) * steady * dd;
     table[k] = erf(c.reach / (Math.SQRT2 * sd));
   }
@@ -205,8 +205,8 @@ function intents(c: Ctx, rand: () => number): Intent[] {
       const d = dist(me, foe);
       const angle = Math.atan2(foe.y - me.y, foe.x - me.x) + gauss(rand) * 0.025;
       // just past the target (steadier), or well past it (catch whatever's behind; a lunger through and out the far side)
-      const want = rand() < 0.55 ? d + 40 + rand() * 60 : d + 150 + rand() * Math.max(0, maxReach(R, kind) - d);
-      out.push({ kind, soldier: me.id, angle, power: powerFor(R, want, kind) });
+      const want = rand() < 0.55 ? d + 40 + rand() * 60 : d + 150 + rand() * Math.max(0, maxReach(R) - d);
+      out.push({ kind, soldier: me.id, angle, power: powerFor(R, want) });
     } else {
       out.push({ kind, soldier: me.id, angle: rand() * Math.PI * 2, power: rand() });
     }
@@ -283,7 +283,7 @@ export function botAction(s: GameState, level: Level | Skill = 1, seed = Date.no
   if (!cands.length) return { t: "stop" };
   // 1. noiseless: what would each do if the hand were perfect?
   const first = cands.map((it) => {
-    const f: Flick = { soldier: it.soldier, kind: it.kind, angle: it.angle, length: reachOf(s.rules, it.power, it.kind), bend: 0, wob: 0 };
+    const f: Flick = { soldier: it.soldier, kind: it.kind, angle: it.angle, length: reachOf(s.rules, it.power), bend: 0, wob: 0 };
     const o = preview(s, f);
     const g = gain(o);
     return { it, o, g: g.v + (keeps(s, it.kind, o) ? 0.4 : 0) };
@@ -401,4 +401,4 @@ export function botBase(s: GameState, can: (x: number, y: number) => boolean, se
 }
 
 /** For the UI: the power a flick of this length took (to animate the bot's pull-back). */
-export const powerOf = (s: GameState, f: Flick) => Math.max(0.05, Math.min(1, powerFor(s.rules, f.length, f.kind)));
+export const powerOf = (s: GameState, f: Flick) => Math.max(0.05, Math.min(1, powerFor(s.rules, f.length)));

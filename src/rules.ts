@@ -69,14 +69,12 @@ export const CORE = {
   /** Bumped when a rule's *logic* changes, so old records can be told apart. */
   version: 2,
   /**
-   * Line length from the softest to the hardest flick, for a snipe. Length
-   * runs min + (max - min) * power^curve: a curve above 1 spends more of the
-   * thumb's travel on short lines, where a small slip matters most.
-   * (Version 1 pages: one reach for both kinds, curve 0.9; see `reachOf`.)
+   * Line length from the softest flick to the hardest, the same for a snipe and
+   * a lunge (one thing to learn). Length runs min + (max - min) * power^curve;
+   * a curve above 1 spends more of the thumb's travel on short lines, where a
+   * small slip matters most. (Version 1 pages: 300-1800 on a 0.9 curve; see `reachOf`.)
    */
-  reach: { min: 300, max: 1800, curve: 1.2 },
-  /** The same for a lunge (from version 2): shorter, since a lunger who runs off the page is lost. */
-  lungeReach: { min: 100, max: 900, curve: 1.6 },
+  reach: { min: 200, max: 1200, curve: 1.5 },
   /** Snipe power loss (to test): the share of what's left of the line lost at each wall it passes, and at each soldier it crosses out. Walls cost more. */
   snipeWallLoss: 0.1,
   snipeKillLoss: 0.05,

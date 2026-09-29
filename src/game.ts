@@ -300,51 +300,48 @@ export function hand(s: GameState, id: number, kind: Kind) {
   const x = s.soldiers[id];
   const mult = x && inLastStand(s, x.owner) ? s.rules.lastStandSteady : 1;
   const tremor = kind === "lunge" && s.chain?.soldier === id ? s.rules.lungeLinkTremor * s.chain.link : 0;
-  return { mult, tremor, wild: (power: number) => wildOf(s.rules, kind, power) };
+  return { mult, tremor, wild: (power: number) => wildOf(s.rules, power) };
 }
 
 /** Flicks a side gets at the start of its turn. */
 export const allotment = (s: GameState, p: Player) => (inLastStand(s, p) ? s.rules.lastStandFlicks : 1);
 
-/** Version 1 pages: both kinds share `reach`, with this curve. */
-const V1_CURVE = 0.9;
+/** Version 1 pages ran on this one reach and curve; the hand's error, wobble and bend were tuned on it. */
+const V1_REACH = { min: 300, max: 1800, curve: 0.9 };
 
-/** The reach a flick of this kind runs on, and its curve. Version 1 pages have one reach and one curve for both. */
-function reachFor(R: CoreRules, kind: Kind) {
-  if (R.version < 2) return { min: R.reach.min, max: R.reach.max, curve: V1_CURVE };
-  const r = kind === "lunge" ? R.lungeReach : R.reach;
-  return { min: r.min, max: r.max, curve: r.curve };
-}
+/** The reach a page runs on: one for both kinds. Version 1 pages keep the old one. */
+const reachFor = (R: CoreRules) => (R.version < 2 ? V1_REACH : R.reach);
 
-/** How long a flick of this kind and power is (power 0..1, the share of the thumb's travel). */
-export function reachOf(R: CoreRules, power: number, kind: Kind = "snipe") {
-  const r = reachFor(R, kind);
+/** How long a flick of this power is (power 0..1, the share of the thumb's travel). Snipe and lunge reach alike. */
+export function reachOf(R: CoreRules, power: number) {
+  const r = reachFor(R);
   return r.min + (r.max - r.min) * Math.pow(Math.max(0, Math.min(1, power)), r.curve);
 }
 
-/** The power that gives a flick of this kind this length (inverse of reachOf). */
-export function powerFor(R: CoreRules, length: number, kind: Kind = "snipe") {
-  const r = reachFor(R, kind);
+/** The power that gives a flick this length (inverse of reachOf). */
+export function powerFor(R: CoreRules, length: number) {
+  const r = reachFor(R);
   const f = Math.max(0, Math.min(1, (length - r.min) / Math.max(1, r.max - r.min)));
   return Math.pow(f, 1 / r.curve);
 }
 
-/** The longest line a flick of this kind can draw. */
-export const maxReach = (R: CoreRules, kind: Kind) => reachFor(R, kind).max;
+/** The longest line a flick can draw. */
+export const maxReach = (R: CoreRules) => reachFor(R).max;
 
 /**
  * How wild a line of this length is, as a power 0..1 on the version-1 curve
  * (where the hand's error, wobble and bend were tuned). Error follows the
- * line's length, not the thumb's travel, so stretching the pull range to
- * cover a shorter reach doesn't change how accurate a 400-unit line is.
+ * line's length, not the thumb's travel, so changing the reach or the pull
+ * range doesn't change how accurate a 700-unit line is.
  */
-export function wildOfLength(R: CoreRules, length: number) {
-  const f = Math.max(0, Math.min(1, (length - R.reach.min) / Math.max(1, R.reach.max - R.reach.min)));
-  return Math.pow(f, 1 / V1_CURVE);
+export function wildOfLength(length: number) {
+  const r = V1_REACH;
+  const f = Math.max(0, Math.min(1, (length - r.min) / (r.max - r.min)));
+  return Math.pow(f, 1 / r.curve);
 }
 
-/** `wildOfLength` for a flick of this kind pulled to this power. */
-export const wildOf = (R: CoreRules, kind: Kind, power: number) => wildOfLength(R, reachOf(R, power, kind));
+/** `wildOfLength` for a flick pulled to this power. */
+export const wildOf = (R: CoreRules, power: number) => wildOfLength(reachOf(R, power));
 
 /** How close ink must pass a dot to cross it out. */
 export const hitReach = () => RULES.soldierRadius + RULES.inkWidth / 2 + RULES.hitSlop;

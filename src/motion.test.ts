@@ -246,7 +246,7 @@ describe("determinism: the engine never reads a sensor", () => {
       const plan = botAction(s, s.current === 0 ? 2 : 1, k++);
       if (s.current === 1 || plan.t !== "flick") { act(s, plan); continue; }
       const lvl = levels[phoned++ % 3];
-      const lengthOf = (pw: number) => reachOf(s.rules, pw, plan.kind), h = hand0(s, plan.soldier, plan.kind);
+      const lengthOf = (pw: number) => reachOf(s.rules, pw), h = hand0(s, plan.soldier, plan.kind);
       let f: Flick | null;
       if (lvl === "gun") {
         const gun = new GunHold();

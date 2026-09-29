@@ -51,8 +51,7 @@ describe("record (core rules)", () => {
   });
 
   it("a page played on version-1 rules (one reach, curve 0.9) still replays on its own numbers", () => {
-    const { lungeReach: _l, ...rest } = CORE;
-    const v1 = { ...rest, version: 1, reach: { min: 300, max: 1800 } } as unknown as typeof CORE;
+    const v1 = { ...CORE, version: 1, reach: { min: 300, max: 1800 } } as unknown as typeof CORE;
     const s = newGame(SIZES.quick, 21, undefined, v1);
     let k = 21;
     while (s.phase === "setup") { const p = botBase(s, (x, y) => !canPlaceBase(s, x, y), k++)!; act(s, { t: "base", ...p }); }
@@ -61,10 +60,8 @@ describe("record (core rules)", () => {
     expect(s.turn).toBeGreaterThan(3);
     const r = JSON.parse(JSON.stringify(toRecord(s)));
     expect(r.rules.version).toBe(1);
-    expect(r.rules.lungeReach).toBeUndefined();
-    // the loader fills unnamed rules from today's CORE (lungeReach); version 1 must not read it
-    // (the loader adds the unused lungeReach to the rules; everything the game did is the same)
-    const same = (a: GameState) => expect({ ...a, rules: { ...a.rules, lungeReach: undefined } }).toEqual({ ...s, rules: { ...s.rules, lungeReach: undefined } });
+    expect(r.rules.reach).toEqual({ min: 300, max: 1800 });
+    const same = (a: GameState) => expect(a).toEqual(s);
     same(fromRecord(r));
     same(unfile(JSON.parse(JSON.stringify(file(s, { kind: "pnp" })))) as GameState);
     expect(fromRecord(r).rules.version).toBe(1);
