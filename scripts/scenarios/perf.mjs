@@ -52,6 +52,13 @@ export default async function (T, out) {
   for (let i = 1; i <= 8; i++) { await T.touch("touchMove", [[195 + i, 600 + i * 14]]); await page.waitForTimeout(20); }
   await measure("aiming (held pull)", 2000);
   await T.shot(`${out}/perf-aim.png`);
+  // sweeping the thumb sideways: on the turning-page camera the sheet swings under it
+  await measure("aiming (sweep sideways)", 2400, async () => {
+    for (let j = 0; j < 40; j++) {
+      await T.touch("touchMove", [[195 + Math.sin(j / 6) * 150, 600 + 112]]);
+      await page.waitForTimeout(55);
+    }
+  });
   await T.touch("touchEnd", []);
   await measure("flick + pull back", 1500);
   await measure("page turn (pnp)", 1800);
