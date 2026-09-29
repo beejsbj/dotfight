@@ -134,9 +134,8 @@ a { color: inherit; }
 
 /* --- the pages ------------------------------------------------------------------ */
 
-.sheet {
-  position: relative; width: min(700px, calc(100% - 16px)); margin: 0 auto 34px;
-  padding: 0 18px 34px calc(var(--mx) + 14px);
+/* squared paper with a red margin and a ruled head, as sheets and as bound pages */
+.sheet, .pg {
   background:
     var(--grain, none) 0 0 / 320px,
     linear-gradient(90deg, transparent calc(var(--mx) - 1px), var(--margin) calc(var(--mx) - 1px) calc(var(--mx) + 0.8px), transparent calc(var(--mx) + 0.8px)),
@@ -145,6 +144,10 @@ a { color: inherit; }
     repeating-linear-gradient(var(--grid) 0 1px, transparent 1px var(--sq)),
     var(--paper);
   background-position: 0 0, 0 0, 0 0, 0 53px, 0 53px, 0 0;
+}
+.sheet {
+  position: relative; width: min(700px, calc(100% - 16px)); margin: 0 auto 34px;
+  padding: 0 18px 34px calc(var(--mx) + 14px);
   box-shadow: 0 2px 2px rgba(0, 0, 0, 0.35), 0 18px 44px rgba(0, 0, 0, 0.55);
   border-radius: 1px 2px 2px 1px;
   transform: rotate(calc(var(--tilt, 0deg) * var(--tilt-k)));
@@ -199,7 +202,8 @@ ul.points > li { position: relative; padding-left: 24px; margin-bottom: 8px; }
 ul.points > li::before { content: "–"; position: absolute; left: 4px; top: -3px; font-family: var(--hand); font-weight: 700; font-size: 26px; color: var(--blue); }
 
 figure { margin: 14px -10px 12px -24px; }
-figure canvas { display: block; width: 100%; mix-blend-mode: multiply; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+figure canvas, figure img.fig { display: block; width: 100%; mix-blend-mode: multiply; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+figure canvas[hidden], figure img.fig[hidden] { display: none; }
 figcaption { margin-top: 2px; font-family: var(--hand); font-size: 17px; color: var(--lead); text-align: right; transform: rotate(-0.6deg); }
 
 /* page one opens with a note, written more quickly */
@@ -333,3 +337,13 @@ ul.open b { font-weight: 400; color: var(--blue); }
 .og .scrap p { margin: 2px 0 0; font-family: var(--hand); font-weight: 700; font-size: 34px; color: var(--blue); text-align: right; transform: rotate(-1deg); }
 
 @media (prefers-reduced-motion: reduce) { .dark { animation: none; opacity: 0; } }
+
+/* how to read: as a book, or as one long page */
+.tools { position: absolute; top: calc(env(safe-area-inset-top) + 12px); right: 12px; z-index: 41; margin: 0; }
+.tools a {
+  display: none; font-family: var(--hand); font-weight: 700; font-size: 19px; line-height: 1; text-decoration: none;
+  color: rgba(243, 239, 228, 0.8); padding: 9px 14px 10px; border-radius: 22px;
+  background: radial-gradient(circle at 40% 35%, rgba(255, 240, 215, 0.1), rgba(0, 0, 0, 0.25));
+  box-shadow: inset 0 0 0 1.5px rgba(243, 239, 228, 0.18);
+}
+.paged .tools .as-page, .scroll .tools .as-book { display: inline-block; }

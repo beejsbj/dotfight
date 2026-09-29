@@ -11,7 +11,7 @@ import * as legacy from "./legacy";
 import type { LegacyFlick, LegacyState } from "./legacy";
 import { CORE, SIZES, type CoreRules, type Size } from "./rules";
 
-export type Mode = { kind: "pnp" } | { kind: "bot"; level: 0 | 1 | 2 };
+export type Mode = { kind: "pnp" } | { kind: "bot"; level: 0 | 1 | 2 } | { kind: "room"; code: string };
 
 /** Any game the desk can hold: the core rules (v2), or a prototype page (v1). */
 export type AnyState = GameState | LegacyState;

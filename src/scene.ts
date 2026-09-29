@@ -67,7 +67,8 @@ export interface Frame {
   orders?: { a: Pt; b: Pt; at: Pt[] }[];
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
   danger?: { x: number; y: number; r: number }[];
-  teach?: { kind: "aim" | "place" | "arrange"; at: Pt; p: number; rot: number; note?: string };
+  /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
+  teach?: { kind: "aim" | "place" | "arrange" | "note"; at: Pt; p: number; rot: number; note?: string; text?: string };
   sig?: Signature;
 }
 
@@ -341,7 +342,9 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   g.translate(at.x, at.y);
   g.rotate(-t.rot);
   const pencil = lead(theme).note;
-  if (t.kind === "place") {
+  if (t.kind === "note") {
+    handText(g, t.text ?? "", 0, 0, 46, pencil, { upTo: p * 1.2, weight: 400, rot: -0.02, align: "center" });
+  } else if (t.kind === "place") {
     handText(g, "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
     handText(g, t.note ?? "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
   } else if (t.kind === "arrange") {
