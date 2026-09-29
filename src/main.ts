@@ -1404,7 +1404,7 @@ function newRoomOnCover() {
     }
   };
   const make = menu.querySelector<HTMLButtonElement>('[data-a="make"]')!;
-  input.onkeydown = (e) => { if (e.key === "Enter") void go(make); };
+  input.onkeydown = (e) => { if (e.key === "Enter" && !make.disabled) void go(make); };
   menu.onclick = (e) => {
     const b = (e.target as HTMLElement).closest("button");
     if (!b || b.disabled) return;
@@ -1459,7 +1459,10 @@ async function openRoom(code: string) {
       coverNote(e instanceof RoomHttpError ? `the page server said no: ${e.message}` : "can't reach the page server: check your signal and try again");
     }
   };
-  if (input) input.onkeydown = (e) => { if (e.key === "Enter") void take(menu.querySelector<HTMLButtonElement>('[data-a="take"]')!); };
+  if (input) input.onkeydown = (e) => {
+    const b = menu.querySelector<HTMLButtonElement>('[data-a="take"]')!;
+    if (e.key === "Enter" && !b.disabled) void take(b);
+  };
   menu.onclick = (e) => {
     const b = (e.target as HTMLElement).closest("button");
     if (!b || b.disabled) return;
