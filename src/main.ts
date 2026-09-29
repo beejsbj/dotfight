@@ -9,7 +9,7 @@ import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
-  act, canArrange, canSend, garrison, illegal, newGame, pathLen, sendMax,
+  act, canArrange, canSend, garrison, illegal, newGame, other, pathLen, sendMax,
   type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
@@ -32,7 +32,7 @@ import * as voice from "./voice";
 import { Bubbles, bubbleAt, type BubbleKind } from "./bubble";
 import { feel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
-import { boil, boilSeen, boilTick, forgetDrawn, life, NOTE, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { boil, boilSeen, boilTick, forgetDrawn, life, NOTE, noteSpotNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
 import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
@@ -561,6 +561,10 @@ function runLapse(then: () => void) {
   if (screen === "game") {
     if (due.out) cue("walk-out", due.out);
     if (due.home) cue("arrive", due.home);
+    // one of the marchers, setting off; or, once they're there, one arriving
+    const w = due.walkers[Math.floor(seeded(s.seed, s.turn, 71) * due.walkers.length)];
+    if (due.out) speak("send", w.id);
+    else if (due.home) speak("arrive", w.id, wall + dur * speed);
   }
   busy = true;
   hud();
@@ -798,6 +802,13 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   if (close && away(shooter)) after(close.at * speed, () => feel("flinch"));
   const phew = plan.cues.find((c) => c.say === "phew");
   if (phew) speak("phew", phew.id, wall + phew.at);
+  // in writing: a lunger yells as he goes, a big snipe fires with a shout; a kill
+  // (or the last one: the war is won) is claimed; a campmate mourns the fallen
+  if (f.kind === "lunge") speak("lunge", f.soldier);
+  else if (pathLen(o.path) > 480) speak("snipe", f.soldier);
+  if (cheer && !o.lost) speak(s.phase === "over" ? "win" : "kill", f.soldier, wall + cheer.r.t0 + 120);
+  const oh = plan.cues.find((c) => c.say === "oh");
+  if (oh) speak("mourn", oh.id, wall + oh.at + 240);
   // a flick is one moment: one voice, now and then two, never the crowd
   for (const c of voice.curate(plan.cues, f.soldier * 131 + s.turn)) {
     const x = s.soldiers[c.id];
@@ -825,6 +836,8 @@ function startVolley(base: number, target: { id: number; x: number; y: number },
     for (const c of voice.curate(plan.cues, target.id * 17 + base)) voice.say(c.say as voice.Say, c.id, s.soldiers[c.id].owner, (lead + c.at) / 1000, c.gain);
     after(lead * speed, () => feel("volley"));
     after((lead + plan.cross) * speed, () => { sfx.snag(false); sfx.cross(0.02, 1); });
+    const jab = plan.cues.find((c) => c.say === "jab");
+    if (jab) speak("deny", jab.id, at + plan.cross + 260);
   }
   dirty = true;
   return plan;
@@ -836,6 +849,7 @@ onCue((c, p) => {
   if (c !== "last-stand" || p === undefined || !heard()) return;
   const few = turn.aliveOf(s, p as Player);
   if (few[0]) voice.say("uhoh", few[0].id, p as Player, 0.15, 0.8);
+  if (few[0]) speak("last", few[Math.floor(seeded(s.seed, s.turn, 67) * few.length)].id, wall + 400);
 });
 
 // What the status line says after a flick.
@@ -1893,6 +1907,7 @@ over.addEventListener("pointermove", (e) => {
     if (!aim) {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
+      speak("aim", selected);
       ratchet.reset();
       acts();
       nudgeFrom = motion.held();
@@ -2175,8 +2190,9 @@ function frame(now: number) {
   if (bk !== bubbleKey) { bubbleKey = bk; dirty = true; }
   // now and then, on your go with nothing happening, a stray thought
   if (screen === "game" && !away(s.current) && s.phase === "play" && !aim && !res && !busy && selected === undefined && bubbles.idleDue(wall, s.seed)) {
-    const mine = turn.aliveOf(s, s.current);
-    if (mine.length) speak("idle", mine[Math.floor(seeded(s.seed, s.turn, Math.floor(wall / 1000)) * mine.length)].id);
+    const mine = turn.aliveOf(s, s.current), theirs = turn.aliveOf(s, other(s.current));
+    const lead = mine.length - theirs.length;
+    if (mine.length) speak(lead >= 4 ? "idleUp" : lead <= -4 ? "idleDown" : "idle", mine[Math.floor(seeded(s.seed, s.turn, Math.floor(wall / 1000)) * mine.length)].id);
   }
   if (active || dirty) {
     const t0 = performance.now();
@@ -2213,7 +2229,7 @@ function currentFrame(): Frame {
     selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
   const bb = heard() ? bubbles.showing(wall) : null, bs = bb && bubbleAt(bb, wall, reduced), bx = bb && s.soldiers[bb.id];
-  if (bb && bs && bx?.alive) { f.hud = { h: H, top: cam.top, bottom: cam.bottom }; f.bubble = { text: bb.text, at: bx, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: bx.owner }; }
+  if (bb && bs && bx?.alive) { f.hud = { h: H, top: cam.top, bottom: cam.bottom }; f.bubble = { text: bb.text, mood: bb.mood, at: bx, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: bx.owner }; }
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
   if (ghost) {
@@ -2435,7 +2451,7 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    stageStats, boil, life, LIFE, NOTE, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
+    stageStats, boil, life, LIFE, NOTE, noteSpot: noteSpotNow, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
     set boilClock(ms: number | undefined) { boilClock = ms; },
     /** Frame-exact captures: `pft.hand(true)`, then `pft.step(ms)` moves the game and the boil on together. */
     hand: (on: boolean) => { handClock = on ? { due: 0 } : null; if (on) boilClock ??= wall; else boilClock = undefined; },
