@@ -417,12 +417,12 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
 // way up you're looking, and sized so it reads from bird's-eye as well as leaning in.
 function drawNote(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box) {
   const pen = INK.pens[b.owner];
-  const size = Math.max(22, Math.min(50, 19 / f.view.z)); // page units: about 19 screen px
+  const size = Math.max(30, Math.min(70, 25 / f.view.z)); // page units: about 25 screen px
   g.save();
   g.font = `700 ${size}px Caveat, "Patrick Hand", cursive`;
   const w = g.measureText(b.text).width;
   g.restore();
-  const R = RULES.soldierRadius, side = b.side, gap = size * 1.1;
+  const R = RULES.soldierRadius, side = b.side, gap = size * 1.7;
   // the words up and to one side of him (screen-wise), the arrow from their near end down to him
   const tx = side * (R + gap), ty = -(R + gap);
   const from = { x: tx - side * 3, y: ty + size * 0.12 }, to = { x: side * (R + 3), y: -(R + 3) };
@@ -430,7 +430,7 @@ function drawNote(g: Ctx, f: Frame, b: NonNullable<Frame["bubble"]>, box: Box) {
   g.save();
   g.translate(b.at.x, b.at.y);
   g.rotate(-f.view.rot);
-  pencilArrow(g, from, to, 0.18 * side, b.seed, Math.max(1.6, 2.2 * theme.ink.width), arrow, b.alpha, pen);
+  pencilArrow(g, from, to, 0.18 * side, b.seed, Math.max(2, size * 0.09 * theme.ink.width), arrow, b.alpha, pen);
   handText(g, b.text, tx + (side < 0 ? -w : 0), ty, size, pen, { upTo: words, alpha: b.alpha * 0.95, weight: 700, rot: -0.04 * side });
   g.restore();
   box.add(b.at.x, b.at.y, Math.hypot(Math.abs(tx) + w + size, Math.abs(ty) + size * 1.5));
