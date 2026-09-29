@@ -32,6 +32,10 @@ export interface Aim {
   spread: number;
   reach: number;
   kind: "snipe" | "lunge";
+  /** Pen falcon: a sight at the end of the guide, drawn closed as the hand holds still (0..1). */
+  sight?: number;
+  /** How far out the sight sits (page units), kept on screen. */
+  sightAt?: number;
 }
 
 export interface Frame {
@@ -338,7 +342,7 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
     g.globalAlpha = 1;
   }
   if (f.teach) { drawTeach(g, f.teach); box.add(f.teach.at.x, f.teach.at.y, 420); }
-  if (f.aim) { drawAim(g, s, f.aim, px); box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + 24); }
+  if (f.aim) { drawAim(g, s, f.aim, px); box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + (f.aim.sight !== undefined ? 90 : 24)); }
 }
 
 function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
@@ -358,7 +362,9 @@ function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
   g.globalAlpha = 1;
 }
 
-const aimShow = (a: Aim) => (a.kind === "lunge" ? Math.min(a.reach * 0.55, 110 + a.reach * 0.3) : Math.min(a.reach, 110 + a.reach * 0.2));
+const aimShow = (a: Aim) =>
+  a.sight !== undefined ? a.sightAt ?? 560 // the pen falcon's sight: out past the standing pen, where you can see it
+  : a.kind === "lunge" ? Math.min(a.reach * 0.55, 110 + a.reach * 0.3) : Math.min(a.reach, 110 + a.reach * 0.2);
 
 function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   const me = s.soldiers[a.soldierId];
@@ -374,12 +380,26 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   g.closePath();
   g.fill();
   pencilLine(g, me, { x: me.x + dx * show, y: me.y + dy * show }, Math.max(2.2, 1.6 * px), 3);
+  if (a.sight !== undefined) return drawSight(g, me.x + dx * show, me.y + dy * show, a.sight, px);
   // power, as ticks along the guide: each is a notch you can feel
   const notches = Math.floor(a.power * 5 + 1e-6);
   for (let i = 1; i <= notches; i++) {
     const t = (show * i) / 5.5;
     const cx = me.x + dx * t, cy = me.y + dy * t;
     pencilLine(g, { x: cx - dy * 7, y: cy + dx * 7 }, { x: cx + dy * 7, y: cy - dx * 7 }, Math.max(1.8, 1.3 * px), 40 + i, false);
+  }
+}
+
+// A pencilled ring that closes while you hold the phone still, and gets its
+// cross hairs once it has: then a flick of the wrist fires.
+function drawSight(g: Ctx, x: number, y: number, armed: number, px: number) {
+  const r = 48, w = Math.max(5, 3.2 * px);
+  pencilLoop(g, x, y, r, 5, w * 0.7, 1, 0.3); // where it will close, sketched faintly
+  pencilLoop(g, x, y, r, 5, w, 0.12 + 0.88 * armed, 1); // pressed in as the hand holds still
+  if (armed < 1) return;
+  pencilLoop(g, x, y, r - 3, 9, w * 0.8, 1, 0.8); // gone over twice: armed
+  for (const [ux, uy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+    pencilLine(g, { x: x + ux * (r - 16), y: y + uy * (r - 16) }, { x: x + ux * (r + 18), y: y + uy * (r + 18) }, w, 60 + ux * 3 + uy, false);
   }
 }
 
