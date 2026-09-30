@@ -83,6 +83,9 @@ const dawn = new Tween(0);
 // things to do later, on the game clock
 let later: { at: number; fn: () => void; g: number }[] = [];
 function after(ms: number, fn: () => void) { later.push({ at: T + ms, fn, g: gen }); }
+// the room's own business (the lamp) outlives any one game
+const ROOM = -1;
+function whenever(ms: number, fn: () => void) { later.push({ at: T + ms, fn, g: ROOM }); }
 
 // the flick resolving now
 interface Resolve {
@@ -313,7 +316,7 @@ const learn = (k: string) => localStorage.setItem(`pft:taught:${k}`, "1");
 
 function reset() {
   gen++;
-  later = [];
+  later = later.filter((l) => l.g === ROOM);
   busy = false;
   res = null;
   aim = null;
@@ -808,7 +811,7 @@ function showTitle() {
   cover.hidden = false;
   cover.classList.remove("open");
   // the lamp comes on
-  if (lampOn.to < 1) after(450, switchOn);
+  if (lampOn.to < 1 && !later.some((l) => l.fn === switchOn)) whenever(450, switchOn);
 }
 
 // The slip tucked in the cover, and the page on the desk under it.
@@ -879,15 +882,15 @@ function switchOn() {
   else if (kind === "tube") {
     // a tube light: blinks twice on its starter, then catches
     lampOn.go(0.55, 30);
-    after(60, () => lampOn.go(0.08, 40));
-    after(210, () => lampOn.go(0.65, 30));
-    after(270, () => lampOn.go(0.12, 50));
-    after(430, () => lampOn.go(1, 80));
+    whenever(60, () => lampOn.go(0.08, 40));
+    whenever(210, () => lampOn.go(0.65, 30));
+    whenever(270, () => lampOn.go(0.12, 50));
+    whenever(430, () => lampOn.go(1, 80));
   } else {
     // a lamp's flicker: on, off, on
     lampOn.go(0.75, 40);
-    after(70, () => lampOn.go(0.15, 50));
-    after(160, () => lampOn.go(1, 180));
+    whenever(70, () => lampOn.go(0.15, 50));
+    whenever(160, () => lampOn.go(1, 180));
   }
   document.body.classList.add("lit");
 }
@@ -1953,7 +1956,7 @@ function frame(now: number) {
   if (later.length) {
     const due = later.filter((l) => l.at <= T);
     later = later.filter((l) => l.at > T);
-    for (const l of due) if (l.g === gen) l.fn();
+    for (const l of due) if (l.g === gen || l.g === ROOM) l.fn();
   }
   const moving = cam.tick(dt);
   let active = moving;
