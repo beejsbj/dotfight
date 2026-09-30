@@ -29,7 +29,7 @@ One flick, either a **snipe** or a **lunge**, plus one free **send**.
 
 ## Flicking
 
-Pull back and release, like flicking a pen stood on its tip. The harder the flick, the longer the line and the less accurate it is. A soft flick is short and precise.
+Pull back and release, like flicking a pen stood on its tip. The harder the flick, the longer the line and the less accurate it is. A soft flick is short and precise. The pull is long and forgiving: a thumb's whole travel down a phone covers the whole reach, with the short lines that matter most spread widest, so a finger's slip changes the line a little, not a lot.
 
 ## Snipe
 
@@ -155,6 +155,7 @@ Every value here is a lab guess or a direction nobody has played yet.
 |---|---|
 | Snipe power loss per wall and per kill | 10% of what's left at a wall, 5% at a soldier crossed out (the lab's gentle magnitudes, walls costing more). Round 3: fair, and snipe streaks stay short. |
 | Snipe extra flick with no rising bar | Round 3: the worst turn averages 6.4 flicks in Quick and 7.5 in Classic (up to 13–15), and it's lunge chains that make them long, not snipes. |
+| Flick reach and pull | One reach for snipe and lunge, so the pull is one thing to learn: 200 to 1200 units (the page is 1000 wide) over 240 px of thumb travel, on a power^1.5 curve so the short lines you want most get the most travel (300 to 700 units take 64 to 157 px). A lunger who runs off the page is lost, so a lunge is best kept short, and now it can be, easily. Error follows a line's length, so a 700-unit line is as accurate as before. Rules version 2. |
 | Lunge shake at walls and soldiers | 0.08 rad at a wall, 0.04 at a soldier. Round 3: lunges are 69–76% of flicks, because cutting through a base is legal now. Is it too cheap? Doubling the wall shake only brings lunges to 58–66%. |
 | Lunge chain shake per link | 0.05 rad (about 3°). A fifth of chains run to four or more; 0.10 a link cut that to an eighth. The first lever to try if chains feel long. |
 | Positioning reach | 20 units. Inside-only changed nothing in the lab; 40 turned the game towards lunges. "Keep at least one inside" is not a rule (the bot keeps half inside by choice). |
