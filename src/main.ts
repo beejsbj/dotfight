@@ -1534,6 +1534,15 @@ async function openRoom(code: string) {
     try {
       const j = await roomApi.join(code, who, entry.signal);
       const d = saved(j.seat, j.secret, j.seat === 1 ? [host, who] : [who, v.names[1]]);
+      // Watch may already have opened this same page while the claim was in flight.
+      // Retain its current log and give that link the credentials too, so its
+      // next save cannot overwrite the recovered seat with a spectator record.
+      if (j.seat !== null && entry.signal.aborted && link?.code === code && link.seat === null) {
+        Object.assign(link.data, { seat: j.seat, secret: j.secret, names: d.names });
+        link.save();
+        hud();
+        return;
+      }
       if (j.seat !== null) new RoomLink(d, { api: roomApi, storage: localStorage }).save();
       if (entry.signal.aborted) return;
       restoreLabel();
