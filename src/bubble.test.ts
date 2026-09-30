@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { ANCHOR, BUBBLE, Bubbles, CLOCK_LINES, LINES, MOOD, PAPER_LINES, bubbleAt, heatOf, lineFor, linesFor, replyAt, showOf, strayKind, type BubbleKind, type Context } from "./bubble";
+import { ANCHOR, BUBBLE, Bubbles, CLOCK_LINES, LINES, MOOD, PAPER_LINES, STREAK_LINES, bubbleAt, countWord, heatOf, lineFor, linesFor, replyAt, showOf, strayKind, streakTier, streakVoices, type BubbleKind, type Context, type StreakKind } from "./bubble";
 import { LIFE } from "./life";
 
 const ctx: Context = { me: "Blue", them: "Red", paper: "lamplight", hour: 15, heat: 0 };
-const kinds = Object.keys(LINES) as BubbleKind[];
+const kinds = Object.keys(LINES) as (keyof typeof LINES)[];
+const streaks = Object.keys(STREAK_LINES) as StreakKind[];
 
 describe("pencil notes", () => {
   it("one at a time, with a long gap between", () => {
@@ -57,6 +58,55 @@ describe("pencil notes", () => {
     for (const k of ["lunge", "win", "snipe"] as const) { expect(lineFor(k, 1, { ...ctx, heat: 1 }).mood).toBe("shout"); expect(ANCHOR[k]).toBe("base"); }
     expect(ANCHOR.chant).toBe("base");
     expect(MOOD.chant).toBe("chant");
+  });
+
+  it("a streak: lines for every voice at every stage, the count filled in, louder as it goes", () => {
+    for (const k of streaks) {
+      expect(MOOD[k]).toBeDefined();
+      expect(ANCHOR[k]).toBeDefined();
+      for (const n of [2, 3, 4, 7]) {
+        expect(linesFor(k, { ...ctx, streak: n }).length).toBeGreaterThan(4);
+        for (let seed = 0; seed < 60; seed++) {
+          const l = lineFor(k, seed, { ...ctx, streak: n });
+          expect(l.text).not.toMatch(/\{/);
+          expect(l.text).not.toMatch(/zero/);
+        }
+      }
+    }
+    expect(countWord(4)).toBe("four");
+    expect(countWord(15)).toBe("15");
+    expect([2, 3, 4, 9].map(streakTier)).toEqual([0, 1, 2, 2]);
+    // link 2 is a mutter; four and on, mostly shouts and chants
+    const loud = (n: number) => streaks.filter((k) => k !== "streakEnd").flatMap((k) => Array.from({ length: 100 }, (_, i) => lineFor(k, i, { ...ctx, streak: n }).mood)).filter((m) => m === "shout" || m === "chant").length;
+    expect(loud(2)).toBeLessThan(40);
+    expect(loud(5)).toBeGreaterThan(250);
+    const counts = new Set(Array.from({ length: 300 }, (_, i) => lineFor("streakCamp", i, { ...ctx, streak: 4 }).text));
+    expect([...counts].some((t) => t.includes("four"))).toBe(true);
+    // who speaks: the streaker and the enemy early, the camps once it's long; never the one who just spoke first
+    const firsts = (n: number) => new Set(Array.from({ length: 50 }, (_, i) => streakVoices(n, i / 50)[0]));
+    expect(firsts(2)).toEqual(new Set(["streakMe", "streakFoe", "streakCamp"]));
+    expect(firsts(5).has("streakFoe")).toBe(false);
+    for (let i = 0; i < 20; i++) { const v = streakVoices(4, i / 20, "streakCamp"); expect(v[0]).not.toBe("streakCamp"); expect(v.length).toBe(3); }
+  });
+
+  it("a streak's line can't wait: the note up is rubbed out, and it's written straight after", () => {
+    const b = new Bubbles();
+    const a = b.offer("idle", 1, 1000, 3, ctx)!;
+    const w = BUBBLE.timing[a.mood].writeMs;
+    const u = b.urgent("streakMe", 2, 1000 + w + 300, 5, { ...ctx, streak: 3 })!;
+    // the first is cut short, rubbed out from now, and the streak's follows it
+    expect(showOf(a)).toBeLessThan(BUBBLE.timing[a.mood].showMs);
+    expect(u.t0).toBe(1000 + showOf(a));
+    expect(b.showing(1000 + w + 350)).toBe(a);
+    expect(b.showing(u.t0 + 10)).toBe(u);
+    // nothing else gets in while a streak's line waits
+    const c = new Bubbles(); c.offer("idle", 1, 0, 3, ctx); c.urgent("streakCamp", 4, 100, 6, { ...ctx, streak: 4 });
+    expect(c.offer("win", 2, 200, 1, ctx)).toBeNull();
+    // a newer link replaces the one waiting
+    const v = c.urgent("streakFoeCamp", 5, 300, 7, { ...ctx, streak: 5 })!;
+    expect(c.next).toBe(v);
+    // nothing up: straight on
+    expect(new Bubbles().urgent("streakFoe", 1, 50, 8, { ...ctx, streak: 2 })!.t0).toBe(50);
   });
 
   it("fills in the sides' names and grows with the war", () => {

@@ -561,6 +561,126 @@ export default async function (T, out) {
       }
     }
   }
+  // --- notes, round four: loops that hug their words, fitting where it's full, streaks ---
+  //   ovals-<theme>-who                 "hold the line" from bird's-eye (as notes3's who, for before and after)
+  //   ovals-<theme>-gallery-<i>         short, long, wrapped and shouted lines at several angles, leaning in (clips)
+  //   fit-<theme>                       a crowded exchange: written smaller to sit close to its man
+  //   streak-<theme>-<voice>-<n>        each voice of a streak forced at link 2 and link 5, bird's-eye
+  //   streak-<theme>-chain-<link>       a real lunge chain, fired through the game, after each link lands
+  //   streak-<theme>-chain              the chain building, frame by frame (GIF), and a strip
+  if (want("notes4")) {
+    const force = (kind, id, text, mate) => page.evaluate(({ kind, id, text, mate }) => {
+      const p = window.pft;
+      for (let k = 0; k < 20000; k++) {
+        p.bubbles.reset(); p.speak(kind, id, p.wall, 1000 + k * 7, mate);
+        if (p.bubbles.cur && (!text || p.bubbles.cur.text === text) && (mate === undefined || p.bubbles.cur.reply)) { p.poke(); return p.bubbles.cur.text; }
+      }
+      return null;
+    }, { kind, id, text, mate });
+    const clear = async () => { await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100); };
+    const overview = async () => { await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); }); await step(0, 150); };
+    for (const theme of (process.env.THEMES ?? "lamplight,blueprint").split(",")) {
+      await page.evaluate((id) => window.pft.theme?.apply(id), theme);
+      await war(7, 12);
+      await overview();
+      const camp = await fullest("mine");
+      const men = await menIn(camp);
+      // the loops
+      console.log("who:", await force("idle", men[2].id, "hold the line"));
+      await step(900, 150); await page.screenshot({ path: `${out}/ovals-${theme}-who.png` }); await clear();
+      const lines = [["ready", "ok!"], ["idle", "what's the plan"], ["ponder", "I think, therefore I'm a dot"], ["phew", "HEY!"], ["dread", "!"]];
+      const angles = [0, 0.5, Math.PI / 2, -0.85];
+      await flat(camp, 2.4);
+      let gi = 0;
+      for (const [kind, text] of lines) for (const ang of angles) {
+        await page.evaluate((a) => { window.pft.NOTE.angle = a; }, ang);
+        const got = await force(kind, men[4].id, text);
+        if (!got) { console.log("no line", kind, text); continue; }
+        await step(1200, 120);
+        await page.screenshot({ path: `${out}/ovals-${theme}-gallery-${String(gi++).padStart(2, "0")}.png`, clip: await box(camp, 195) });
+        await clear();
+      }
+      await page.evaluate(() => { window.pft.NOTE.angle = undefined; });
+      await overview();
+      // a crowded exchange: find one written smaller so it sits close to its man
+      const pair = (id) => page.evaluate((id) => {
+        const s = window.pft.s, me = s.soldiers[id], d = (x) => Math.hypot(x.x - me.x, x.y - me.y);
+        const near = s.soldiers.filter((x) => x.alive && x.owner === me.owner && x.id !== id && d(x) <= 62 * 2.5).sort((a, b) => d(a) - d(b));
+        return (near.filter((x) => d(x) >= 42).sort((a, b) => Math.abs(d(a) - 80.6) - Math.abs(d(b) - 80.6))[0] ?? near[0])?.id;
+      }, id);
+      const all = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).map((x) => x.id); });
+      let fitted = null;
+      for (const id of all) {
+        const mate = await pair(id);
+        if (mate === undefined) continue;
+        for (let k = 0; k < 6 && !fitted; k++) {
+          await page.evaluate(({ id, mate, k }) => { const p = window.pft; for (let j = 0; j < 4000; j++) { p.bubbles.reset(); p.speak("chat", id, p.wall, 5000 + k * 977 + j * 7, mate); if (p.bubbles.cur?.reply) break; } p.poke(); }, { id, mate, k });
+          await step(2300, 60);
+          const sp = await page.evaluate(() => window.pft.noteSpots().slice(-2).map((m) => m.k));
+          if (sp.some((x) => x > 0)) fitted = { id, mate, sp };
+          else await clear();
+        }
+        if (fitted) break;
+      }
+      if (fitted) { console.log("fit:", JSON.stringify(fitted), await page.evaluate(() => `${window.pft.bubbles.cur?.text} / ${window.pft.bubbles.cur?.reply?.text}`)); await page.screenshot({ path: `${out}/fit-${theme}.png` }); }
+      else console.log("fit: no crowded exchange found");
+      await clear();
+      // each voice of a streak, forced, at link 2 and link 5
+      const streaker = men[0].id;
+      for (const n of [2, 5]) for (const v of ["streakMe", "streakFoe", "streakCamp", "streakFoeCamp"]) {
+        const got = await page.evaluate(({ n, v, id }) => { const p = window.pft; p.bubbles.reset(); const b = p.speakStreak(n, id, p.wall, 4242 + n, v); p.poke(); return b ? `${b.kind} ${b.mood}: ${b.text}` : null; }, { n, v, id: streaker });
+        console.log(`streak ${theme} ${v} ${n}:`, got);
+        if (!got) continue;
+        await step(n >= 4 ? 1500 : 1000, 150);
+        await page.screenshot({ path: `${out}/streak-${theme}-${v}-${n}.png` });
+        await clear();
+      }
+      // a real lunge chain, through the game: search for a lunge that kills and lands safe, fire it, again with the same man
+      const findKill = () => page.evaluate(async () => {
+        const g = await import("/src/game.ts");
+        const s = window.pft.s, c = s.chain;
+        const ids = c ? [c.soldier] : s.soldiers.filter((x) => x.alive && x.owner === s.current).map((x) => x.id);
+        let best = null;
+        for (const id of ids) {
+          if (!g.canFlick(s, id, "lunge")) continue;
+          for (let a = 0; a < 360; a += 4) for (let len = 120; len <= 620; len += 20) {
+            const f = { soldier: id, kind: "lunge", angle: (a * Math.PI) / 180, length: len, bend: 0, wob: 7 };
+            const o = g.preview(s, f);
+            if (!o.killed.length || o.lost || o.crashed !== undefined) continue;
+            // one kill a link keeps men about for the next; nearer the middle of the page keeps him on screen
+            const end = o.path[o.path.length - 1], score = (o.killed.length === 1 ? 0 : 50) + Math.hypot(end.x - 500, end.y - 850) * 0.05 + len * 0.02;
+            if (!best || score < best.score) best = { f, score };
+          }
+          if (best && !c) break;
+        }
+        return best?.f ?? null;
+      });
+      await page.evaluate(() => window.pft.bubbles.reset());
+      const chainFrames = [];
+      let link = 0;
+      for (let k = 0; k < 7; k++) {
+        const f = await findKill();
+        if (!f) { console.log("chain: no more kills from here"); break; }
+        await page.evaluate((f) => window.pft.flick(f), f);
+        link++;
+        // step through the flick and the note, a frame on twos
+        for (let i = 0; i < 40; i++) {
+          await step(1000 / 12, 40);
+          const full = await page.screenshot({ type: "jpeg", quality: 80 });
+          const file = `${out}/streak-${theme}-chain-f${String(chainFrames.length).padStart(3, "0")}.jpg`;
+          (await import("node:fs")).writeFileSync(file, full);
+          chainFrames.push(file);
+        }
+        for (let i = 0; i < 40 && await page.evaluate(() => window.pft.busy); i++) await step(1000 / 12, 20);
+        const st = await page.evaluate(() => { const p = window.pft, b = p.bubbles.cur; return { chain: p.s.chain?.link ?? 0, busy: !!p.busy, note: b ? `${b.kind} ${b.mood}: ${b.text}` : null }; });
+        console.log(`chain link ${link}:`, JSON.stringify(st));
+        await page.screenshot({ path: `${out}/streak-${theme}-chain-${link}.png` });
+        if (!st.chain) break;
+      }
+      if (chainFrames.length) spawnSync("ffmpeg", ["-loglevel", "error", "-y", "-framerate", "12", "-i", `${out}/streak-${theme}-chain-f%03d.jpg`, "-vf", "scale=360:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=none", "-loop", "0", `${out}/streak-${theme}-chain.gif`], { stdio: "inherit" });
+      await clear();
+    }
+  }
   await page.evaluate(() => window.pft.hand(false));
 }
 

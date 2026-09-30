@@ -29,8 +29,11 @@ export type BubbleKind =
   | "ready" | "aim" | "phew" | "dread" | "kill" | "mourn" | "send" | "arrive"
   | "idle" | "idleUp" | "idleDown" | "ponder" | "tired" | "banter" | "shapes" | "paper" | "home" | "afield" | "clock" | "wait" | "tiny" | "chat"
   // a camp
-  | "last" | "win" | "lunge" | "snipe" | "deny" | "chant" | "chantLast";
+  | "last" | "win" | "lunge" | "snipe" | "deny" | "chant" | "chantLast"
+  // a streak (chained lunges, or snipes that keep earning): the streaker, the enemy man next in line; his home camp, the camp he's tearing through, its relief when he stops
+  | "streakMe" | "streakFoe" | "streakCamp" | "streakFoeCamp" | "streakEnd";
 export type Anchor = "man" | "base";
+export type StreakKind = "streakMe" | "streakFoe" | "streakCamp" | "streakFoeCamp" | "streakEnd";
 /** A line: bare, or with its own mood, a longer form for late in the war, or a reply (an exchange). */
 type Line = string | { t: string; mood?: Mood; late?: string; reply?: string };
 
@@ -70,12 +73,14 @@ export const MOOD: Record<BubbleKind, Mood> = {
   idle: "say", idleUp: "say", idleDown: "whisper", ponder: "whisper", tired: "whisper", banter: "say", shapes: "say", paper: "say",
   home: "say", afield: "whisper", clock: "say", wait: "tiny", tiny: "tiny", chat: "say",
   last: "shout", win: "shout", lunge: "shout", snipe: "shout", deny: "shout", chant: "chant", chantLast: "chant",
+  streakMe: "say", streakFoe: "whisper", streakCamp: "say", streakFoeCamp: "say", streakEnd: "say",
 };
 export const ANCHOR: Record<BubbleKind, Anchor> = {
   ready: "man", aim: "man", phew: "man", dread: "man", kill: "man", mourn: "man", send: "man", arrive: "man",
   idle: "man", idleUp: "man", idleDown: "man", ponder: "man", tired: "man", banter: "man", shapes: "man", paper: "man",
   home: "man", afield: "man", clock: "man", wait: "man", tiny: "man", chat: "man",
   last: "base", win: "base", lunge: "base", snipe: "base", deny: "base", chant: "base", chantLast: "base",
+  streakMe: "man", streakFoe: "man", streakCamp: "base", streakFoeCamp: "base", streakEnd: "base",
 };
 
 const shout = (t: string, late?: string): Line => ({ t, mood: "shout", late });
@@ -84,13 +89,14 @@ const tiny = (t: string): Line => ({ t, mood: "tiny" });
 const say = (t: string): Line => ({ t, mood: "say" });
 const grow = (t: string, late: string): Line => ({ t, late });
 const chat = (t: string, reply: string): Line => ({ t, reply });
+const chant = (t: string): Line => ({ t, mood: "chant" });
 
 /**
  * What the men say, by moment. Schoolboy war; Dawood invented the game and
  * they know it. `{me}` and `{them}` are the sides' pen names on this paper
  * ("Blue", "Red", "White", "Yellow", "Lead", …); `{paper}` is the paper's name.
  */
-export const LINES: Record<BubbleKind, readonly Line[]> = {
+export const LINES: Record<Exclude<BubbleKind, StreakKind>, readonly Line[]> = {
   // picked up
   ready: ["I'm ready", "ready!", "me?", "ok!", "finally", "pick me!", "right then", "here we go", "oh. me.", "again?", whisper("be gentle"), "put me down", "I was napping", "at last"],
   // aimed with (the pull held)
@@ -177,11 +183,72 @@ export const CLOCK_LINES: readonly [from: number, to: number, lines: readonly st
   [22, 24, ["past your bedtime", "one more then bed", "it's late", "shouldn't you be asleep", "the lamp's tired"]],
 ];
 
+/**
+ * A streak's lines, by how far it's gone: [link 2, link 3, link 4 and on].
+ * `{n}` is the count so far ("two", "three", …), `{N}` shouted ("FOUR").
+ * It builds: link 2 is a mutter, link 3 a shout, four and on the camp roars.
+ */
+const END: readonly Line[] = ["phew", "finally!", "he's out of ink", "is he done?", "and stay out!", "we survived", "count us", "that was rude", "is it over?", "never again", "count us. slowly", "someone check on Gary", "I need a lie down", shout("FINALLY")];
+export const STREAK_LINES: Record<StreakKind, readonly [readonly Line[], readonly Line[], readonly Line[]]> = {
+  // the streaker himself, mid-chain: cocky, then frantic
+  streakMe: [
+    ["again!", "one more", "that's {n}", "easy", "hold my hat", "I'm on a roll", "did you see that?", "who's next?", "still going", whisper("I can't stop"), "warming up", "don't clap yet", "and another", "is this allowed?"],
+    [shout("{N}!"), shout("I can't stop!"), shout("who's next?!"), "someone stop me", shout("for Dawood!", "fooor Dawooood!"), shout("wheee!"), "I'm unstoppable", "my legs won't stop", shout("hat trick!"), "I'm a bit dizzy", "keep the pen on me", shout("MORE!")],
+    [shout("{N}!!"), shout("I AM THE PEN"), shout("nobody stop me"), shout("fooor Dawooood!"), shout("I can't feel my dot"), shout("AAAAAH"), shout("tell mum I'm famous"), shout("put me in the rulebook"), "I think I'm going to be sick", shout("I'M A LEGEND"), shout("where's the brake?!"), shout("I've gone too far"), "I've forgotten how to stop", shout("NEXT!")],
+  ],
+  // the next enemy man in line, bracing
+  streakFoe: [
+    ["he's back", "not again", "uh oh", "is he coming here?", "look busy", "don't make eye contact", "stand still, he won't see us", "he looks hungry", tiny("not me")],
+    [say("run!"), say("he's coming back!"), say("hide!"), say("not me not me"), say("why won't he stop"), say("mum!"), say("I'm too young!"), say("somebody do something"), say("play dead!"), say("I've got a family!")],
+    [shout("HE WON'T STOP"), shout("RUN!!"), shout("everybody down!"), shout("this isn't fair!"), shout("call Dawood!"), shout("take his pen!"), shout("I SURRENDER"), shout("MUM!!"), shout("he's a monster"), shout("not the face!")],
+  ],
+  // his camp, back home, watching from its ring and counting
+  streakCamp: [
+    [whisper("that's {n}!"), "go on!", "look at him", "go on, son", "he's off!", whisper("is he allowed to do that?"), "that's our lad", "steady…"],
+    [shout("{n}! {n}!"), shout("go go go!"), "that's our boy!", shout("he's on fire!"), chant("one more! one more!"), "we taught him that", shout("{N} for {me}!"), "don't stop now!"],
+    [chant("{n}! {n}! {n}!"), chant("Da-wood! Da-wood!"), chant("go-on! go-on! go-on!"), chant("MORE! MORE! MORE!"), shout("we're not worthy!"), chant("legend! legend!"), shout("put him in the book!"), chant("{me}! {me}! {me}!"), shout("{N}! that's {N}!"), chant("again! again! again!")],
+  ],
+  // the camp he's tearing through
+  streakFoeCamp: [
+    ["who let him in", "watch him!", "that's {n} of ours", "he's got a taste for it", "someone watch the gate", "rude"],
+    [shout("stop him!"), shout("man the ring!"), shout("he's coming round again!"), shout("close the camp!"), "that's {n} now!", shout("somebody catch him!"), shout("oi! {them}!")],
+    [shout("ABANDON CAMP!"), shout("every man for himself!"), chant("stop! stop! stop!"), shout("we surrender! (not really)"), shout("REF! REF!"), shout("is this even legal?!"), shout("{N}?! {N}!?"), shout("tell Dawood!"), shout("save the small dots!"), chant("no more! no more!")],
+  ],
+  // the streak's over (three or more): the camp he tore through, relieved (the same at any length)
+  streakEnd: [END, END, END],
+};
+const NUMBER = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+/** A streak's count in words, or figures past twelve. Pure. */
+export const countWord = (n: number) => NUMBER[n] ?? String(n);
+/** Which stage of a streak `n` links long is at: 0 (link 2), 1 (link 3), 2 (four and on). Pure. */
+export const streakTier = (n: number) => Math.max(0, Math.min(2, n - 2));
+
+/** Who's heard at each stage of a streak, and how likely: the streaker and the enemy early, the camps roaring once it's long. */
+const STREAK_VOICES: readonly (readonly [StreakKind, number][])[] = [
+  [["streakMe", 0.4], ["streakFoe", 0.35], ["streakCamp", 0.25]],
+  [["streakMe", 0.3], ["streakCamp", 0.35], ["streakFoeCamp", 0.35]],
+  [["streakCamp", 0.45], ["streakFoeCamp", 0.3], ["streakMe", 0.25]],
+];
+/**
+ * Who might speak at link `n` of a streak, most wanted first: the seeded roll
+ * `r` (0..1) picks one by weight, and the rest follow by weight, for when the
+ * first is off screen or just spoke (`not`). Pure.
+ */
+export function streakVoices(n: number, r: number, not?: StreakKind): StreakKind[] {
+  const opts = STREAK_VOICES[streakTier(n)];
+  let acc = 0, first = opts[opts.length - 1][0];
+  for (const [k, w] of opts) { acc += w; if (r < acc) { first = k; break; } }
+  const rest = [...opts].sort((a, b) => b[1] - a[1]).map(([k]) => k).filter((k) => k !== first);
+  const order = [first, ...rest];
+  return not ? [...order.filter((k) => k !== not), not] : order;
+}
+
 /** How often a chance to speak is taken. */
 const CHANCE: Record<BubbleKind, number> = {
   ready: 0.3, aim: 0.12, phew: 0.55, dread: 0.3, kill: 0.45, mourn: 0.4, send: 0.5, arrive: 0.5,
   idle: 1, idleUp: 1, idleDown: 1, ponder: 1, tired: 1, banter: 1, shapes: 1, paper: 1, home: 1, afield: 1, clock: 1, wait: 1, tiny: 1, chat: 1,
   last: 0.9, win: 1, lunge: 0.7, snipe: 0.5, deny: 0.6, chant: 1, chantLast: 1,
+  streakMe: 1, streakFoe: 1, streakCamp: 1, streakFoeCamp: 1, streakEnd: 0.6,
 };
 
 /** What a line is said in the light of: the sides' pen names, the paper, the hour, and how hot the war is. */
@@ -192,6 +259,8 @@ export interface Context {
   hour: number;
   /** 0..1: turns played, men crossed out, last stands. Lines take their late form from `BUBBLE.lateFrom`. */
   heat: number;
+  /** A streak: how many links long it is (the streak kinds' lines, `{n}`). */
+  streak?: number;
 }
 
 export interface Bubble {
@@ -212,13 +281,15 @@ export interface Bubble {
   reply?: { text: string; mood: Mood; id: number; t0: number; seed: number; hold: number };
 }
 
-const fill = (t: string, c: Context) => t.replace(/\{me\}/g, c.me).replace(/\{them\}/g, c.them).replace(/\{paper\}/g, c.paper);
+const fill = (t: string, c: Context) => t.replace(/\{me\}/g, c.me).replace(/\{them\}/g, c.them).replace(/\{paper\}/g, c.paper)
+  .replace(/\{n\}/g, countWord(c.streak ?? 0)).replace(/\{N\}/g, countWord(c.streak ?? 0).toUpperCase());
 
 /** The lines a moment offers in this context (paper and hour lines join theirs). */
 export function linesFor(kind: BubbleKind, c: Context): readonly Line[] {
+  if (kind in STREAK_LINES) return STREAK_LINES[kind as StreakKind][streakTier(c.streak ?? 2)];
   if (kind === "paper") return [...LINES.paper, ...(PAPER_LINES[c.paper] ?? [])];
   if (kind === "clock") { const h = CLOCK_LINES.find(([a, b]) => c.hour >= a && c.hour < b); return h ? [...h[2], ...LINES.clock] : LINES.clock; }
-  return LINES[kind];
+  return LINES[kind as Exclude<BubbleKind, StreakKind>];
 }
 
 /** The line seed `seed` picks for `kind` in context `c`: its text and mood, and a reply if it's an exchange. Pure. */
@@ -253,6 +324,8 @@ export const showOf = (b: Bubble) => Math.max(BUBBLE.timing[b.mood].showMs + (b.
 /** One note at a time, rarely. */
 export class Bubbles {
   cur: Bubble | null = null;
+  /** A streak's line, waiting for the one up to be rubbed out. */
+  next: Bubble | null = null;
   private last = -Infinity;
   private window = -1;
 
@@ -264,7 +337,7 @@ export class Bubbles {
    */
   offer(kind: BubbleKind, id: number, t0: number, seed: number, c: Context, mate?: number): Bubble | null {
     if (!LIFE.bubbles) return null;
-    if (this.cur && t0 < this.cur.t0 + showOf(this.cur)) return null;
+    if (this.next || (this.cur && t0 < this.cur.t0 + showOf(this.cur))) return null;
     const { text, mood, reply } = lineFor(kind, seed, c);
     const loud = mood === "shout" || mood === "chant";
     if (t0 - this.last < (loud ? BUBBLE.loudGapMs : BUBBLE.gapMs)) return null;
@@ -279,6 +352,32 @@ export class Bubbles {
     return this.cur;
   }
 
+  /**
+   * A streak's line: it can't wait for the usual gap or the dice. If a note
+   * is up, it's rubbed out now (once it's finished being written) and this
+   * one is written straight after, so there's still one on the page; a line
+   * already waiting its turn is replaced by the newer, bigger one.
+   */
+  urgent(kind: BubbleKind, id: number, t0: number, seed: number, c: Context): Bubble | null {
+    if (!LIFE.bubbles) return null;
+    const { text, mood } = lineFor(kind, seed, c);
+    const b: Bubble = { kind, id, anchor: ANCHOR[kind], text, mood, t0, side: unit(seed, 11) < 0.5 ? -1 : 1, seed };
+    const cur = this.cur;
+    if (cur && t0 < cur.t0 + showOf(cur)) {
+      // cut it short: its eraser starts at t0, or as soon as it's written
+      const cut = (m: Mood, at: number, hold: number) => {
+        const T = BUBBLE.timing[m], from = Math.max(t0, at + T.writeMs + 120);
+        return Math.min(hold, from - at - (T.showMs - T.eraseMs));
+      };
+      cur.hold = cut(cur.mood, cur.t0, cur.hold ?? 0);
+      if (cur.reply) cur.reply.hold = cut(cur.reply.mood, cur.reply.t0, cur.reply.hold);
+      b.t0 = Math.max(t0, cur.t0 + showOf(cur));
+      this.next = b;
+    } else { this.cur = b; this.next = null; }
+    this.last = b.t0;
+    return b;
+  }
+
   /** Is it time for a stray thought? Once per window, on a seeded chance (a long wait: more often). */
   idleDue(ms: number, seed: number, waited = 0) {
     const w = Math.floor(ms / BUBBLE.idleEveryMs);
@@ -290,12 +389,13 @@ export class Bubbles {
   /** The note showing at `ms`, if any. */
   showing(ms: number) {
     if (this.cur && ms >= this.cur.t0 + showOf(this.cur)) this.cur = null;
+    if (!this.cur && this.next) { this.cur = this.next; this.next = null; }
     return this.cur && ms >= this.cur.t0 ? this.cur : null;
   }
 
-  clear() { this.cur = null; }
+  clear() { this.cur = null; this.next = null; }
   /** Forget the last one too, so the next chance can be taken at once (dev captures). */
-  reset() { this.cur = null; this.last = -Infinity; }
+  reset() { this.cur = null; this.next = null; this.last = -Infinity; }
 }
 
 /**

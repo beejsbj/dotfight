@@ -29,10 +29,10 @@ import { CUSTOM, RULES, SIZES, type Size } from "./rules";
 import { boldAt } from "./boil";
 import { comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
-import { ANCHOR, Bubbles, bubbleAt, heatOf, replyAt, strayKind, type BubbleKind, type Context } from "./bubble";
+import { ANCHOR, Bubbles, bubbleAt, heatOf, replyAt, strayKind, streakVoices, type BubbleKind, type Context, type StreakKind } from "./bubble";
 import { feel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
-import { boil, boilSeen, boilTick, forgetDrawn, life, NOTE, noteSpotNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { boil, boilSeen, boilTick, forgetDrawn, life, NOTE, noteSpotNow, noteSpotsNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
 import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
@@ -749,6 +749,53 @@ function speak(kind: BubbleKind, id: number, t0 = wall, seed?: number, mate?: nu
   if (bubbles.offer(kind, id, t0, seed ?? Math.floor(seeded(s.seed, s.turn, id, kind.length) * 2 ** 31), noteContext(at.owner), mate)) dirty = true;
 }
 
+/**
+ * A streak on the page: chained lunges (the engine's `chain.link`), or snipes
+ * that keep earning, in one turn. Counted here, for presentation only.
+ */
+let streak = { who: -1, turn: -1, kind: "", n: 0, last: undefined as StreakKind | undefined };
+/** How long the streak is after this flick (0: it didn't earn, and any streak is over; `ended`: how long the one it ended was). */
+function countStreak(o: Outcome, f: Flick, who: Player) {
+  if (!o.earned) { const ended = streak.n; streak.n = 0; streak.last = undefined; return { n: 0, ended }; }
+  const c0 = core();
+  if (streak.who === who && streak.turn === s.turn && streak.kind === f.kind) streak.n++;
+  else streak = { who, turn: s.turn, kind: f.kind, n: 1, last: undefined };
+  // a lunge chain's count is the engine's own
+  if (f.kind === "lunge" && c0?.chain?.soldier === f.soldier) streak.n = c0.chain.link;
+  return { n: streak.n, ended: 0 };
+}
+/**
+ * The page reacts to a streak `n` links long (from 2), at wall `t0`: the
+ * streaker, the enemy man nearest him, his home camp, or the camp nearest him
+ * he's tearing through; picked by a seeded roll, not the one who spoke last,
+ * and only someone on screen. It goes up now, rubbing out whatever's there.
+ */
+function speakStreak(n: number, id: number, t0: number, seed: number, only?: StreakKind) {
+  if (!heard() || n < 2) return null;
+  const me = s.soldiers[id];
+  if (!me) return null;
+  const foe = other(me.owner);
+  const d = (p: Pt) => Math.hypot(p.x - me.x, p.y - me.y);
+  const onScreen = (p: Pt) => { const q = cam.toScreen(p.x, p.y); return q.x >= 20 && q.x <= W - 20 && q.y >= 60 && q.y <= H - 120; };
+  const who = (k: StreakKind): number | undefined => {
+    if (k === "streakMe") return me.alive ? id : undefined;
+    if (k === "streakFoe") return turn.aliveOf(s, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+    if (k === "streakCamp") return campOf(id);
+    const manned = s.bases.filter((b) => b.owner === foe && s.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+  };
+  for (const k of only ? [only] : streakVoices(n, seeded(seed, n, 71), streak.last)) {
+    const at = who(k);
+    if (at === undefined) continue;
+    const p = ANCHOR[k] === "base" ? s.bases[at] : s.soldiers[at];
+    if (!p || !onScreen(p)) continue;
+    const owner = k === "streakMe" || k === "streakCamp" ? me.owner : foe;
+    const b = bubbles.urgent(k, at, t0, Math.floor(seeded(seed, n, 73) * 2 ** 31), { ...noteContext(owner), streak: n });
+    if (b) { streak.last = k; dirty = true; return b; }
+  }
+  return null;
+}
+
 /** A soldier picked up: he perks up and says so; a campmate mutters. */
 function pickUp(id: number) {
   const x = s.soldiers[id];
@@ -820,6 +867,7 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   const on = (k: string) => (k === "recoil" || k === "flinch" || k === "gasp" ? LIFE.line : k === "land" ? LIFE.chosen : LIFE.crowd);
   for (const { id, r } of plan.acts) if (on(r.kind)) life.add(id, { ...r, t0: wall + r.t0 });
   if (LIFE.camps) for (const h of plan.hush) life.hold(h.base, wall + h.at, wall + h.at + h.ms);
+  const st = countStreak(o, f, s.soldiers[f.soldier].owner); // counted even unheard, so it's right when the sound comes back
   if (!heard()) return;
   // under your thumb: your camp cheering your kill; the bot's ink going right past one of yours
   const shooter = s.soldiers[f.soldier].owner;
@@ -832,9 +880,17 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   // in writing: a lunger yells as he goes, a big snipe fires with a shout; a kill
   // (or the last one: the war is won) is claimed; a campmate mourns the fallen
   const camp = campOf(f.soldier);
+  // a streak: the page reacts once the kill that keeps it going lands, bigger with every link; when a long one ends, the camp it tore through breathes out
+  const seed = s.seed * 31 + s.turn * 977 + f.soldier;
   if (f.kind === "lunge" && camp !== undefined) speak("lunge", camp);
   else if (pathLen(o.path) > 480 && camp !== undefined) speak("snipe", camp);
-  if (cheer && !o.lost) { if (s.phase === "over") { if (camp !== undefined) speak("win", camp, wall + cheer.r.t0 + 120); } else speak("kill", f.soldier, wall + cheer.r.t0 + 120); }
+  if (st.n >= 2) speakStreak(st.n, f.soldier, wall + arrive + 180, seed);
+  else if (cheer && !o.lost) { if (s.phase === "over") { if (camp !== undefined) speak("win", camp, wall + cheer.r.t0 + 120); } else speak("kill", f.soldier, wall + cheer.r.t0 + 120); }
+  if (st.ended >= 3 && s.phase !== "over") {
+    const foe = other(shooter), me = s.soldiers[f.soldier];
+    const near = s.bases.filter((b) => b.owner === foe).sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0];
+    if (near) speak("streakEnd", near.id, wall + arrive + 400);
+  }
   const oh = plan.cues.find((c) => c.say === "oh");
   if (oh) speak("mourn", oh.id, wall + oh.at + 240);
   // a flick is one moment: one voice, now and then two, never the crowd
@@ -2502,12 +2558,12 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    stageStats, boil, life, LIFE, NOTE, noteSpot: noteSpotNow, set hour(h: number | undefined) { devHour = h; }, set heat(h: number | undefined) { devHeat = h; }, set waitedSince(ms: number) { lastMoveWall = ms; }, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
+    stageStats, boil, life, LIFE, NOTE, noteSpot: noteSpotNow, noteSpots: noteSpotsNow, set hour(h: number | undefined) { devHour = h; }, set heat(h: number | undefined) { devHeat = h; }, set waitedSince(ms: number) { lastMoveWall = ms; }, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
     set boilClock(ms: number | undefined) { boilClock = ms; },
     /** Frame-exact captures: `pft.hand(true)`, then `pft.step(ms)` moves the game and the boil on together. */
     hand: (on: boolean) => { handClock = on ? { due: 0 } : null; if (on) boilClock ??= wall; else boilClock = undefined; },
     step: (ms: number) => { if (!handClock) return; handClock.due += ms; boilClock = (boilClock ?? wall) + ms; },
-    say: voice.say, voice, get wall() { return wall; }, bubbles, speak,
+    say: voice.say, voice, get wall() { return wall; }, bubbles, speak, speakStreak,
     /** Voices rendered offline, as 16-bit mono WAV bytes (base64), for listening outside the game. */
     voiceWav: async (lines: Parameters<typeof voice.renderLines>[0]) => {
       const pcm = await voice.renderLines(lines);

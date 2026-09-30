@@ -40,7 +40,7 @@ export default async function (T, out) {
   await page.waitForTimeout(700);
   await check("bird's-eye + note");
   await page.evaluate(() => window.pft.bubbles.reset());
-  // a camp's line arcs along its ring; an exchange puts a reply up beside the line
+  // a camp's line arcs along its ring; an exchange puts a reply up beside the line; a streak's lines cut each other short
   const camp = await page.evaluate(() => { const s = window.pft.s; return s.bases.find((b) => b.owner === s.current).id; });
   console.log("shout:", await note(camp, "lunge"));
   await page.waitForTimeout(700);
@@ -54,6 +54,17 @@ export default async function (T, out) {
   console.log("chat:", await page.evaluate(([a, b]) => { const p = window.pft; for (let k = 0; k < 4000; k++) { p.bubbles.reset(); p.speak("chat", a, p.wall, 1000 + k * 7, b); if (p.bubbles.cur?.reply) { p.poke(); return p.bubbles.cur.text; } } return null; }, pair));
   await page.waitForTimeout(1900);
   await check("bird's-eye + exchange");
+  await page.evaluate(() => window.pft.bubbles.reset());
+  // a streak building: link 2 (a man), then link 5 cutting it short (a camp roaring), mid-erase and after
+  const streak = (n, v) => page.evaluate(({ n, v, id }) => { const p = window.pft; const b = p.speakStreak(n, id, p.wall, 99 + n, v); p.poke(); return b ? `${b.kind}: ${b.text}` : null; }, { n, v, id: pair[0] });
+  console.log("streak 2:", await streak(2, "streakMe"));
+  await page.waitForTimeout(900);
+  await check("bird's-eye + streak 2");
+  console.log("streak 5:", await streak(5, "streakCamp"));
+  await page.waitForTimeout(400);
+  await check("streak 5, rubbing out");
+  await page.waitForTimeout(1500);
+  await check("bird's-eye + streak 5");
   await page.evaluate(() => window.pft.bubbles.reset());
   await check("bird's-eye");
   // the lowest of the side to play: leaning in on him, the camps sit at the screen's edges
