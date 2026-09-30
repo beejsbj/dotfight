@@ -45,7 +45,7 @@ export const RULES = {
 
 // Flick feel. Not game rules — how the pen behaves in the hand.
 export const FEEL = {
-  maxPullPx: 150, // screen px of pull for full power
+  maxPullPx: 240, // screen px of pull for full power (a thumb can travel this far on a 390x844 phone)
   minPullPx: 16, // below this, release cancels
   // Angular error (radians, 1 sigma) hidden from the player on release.
   jitterBase: 0.012,
@@ -67,9 +67,14 @@ export type RulesT = typeof RULES;
  */
 export const CORE = {
   /** Bumped when a rule's *logic* changes, so old records can be told apart. */
-  version: 1,
-  /** Line length from the softest to the hardest flick. A lunge goes as far as a shot. */
-  reach: { min: 300, max: 1800 },
+  version: 2,
+  /**
+   * Line length from the softest flick to the hardest, the same for a snipe and
+   * a lunge (one thing to learn). Length runs min + (max - min) * power^curve;
+   * a curve above 1 spends more of the thumb's travel on short lines, where a
+   * small slip matters most. (Version 1 pages: 300-1800 on a 0.9 curve; see `reachOf`.)
+   */
+  reach: { min: 200, max: 1200, curve: 1.5 },
   /** Snipe power loss (to test): the share of what's left of the line lost at each wall it passes, and at each soldier it crosses out. Walls cost more. */
   snipeWallLoss: 0.1,
   snipeKillLoss: 0.05,

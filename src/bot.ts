@@ -9,7 +9,7 @@
 
 import { sigma } from "./flick";
 import {
-  canArrange, canSend, dist, flickers, garrison, hand, hitReach, isRing, other, powerFor, preview, reachOf, sendMax, whoGoes, columnSpots, roadBetween,
+  canArrange, canSend, dist, flickers, garrison, hand, hitReach, isRing, maxReach, other, powerFor, preview, reachOf, wildOfLength, sendMax, whoGoes, columnSpots, roadBetween,
   type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
 } from "./game";
 import { gauss, rng } from "./geom";
@@ -47,14 +47,14 @@ interface Intent { kind: Kind; soldier: number; angle: number; power: number }
 /** Turn an intended flick into what a shaky hand actually does. */
 export function shake(s: GameState, it: Intent, sk: Skill, rand: () => number): Flick {
   const h = hand(s, it.soldier, it.kind);
-  const sa = Math.hypot(Math.hypot(sigma(it.power) * sk.hand, sk.aim) * h.mult, h.tremor);
+  const sa = Math.hypot(Math.hypot(sigma(h.wild(it.power)) * sk.hand, sk.aim) * h.mult, h.tremor);
   const sl = Math.hypot(FEEL.lengthJitter * sk.hand, sk.judge) * h.mult;
   return {
     soldier: it.soldier,
     kind: it.kind,
     angle: it.angle + gauss(rand) * sa,
     length: reachOf(s.rules, it.power) * Math.max(0.2, 1 + gauss(rand) * sl),
-    bend: (rand() * 2 - 1) * FEEL.bendMax * (0.3 + 0.7 * it.power),
+    bend: (rand() * 2 - 1) * FEEL.bendMax * (0.3 + 0.7 * h.wild(it.power)),
     wob: (rand() * 2 ** 32) >>> 0,
   };
 }
@@ -84,7 +84,7 @@ function pHit(c: Ctx, d: number, steady = 1) {
   c.phit.set(steady, table);
   if (table[k] < 0) {
     const dd = Math.max(1, k * 8);
-    const p = powerFor(c.s.rules, dd + 60);
+    const p = wildOfLength(dd + 60);
     const sd = Math.hypot(sigma(p) * c.sk.hand, c.sk.aim) * steady * dd;
     table[k] = erf(c.reach / (Math.SQRT2 * sd));
   }
@@ -205,7 +205,7 @@ function intents(c: Ctx, rand: () => number): Intent[] {
       const d = dist(me, foe);
       const angle = Math.atan2(foe.y - me.y, foe.x - me.x) + gauss(rand) * 0.025;
       // just past the target (steadier), or well past it (catch whatever's behind; a lunger through and out the far side)
-      const want = rand() < 0.55 ? d + 40 + rand() * 60 : d + 150 + rand() * Math.max(0, R.reach.max - d);
+      const want = rand() < 0.55 ? d + 40 + rand() * 60 : d + 150 + rand() * Math.max(0, maxReach(R) - d);
       out.push({ kind, soldier: me.id, angle, power: powerFor(R, want) });
     } else {
       out.push({ kind, soldier: me.id, angle: rand() * Math.PI * 2, power: rand() });

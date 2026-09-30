@@ -50,6 +50,23 @@ describe("record (core rules)", () => {
     }
   });
 
+  it("a page played on version-1 rules (one reach, curve 0.9) still replays on its own numbers", () => {
+    const v1 = { ...CORE, version: 1, reach: { min: 300, max: 1800 } } as unknown as typeof CORE;
+    const s = newGame(SIZES.quick, 21, undefined, v1);
+    let k = 21;
+    while (s.phase === "setup") { const p = botBase(s, (x, y) => !canPlaceBase(s, x, y), k++)!; act(s, { t: "base", ...p }); }
+    while (s.phase === "position") for (const a of botArrange(s, k++)) { if (!illegal(s, a)) act(s, a); if (a.t === "ready") break; }
+    while (s.phase === "play" && s.turn < 60) act(s, botAction(s, 1, k++));
+    expect(s.turn).toBeGreaterThan(3);
+    const r = JSON.parse(JSON.stringify(toRecord(s)));
+    expect(r.rules.version).toBe(1);
+    expect(r.rules.reach).toEqual({ min: 300, max: 1800 });
+    const same = (a: GameState) => expect(a).toEqual(s);
+    same(fromRecord(r));
+    same(unfile(JSON.parse(JSON.stringify(file(s, { kind: "pnp" })))) as GameState);
+    expect(fromRecord(r).rules.version).toBe(1);
+  });
+
   it("steps replay one at a time to the same page", () => {
     const s = war(11, 30);
     const f = file(s, { kind: "pnp" });
