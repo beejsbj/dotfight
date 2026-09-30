@@ -594,7 +594,7 @@ export default async function (T, out) {
       let gi = 0;
       for (const [kind, text] of lines) for (const ang of angles) {
         await page.evaluate((a) => { window.pft.NOTE.angle = a; }, ang);
-        const got = await force(kind, men[4].id, text);
+        const got = await force(kind, men[1].id, text);
         if (!got) { console.log("no line", kind, text); continue; }
         await step(1200, 120);
         await page.screenshot({ path: `${out}/ovals-${theme}-gallery-${String(gi++).padStart(2, "0")}.png`, clip: await box(camp, 195) });
@@ -661,20 +661,24 @@ export default async function (T, out) {
       for (let k = 0; k < 7; k++) {
         const f = await findKill();
         if (!f) { console.log("chain: no more kills from here"); break; }
-        await page.evaluate((f) => window.pft.flick(f), f);
-        link++;
-        // step through the flick and the note, a frame on twos
+        const fired = await page.evaluate((f) => { window.pft.flick(f); return window.pft.wall; }, f);
+        // step through the flick and the note, a frame on twos; a still once this link's note is written
+        let shot = false;
         for (let i = 0; i < 40; i++) {
           await step(1000 / 12, 40);
+          if (!shot) {
+            const up = await page.evaluate((fired) => { const p = window.pft, b = p.bubbles.cur; return b && b.kind.startsWith("streak") && b.t0 >= fired && p.wall - b.t0 > 900 ? `${b.kind} ${b.mood}: ${b.text}` : null; }, fired);
+            if (up) { shot = true; await page.screenshot({ path: `${out}/streak-${theme}-chain-${link + 1}.png` }); console.log(`chain link ${link + 1} said:`, up); }
+          }
           const full = await page.screenshot({ type: "jpeg", quality: 80 });
           const file = `${out}/streak-${theme}-chain-f${String(chainFrames.length).padStart(3, "0")}.jpg`;
           (await import("node:fs")).writeFileSync(file, full);
           chainFrames.push(file);
         }
         for (let i = 0; i < 40 && await page.evaluate(() => window.pft.busy); i++) await step(1000 / 12, 20);
+        link++;
         const st = await page.evaluate(() => { const p = window.pft, b = p.bubbles.cur; return { chain: p.s.chain?.link ?? 0, busy: !!p.busy, note: b ? `${b.kind} ${b.mood}: ${b.text}` : null }; });
         console.log(`chain link ${link}:`, JSON.stringify(st));
-        await page.screenshot({ path: `${out}/streak-${theme}-chain-${link}.png` });
         if (!st.chain) break;
       }
       if (chainFrames.length) spawnSync("ffmpeg", ["-loglevel", "error", "-y", "-framerate", "12", "-i", `${out}/streak-${theme}-chain-f%03d.jpg`, "-vf", "scale=360:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=none", "-loop", "0", `${out}/streak-${theme}-chain.gif`], { stdio: "inherit" });

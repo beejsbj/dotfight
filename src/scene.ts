@@ -574,7 +574,7 @@ export const noteSpotsNow = () => spots.slice();
 /** A spot is close if it's in the first ring round him, on the page as found, over nothing heavier than a few lines. */
 const CLOSE = { miss: 0.5, clutter: 8 };
 function noteSpot(f: Frame, b: Note, fits: Fit[], angK = 1) {
-  const key = `${b.seed}|${b.text}|${b.at.x},${b.at.y}`;
+  const key = `${b.seed}|${b.text}|${b.at.x},${b.at.y}${NOTE.angle === undefined ? "" : `|${NOTE.angle}`}`;
   const had = spots.find((m) => m.key === key);
   if (had) return had;
   const { s } = f, R = RULES.soldierRadius, B = noteBounds(f);
@@ -632,17 +632,22 @@ function noteSpot(f: Frame, b: Note, fits: Fit[], angK = 1) {
             const dM = Math.hypot(L.x, L.y) || 1, dP = Math.hypot(P.x, P.y) || 1;
             cost += (Math.hypot(L.x - P.x, L.y - P.y) < dM ? 25 : 0) + 6 * (1 + (L.x * P.x + L.y * P.y) / (dM * dP)) / 2;
           }
-          // what the turned rect covers, a sample per cell
-          let over = 0;
-          for (let v = 0; v <= nv; v++) {
+          // what the turned rect covers, a sample per cell; given up on, row by row, once it can't beat the best
+          // (clutter only adds, so what's pruned could never have been picked)
+          const canClose = ring === 0 && miss < size * CLOSE.miss;
+          let over = 0, lost = false;
+          for (let v = 0; v <= nv && !lost; v++) {
             const y = -hh + (v / nv) * hh * 2;
             for (let u = 0; u <= nu; u++) {
               const x = -hw + (u / nu) * hw * 2;
               over += grid.at(L.x + x * ca - y * sa, L.y + x * sa + y * ca);
             }
+            const t = cost + over;
+            lost = !!best && t >= best.cost && (!canClose || over >= CLOSE.clutter || (!!bestClose && t >= bestClose.cost));
           }
+          if (lost) continue;
           cost += over;
-          const close = ring === 0 && miss < size * CLOSE.miss && over < CLOSE.clutter;
+          const close = canClose && over < CLOSE.clutter;
           const cand = { cost, dx: q.x - b.at.x, dy: q.y - b.at.y, ang, side: (lx < 0 ? -1 : 1) as 1 | -1, close };
           if (!best || cost < best.cost) best = cand;
           if (close && (!bestClose || cost < bestClose.cost)) bestClose = cand;
@@ -680,29 +685,38 @@ function drawBaseNote(g: Ctx, f: Frame, b: Note, box: Box) {
   let size = base * M.size * (b.mood === "shout" ? 1 + SHOUT_GROW * heat : 1);
   const R = b.r ?? RULES.baseRadius;
   const rot = f.view.rot;
-  const lw = Math.max(2.2, size * 0.065);
   const r = rng(b.seed + 3);
-  const gap = size * 0.55, rr = R + gap + size * 0.45; // the letters' baseline, a little off the ring
-  // the run must fit round the ring: written smaller if it wouldn't
-  g.save();
-  g.font = `${M.weight} ${size}px Caveat, "Patrick Hand", cursive`;
-  let half = (g.measureText(b.text).width * M.stretch) / 2 / rr;
-  g.restore();
-  const most = Math.PI * 0.72;
-  if (half > most) { size *= most / half; half = most; }
-  // which side of the ring: up the screen for choice, else whichever is on the page
+  // which side of the ring: up the screen for choice, else whichever is on the page; and if no side
+  // keeps the run on the page (a camp by the edge), written smaller, down to what still reads from above
   const B = noteBounds(f), c = Math.cos(rot), sn = Math.sin(rot);
   const toPage = (lx: number, ly: number): Pt => ({ x: b.at.x + lx * c + ly * sn, y: b.at.y - lx * sn + ly * c });
-  let mid = -Math.PI / 2, bestMiss = Infinity;
-  [-Math.PI / 2, Math.PI / 2, 0, Math.PI].forEach((m, i) => {
-    // the run's ends and middle: how far off the page (or under the HUD) they'd be, plus a preference for the top
-    let miss = i * size * 0.4;
-    for (const a of [m - half, m, m + half]) {
-      const p = toPage(Math.cos(a) * (rr + size), Math.sin(a) * (rr + size));
-      miss += Math.max(0, B.x0 - p.x, p.x - B.x1) + Math.max(0, B.y0 - p.y, p.y - B.y1);
-    }
-    if (miss < bestMiss) { bestMiss = miss; mid = m; }
-  });
+  const size0 = size;
+  let rr = 0, half = 0, mid = -Math.PI / 2;
+  for (const k of NOTE.fit) {
+    if (k < 1 && size0 * k * f.view.z < NOTE.minPx) break;
+    size = size0 * k;
+    const gap = size * 0.55;
+    rr = R + gap + size * 0.45; // the letters' baseline, a little off the ring
+    // the run must fit round the ring: written smaller if it wouldn't
+    g.save();
+    g.font = `${M.weight} ${size}px Caveat, "Patrick Hand", cursive`;
+    half = (g.measureText(b.text).width * M.stretch) / 2 / rr;
+    g.restore();
+    const most = Math.PI * 0.72;
+    if (half > most) { size *= most / half; half = most; }
+    let bestCost = Infinity, off = 0;
+    [-Math.PI / 2, Math.PI / 2, 0, Math.PI].forEach((m, i) => {
+      // the run's ends and middle: how far off the page (or under the HUD) they'd be, plus a preference for the top
+      let miss = 0;
+      for (const a of [m - half, m - half / 2, m, m + half / 2, m + half]) {
+        const p = toPage(Math.cos(a) * (rr + size), Math.sin(a) * (rr + size));
+        miss += Math.max(0, B.x0 - p.x, p.x - B.x1) + Math.max(0, B.y0 - p.y, p.y - B.y1);
+      }
+      if (miss + i * size * 0.4 < bestCost) { bestCost = miss + i * size * 0.4; mid = m; off = miss; }
+    });
+    if (off <= size * 0.2) break; // on the page
+  }
+  const lw = Math.max(2.2, size * 0.065);
   // a chant comes in beats: a word at a time; the rest letter by letter
   let upTo = b.p;
   if (b.mood === "chant") {
