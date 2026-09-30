@@ -207,6 +207,12 @@ describe("garrisoned walls", () => {
     put(s, reds[0].id, 300 + 70, 600); // outside the wall (62), within positioning reach
     expect(wallStrength(s, base)).toBeCloseTo(2 / 3, 9);
     expect(walls(preview(s, snipeUp(me.id)))[0]).toBeCloseTo(0.1 + 0.5 * (2 / 3), 9);
+    put(s, reds[0].id, 275, 580); // geometrically inside, but travelling on a road
+    reds[0].convoy = 0;
+    s.convoys.push({ id: 0, owner: 1, from: base.id, to: 3, ids: [reds[0].id], state: "road", road: [base, s.bases[3]], turn: s.turn });
+    expect(wallStrength(s, base)).toBeCloseTo(2 / 3, 9);
+    s.convoys[0].state = "ordered"; // waiting at home still mans the wall
+    expect(wallStrength(s, base)).toBe(1);
   });
 
   it("the men a line crosses out on its way through no longer hold the far wall", () => {
