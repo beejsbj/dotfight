@@ -5,12 +5,21 @@
 // Chunks of the same label (size and variant) are merged in seed order.
 
 import { readFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { round4Table, summarise, type GameStats } from "../src/lab/sim";
 
 const byLabel = new Map<string, GameStats[]>();
+const configurations = new Map<string, unknown>();
 for (const f of process.argv.slice(2)) {
-  const j = JSON.parse(readFileSync(f, "utf8")) as { games: Record<string, GameStats[]> };
-  for (const [label, recs] of Object.entries(j.games)) (byLabel.get(label) ?? byLabel.set(label, []).get(label)!).push(...recs);
+  const j = JSON.parse(readFileSync(f, "utf8")) as { games: Record<string, GameStats[]>; rules: unknown; stances: unknown; agents: unknown; maxTurns: number };
+  const configuration = { rules: j.rules, stances: j.stances, agents: j.agents, maxTurns: j.maxTurns };
+  for (const [label, recs] of Object.entries(j.games)) {
+    if (configurations.has(label) && !isDeepStrictEqual(configurations.get(label), configuration)) {
+      throw new Error(`Conflicting experiment configurations for label ${label} in ${f}; use distinct --label values.`);
+    }
+    configurations.set(label, configuration);
+    (byLabel.get(label) ?? byLabel.set(label, []).get(label)!).push(...recs);
+  }
 }
 const sums = [...byLabel.values()].map((r) => summarise(r.sort((a, b) => a.seed - b.seed)));
 const pct = (x: number) => `${(x * 100).toFixed(0)}%`;

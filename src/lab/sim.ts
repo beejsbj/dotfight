@@ -96,7 +96,7 @@ export function playGame(size: Size, seed: number, opts: Opts = {}): { st: GameS
       for (const x of s.soldiers) if (x.owner === foe && (x.alive || o.killed.includes(x.id))) home.has(x.id) ? st.expIn++ : st.expOut++;
       for (const id of o.killed) home.has(id) ? st.killsIn++ : st.killsOut++;
     }
-    for (const b of s.bases) if (st.emptiedAt[b.id] === null && garrison(s, b).length === 0) st.emptiedAt[b.id] = s.turn;
+    for (const b of s.bases) if (st.emptiedAt[b.id] === null && garrison(s, b).length === 0) st.emptiedAt[b.id] = turn;
     if (a.t === "flick") {
       st.flicks++;
       turnFlicks++;

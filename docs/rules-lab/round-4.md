@@ -2,6 +2,8 @@
 
 _2026-09-29. Branch `rules/garrison-walls`. On the game's own engine (`src/game.ts`), like round 3. Raw tables: [data/round-4/](data/round-4/)._
 
+**Measurement correction (2026-09-30).** The historical base-emptying turns below and in the saved summaries were measured after turn handover, so some are one turn late. They have not been regenerated; treat the base-emptying timing columns as historical estimates. The runner now records the action's turn. Win rates, game lengths and kill rates are unaffected. Curve B and the 0.05 lunge chain tremor remain the approved rules.
+
 **The question.** Burooj asked what a base does for you in the core rules. Round 3's honest answer was "not much". A flat wall cost a snipe 10% of what was left and a lunger 0.08 rad of shake. Forcing men inside changed nothing, and lunges were 69–76% of all flicks. His decision: **a wall is as strong as the men inside it.**
 
 **The rule as built.** When a line crosses a base's wall, the price depends on the garrison at that moment: the base's own living soldiers inside the wall, less any this line already crossed out. Men just outside the wall don't count, nor do men out on a road or the man flicking. With `f = min(1, garrison / soldiers a base starts with) ^ curve`, a snipe loses `lo + (hi − lo) · f` of what's left of it, and a lunger's heading jolts by the same shape. Your own bases' walls work the same way on your lines, and the wall at your back as you leave your own base is still free. An empty ring costs the floor.

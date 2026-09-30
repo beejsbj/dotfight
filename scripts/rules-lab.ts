@@ -122,6 +122,6 @@ if (!isMainThread) {
   }
   if (out) {
     mkdirSync(dirname(out), { recursive: true });
-    writeFileSync(out, JSON.stringify({ games, maxTurns, rules, at: new Date().toISOString(), summaries: sums }, null, 1));
+    writeFileSync(out, JSON.stringify({ games: last - first + 1, maxTurns, rules, at: new Date().toISOString(), summaries: sums }, null, 1));
   }
 }
