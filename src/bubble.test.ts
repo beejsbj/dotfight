@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ANCHOR, BUBBLE, Bubbles, CLOCK_LINES, LINES, MOOD, PAPER_LINES, STREAK_LINES, bubbleAt, countWord, heatOf, lineFor, linesFor, replyAt, showOf, strayKind, streakTier, streakVoices, type BubbleKind, type Context, type StreakKind } from "./bubble";
+import { ANCHOR, BOTCH_LINES, BUBBLE, Bubbles, CLOCK_LINES, LINES, MOOD, PAPER_LINES, STREAK_LINES, botchOf, botchVoices, type BotchIn, type BotchKind, bubbleAt, countWord, heatOf, lineFor, linesFor, replyAt, showOf, strayKind, streakTier, streakVoices, type BubbleKind, type Context, type StreakKind } from "./bubble";
 import { LIFE } from "./life";
 
 const ctx: Context = { me: "Blue", them: "Red", paper: "lamplight", hour: 15, heat: 0 };
@@ -87,6 +87,65 @@ describe("pencil notes", () => {
     expect(firsts(2)).toEqual(new Set(["streakMe", "streakFoe", "streakCamp"]));
     expect(firsts(5).has("streakFoe")).toBe(false);
     for (let i = 0; i < 20; i++) { const v = streakVoices(4, i / 20, "streakCamp"); expect(v[0]).not.toBe("streakCamp"); expect(v.length).toBe(3); }
+  });
+
+  it("a botch is graded by how bad the miss was", () => {
+    // a snipe from (100, 800) aimed along +x; their man at (500, 800), another off to the side; his camp round (100, 800)
+    const line = (x0: number, y0: number, x1: number, y1: number, n = 12) => Array.from({ length: n + 1 }, (_, i) => ({ x: x0 + ((x1 - x0) * i) / n, y: y0 + ((y1 - y0) * i) / n }));
+    const base: BotchIn = { kind: "snipe", from: { x: 100, y: 800 }, aim: 0, path: line(100, 800, 520, 800), killed: 0, lost: false, crashed: false, offPage: false, foes: [{ x: 500, y: 800 }, { x: 500, y: 1400 }], own: [{ x: 100, y: 800, r: 62 }] };
+    // a kill, or a lunger shot where he landed, is never a botch
+    expect(botchOf({ ...base, killed: 1 }).grade).toBe(0);
+    expect(botchOf({ ...base, kind: "lunge", crashed: true, lost: true }).grade).toBe(0);
+    // grazing past him: the target's "phew", not the shooter's botch
+    expect(botchOf({ ...base, path: line(100, 800, 520, 812) }).grade).toBe(0);
+    // a little short, a little wide: a mutter
+    const mild = botchOf({ ...base, path: line(100, 800, 330, 800) });
+    expect(mild.grade).toBe(1);
+    expect(mild.why).toContain("short");
+    // dies way short, barely out of his camp: the full treatment
+    const dud = botchOf({ ...base, path: line(100, 800, 150, 800) });
+    expect(dud.grade).toBe(2);
+    expect(dud.why).toEqual(expect.arrayContaining(["short", "wide"]));
+    // off the page: the full treatment
+    expect(botchOf({ ...base, path: line(100, 800, 100, 1720), offPage: true }).grade).toBe(2);
+    // a lunge the shake threw wildly off line, stranded in the open
+    const thrown = botchOf({ ...base, kind: "lunge", path: line(100, 800, 250, 400), foes: [{ x: 700, y: 800 }] });
+    expect(thrown.grade).toBe(2);
+    expect(thrown.why).toEqual(expect.arrayContaining(["offline", "stranded"]));
+    // a lunge that loops back into his own camp
+    const home = botchOf({ ...base, kind: "lunge", from: { x: 160, y: 800 }, aim: 0, path: [...line(160, 800, 300, 800, 6), ...line(300, 800, 110, 810, 6).slice(1)], foes: [{ x: 700, y: 800 }] });
+    expect(home.why).toContain("home");
+    expect(home.grade).toBe(2);
+    // worse misses never grade lower
+    let last = 0;
+    for (const x of [500, 420, 330, 250, 180, 130]) { const g = botchOf({ ...base, path: line(100, 800, x, 800) }).grade; expect(g).toBeGreaterThanOrEqual(last); last = g; }
+  });
+
+  it("a botch: lines for every voice at both grades, the laughing camp at full, never the voice that just spoke", () => {
+    for (const k of Object.keys(BOTCH_LINES) as BotchKind[]) {
+      expect(MOOD[k]).toBeDefined();
+      expect(ANCHOR[k]).toBeDefined();
+      for (const grade of [1, 2]) for (let seed = 0; seed < 60; seed++) {
+        const l = lineFor(k, seed, { ...ctx, botch: grade });
+        expect(l.text).not.toMatch(/\{/);
+        expect(l.text).not.toMatch(/Daud/);
+      }
+    }
+    const full = new Set(Array.from({ length: 300 }, (_, i) => lineFor("botchFoeCamp", i, { ...ctx, botch: 2 }).text));
+    expect(full).toContain("clap. clap. clap.");
+    expect(full).toContain("Red can't aim! Red can't aim!");
+    // the slow clap is written a word per slow beat: it takes longer than a chant and stays longer
+    let seed = 0;
+    while (lineFor("botchFoeCamp", seed, { ...ctx, botch: 2 }).text !== "clap. clap. clap.") seed++;
+    const clap = new Bubbles().offer("botchFoeCamp", 1, 0, seed, { ...ctx, botch: 2 })!;
+    expect(clap.slow).toBeGreaterThan(1);
+    expect(showOf(clap)).toBeGreaterThan(BUBBLE.timing.chant.showMs);
+    expect(bubbleAt(clap, BUBBLE.timing.chant.writeMs)!.p).toBeLessThan(0.5);
+    // a mild one: the flicker or his camp mostly; a spectacular one: the enemy camp can laugh
+    const firsts = (g: number) => new Set(Array.from({ length: 60 }, (_, i) => botchVoices(g, i / 60)[0]));
+    expect(firsts(1).has("botchFoeCamp")).toBe(false);
+    expect(firsts(2).has("botchFoeCamp")).toBe(true);
+    for (let i = 0; i < 20; i++) expect(botchVoices(2, i / 20, "botchFoeCamp")[0]).not.toBe("botchFoeCamp");
   });
 
   it("a streak's line can't wait: the note up is rubbed out, and it's written straight after", () => {

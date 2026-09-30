@@ -478,8 +478,14 @@ export const NOTE = {
   angle: undefined as number | undefined,
 };
 const HUD_INSET = 20;
+/**
+ * The paper a note may be written on: inside the page, below the printed
+ * header (page number, date, a blueprint's title block: `paper.top`), and
+ * inside a drawing sheet's frame; then only what's on screen clear of the HUD.
+ */
 function noteBounds(f: Frame): { x0: number; y0: number; x1: number; y1: number } {
-  const B = { x0: 12, y0: 12, x1: RULES.pageW - 12, y1: RULES.pageH - 12 };
+  const P = theme.paper, frame = P.marginStyle === "frame";
+  const B = { x0: frame ? RULES.margin + 16 : 12, y0: P.top + 6, x1: RULES.pageW - (frame ? 38 : 12), y1: RULES.pageH - (frame ? 38 : 12) };
   const v = f.view, hud = f.hud;
   if (!hud) return B;
   // the part of the screen clear of the HUD, in page units
@@ -705,7 +711,8 @@ function drawBaseNote(g: Ctx, f: Frame, b: Note, box: Box) {
     const most = Math.PI * 0.72;
     if (half > most) { size *= most / half; half = most; }
     let bestCost = Infinity, off = 0;
-    [-Math.PI / 2, Math.PI / 2, 0, Math.PI].forEach((m, i) => {
+    // the sides in order of choice: the top, the bottom, left and right, then the diagonals
+    [-Math.PI / 2, Math.PI / 2, 0, Math.PI, -Math.PI / 4, (-3 * Math.PI) / 4, Math.PI / 4, (3 * Math.PI) / 4].forEach((m, i) => {
       // the run's ends and middle: how far off the page (or under the HUD) they'd be, plus a preference for the top
       let miss = 0;
       for (const a of [m - half, m - half / 2, m, m + half / 2, m + half]) {
@@ -727,8 +734,8 @@ function drawBaseNote(g: Ctx, f: Frame, b: Note, box: Box) {
   g.translate(b.at.x, b.at.y);
   g.rotate(-rot);
   // the words read the right way up on the near side of the ring: written on the far side, they'd be upside down, so flip the run
-  const flip = Math.abs(mid - Math.PI / 2) < 1e-6;
-  if (flip) { g.scale(-1, -1); mid = -Math.PI / 2; }
+  const flip = Math.sin(mid) > 1e-6;
+  if (flip) { g.scale(-1, -1); mid -= Math.PI; }
   const tilt = (r() - 0.5) * 2 * M.tilt;
   if (M.skew) g.transform(1, 0, M.skew * 0.3, 1, 0, 0);
   arcText(g, b.text, 0, 0, rr, mid + tilt, size, pen, { upTo, alpha: NOTE.alpha * M.alpha, weight: M.weight, grain: NOTE.grain, stretch: M.stretch, jitter: b.mood === "shout" ? size * 0.12 : size * 0.04, seed: b.seed + 5 });

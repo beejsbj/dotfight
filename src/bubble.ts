@@ -21,6 +21,7 @@
 // talk. It only redraws while being written or rubbed out, on the 12 fps grid,
 // or while the camera moves.
 
+import { distToPath, pathLen, type Pt } from "./geom";
 import { LIFE, unit } from "./life";
 
 export type Mood = "tiny" | "whisper" | "say" | "shout" | "chant";
@@ -31,11 +32,14 @@ export type BubbleKind =
   // a camp
   | "last" | "win" | "lunge" | "snipe" | "deny" | "chant" | "chantLast"
   // a streak (chained lunges, or snipes that keep earning): the streaker, the enemy man next in line; his home camp, the camp he's tearing through, its relief when he stops
-  | "streakMe" | "streakFoe" | "streakCamp" | "streakFoeCamp" | "streakEnd";
+  | "streakMe" | "streakFoe" | "streakCamp" | "streakFoeCamp" | "streakEnd"
+  // a botch (the shooter's embarrassing miss): the flicker, his own camp, the enemy man or camp; and a sly callback on the other side's next go
+  | "botchMe" | "botchCamp" | "botchFoe" | "botchFoeCamp" | "botchBack";
 export type Anchor = "man" | "base";
 export type StreakKind = "streakMe" | "streakFoe" | "streakCamp" | "streakFoeCamp" | "streakEnd";
-/** A line: bare, or with its own mood, a longer form for late in the war, or a reply (an exchange). */
-type Line = string | { t: string; mood?: Mood; late?: string; reply?: string };
+export type BotchKind = "botchMe" | "botchCamp" | "botchFoe" | "botchFoeCamp" | "botchBack";
+/** A line: bare, or with its own mood, a longer form for late in the war, a reply (an exchange), or written slowly (`slow`: its writing takes this many times as long). */
+type Line = string | { t: string; mood?: Mood; late?: string; reply?: string; slow?: number };
 
 export const BUBBLE = {
   /** At least this long between one note and the next (ms); a shout or chant may come sooner. */
@@ -56,6 +60,12 @@ export const BUBBLE = {
    * rubbed out a moment before the answer (`replyHoldMs`).
    */
   exchange: { replyMs: 1150, holdMs: 1250, replyHoldMs: 450 },
+  /**
+   * A botch: how often a mild one (1) and a spectacular one (2) is remarked on;
+   * how soon after the last note it may come (ms); and, on the other side's
+   * next go, the chance each stray-thought window brings the callback.
+   */
+  botch: { chance: [0, 0.45, 0.9], gapMs: 4000, backChance: 0.6 },
   /** Stray thoughts: a chance this often (ms), on your go while nothing's happening. */
   idleEveryMs: 8000,
   idleChance: 0.2,
@@ -74,6 +84,7 @@ export const MOOD: Record<BubbleKind, Mood> = {
   home: "say", afield: "whisper", clock: "say", wait: "tiny", tiny: "tiny", chat: "say",
   last: "shout", win: "shout", lunge: "shout", snipe: "shout", deny: "shout", chant: "chant", chantLast: "chant",
   streakMe: "say", streakFoe: "whisper", streakCamp: "say", streakFoeCamp: "say", streakEnd: "say",
+  botchMe: "whisper", botchCamp: "whisper", botchFoe: "say", botchFoeCamp: "say", botchBack: "say",
 };
 export const ANCHOR: Record<BubbleKind, Anchor> = {
   ready: "man", aim: "man", phew: "man", dread: "man", kill: "man", mourn: "man", send: "man", arrive: "man",
@@ -81,6 +92,7 @@ export const ANCHOR: Record<BubbleKind, Anchor> = {
   home: "man", afield: "man", clock: "man", wait: "man", tiny: "man", chat: "man",
   last: "base", win: "base", lunge: "base", snipe: "base", deny: "base", chant: "base", chantLast: "base",
   streakMe: "man", streakFoe: "man", streakCamp: "base", streakFoeCamp: "base", streakEnd: "base",
+  botchMe: "man", botchCamp: "base", botchFoe: "man", botchFoeCamp: "base", botchBack: "man",
 };
 
 const shout = (t: string, late?: string): Line => ({ t, mood: "shout", late });
@@ -96,7 +108,7 @@ const chant = (t: string): Line => ({ t, mood: "chant" });
  * they know it. `{me}` and `{them}` are the sides' pen names on this paper
  * ("Blue", "Red", "White", "Yellow", "Lead", …); `{paper}` is the paper's name.
  */
-export const LINES: Record<Exclude<BubbleKind, StreakKind>, readonly Line[]> = {
+export const LINES: Record<Exclude<BubbleKind, StreakKind | BotchKind>, readonly Line[]> = {
   // picked up
   ready: ["I'm ready", "ready!", "me?", "ok!", "finally", "pick me!", "right then", "here we go", "oh. me.", "again?", whisper("be gentle"), "put me down", "I was napping", "at last"],
   // aimed with (the pull held)
@@ -217,6 +229,38 @@ export const STREAK_LINES: Record<StreakKind, readonly [readonly Line[], readonl
   // the streak's over (three or more): the camp he tore through, relieved (the same at any length)
   streakEnd: [END, END, END],
 };
+const slowClap = (t: string): Line => ({ t, mood: "chant", slow: 2.6 });
+const BACK: readonly Line[] = [
+  "still thinking about that one?", "remember the last one?", "try not to miss this time", "we're still laughing", "do the thing again",
+  "that last shot, though", "aim at us again, it's safer", whisper("he's still red"), "the margin says hi", "{them} can't aim (still)",
+  "we framed your last one", "is the wind still bad?", tiny("don't mention it"), "Dawood saw that, you know", "new pen?",
+];
+/** A botch's lines, [a mutter, the full treatment]. `botchBack` is the callback on the other side's next go. */
+export const BOTCH_LINES: Record<BotchKind, readonly [readonly Line[], readonly Line[]]> = {
+  // the flicker himself
+  botchMe: [
+    ["I meant that", "the pen slipped", "…wind", "nobody saw that", tiny("oh no"), "warm-up shot", "that was a practice one", "I blinked", tiny("don't tell Dawood"), "the paper moved", "it's the lamp", "hm.", "sighting shot", "that was a warning"],
+    [say("I meant that"), say("the pen slipped. a lot."), say("…wind. indoor wind."), say("nobody saw that. right?"), tiny("oh no"), say("it's a new pen"), say("I was aiming for the margin"), say("that's a tactic"), say("Dawood, look away"), say("can I have that back?"), shout("NOT MY FAULT"), say("the page is wonky"), say("I'll be in my camp"), say("that was for the other game")],
+  ],
+  // his own camp, from its ring
+  botchCamp: [
+    ["…", "we saw that", "sir?", "hm.", "oh dear", "…right", "don't look at him", "moving on", "we'll say it was the wind"],
+    [say("…"), say("we saw that"), say("sir?"), say("that's going in the book"), chant("groan. groan. groan."), say("we'll never live this down"), say("who taught him that"), say("Dawood's watching"), say("back to training"), whisper("pretend we don't know him"), shout("WHY"), say("we're not with him"), say("…oh no")],
+  ],
+  // the enemy man it went nowhere near
+  botchFoe: [
+    ["HA!", "missed!", "nice try", "is that it?", "{them} can't aim", "close. not really.", "you missed", "whoosh", "over here!", "I'm right here"],
+    [shout("HA!"), say("nice shot!"), say("do it again!"), say("{them} can't aim"), say("was that on purpose?"), say("my nan aims better"), say("I wasn't even hiding"), say("thanks for that"), say("wrong way, mate"), shout("MISSED!"), say("can we keep him?"), say("I felt the breeze"), shout("for Dawood! (thanks)")],
+  ],
+  // the enemy camp, laughing from its ring
+  botchFoeCamp: [
+    ["ha!", "nice shot!", "missed!", chant("ha ha ha"), "do it again!", "try again!"],
+    [slowClap("clap. clap. clap."), chant("ha ha ha ha"), shout("nice shot!"), shout("do it again!"), chant("{them} can't aim! {them} can't aim!"), chant("again! again!"), say("frame it!"), shout("put it in the book!"), chant("one more! one more!"), slowClap("clap. clap. clap. clap.")],
+  ],
+  // on the other side's next go, one of theirs brings it up
+  botchBack: [BACK, BACK],
+};
+
 const NUMBER = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
 /** A streak's count in words, or figures past twelve. Pure. */
 export const countWord = (n: number) => NUMBER[n] ?? String(n);
@@ -235,12 +279,105 @@ const STREAK_VOICES: readonly (readonly [StreakKind, number][])[] = [
  * first is off screen or just spoke (`not`). Pure.
  */
 export function streakVoices(n: number, r: number, not?: StreakKind): StreakKind[] {
-  const opts = STREAK_VOICES[streakTier(n)];
+  return voices(STREAK_VOICES[streakTier(n)], r, not);
+}
+/** A weighted pick from `opts` by the roll `r`, then the rest by weight; `not` (who spoke last) goes last. Pure. */
+function voices<K extends string>(opts: readonly (readonly [K, number])[], r: number, not?: K): K[] {
   let acc = 0, first = opts[opts.length - 1][0];
   for (const [k, w] of opts) { acc += w; if (r < acc) { first = k; break; } }
   const rest = [...opts].sort((a, b) => b[1] - a[1]).map(([k]) => k).filter((k) => k !== first);
   const order = [first, ...rest];
   return not ? [...order.filter((k) => k !== not), not] : order;
+}
+
+/**
+ * A botch: the shooter's embarrassing miss, graded from the resolved flick
+ * alone. `from` and `aim` are where he flicked from and which way; `path`
+ * the ink as it ran; `foes` the other side's men standing; `own` his side's
+ * camps. A kill, or a lunger shot where he landed (that has its own
+ * moment), is no botch.
+ */
+export interface BotchIn {
+  kind: "snipe" | "lunge";
+  from: Pt;
+  aim: number;
+  path: Pt[];
+  killed: number;
+  lost: boolean;
+  crashed: boolean;
+  offPage: boolean;
+  foes: Pt[];
+  own: { x: number; y: number; r: number }[];
+}
+export interface Botch {
+  /** 0 no botch, 1 a mutter, 2 the full treatment. */
+  grade: 0 | 1 | 2;
+  score: number;
+  /** What made it one: "wide", "short", "offline", "stranded", "home", "offpage". */
+  why: string[];
+}
+/** How grades are drawn: what counts for how much (page units and radians). */
+export const BOTCH = {
+  /** The closest the ink came to any of theirs: from `near` (a near miss is the target's "phew", not a botch) to `far` counts up to `wide`. */
+  near: 30, far: 290, wide: 0.45,
+  /** A snipe that dies this far short of the first man it was aimed at (within `lane` of the line): from `shortFrom` over `shortSpan`. */
+  lane: 90, shortFrom: 80, shortSpan: 320, short: 0.55,
+  /** A lunge thrown off line by the shake: from `offFrom` radians over `offSpan`. */
+  offFrom: 0.3, offSpan: 0.9, offline: 0.55,
+  /** A lunger stranded in the open, this far from anyone. */
+  strandedAt: 260, stranded: 0.25,
+  /** The ink ends in his own camp; or runs off the page. */
+  home: 0.45, offpage: 0.6,
+  /** Grades: 1 from here, 2 from here. */
+  mild: 0.18, full: 0.6,
+};
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+export function botchOf(b: BotchIn): Botch {
+  if (b.killed > 0 || b.crashed || b.path.length < 2) return { grade: 0, score: 0, why: [] };
+  const B = BOTCH, why: string[] = [];
+  const end = b.path[b.path.length - 1], len = pathLen(b.path);
+  let score = 0;
+  // how wide: the closest the ink came to any of theirs
+  const miss = b.foes.length ? Math.min(...b.foes.map((p) => distToPath(p, b.path).d)) : B.far;
+  const wide = clamp01((miss - B.near) / (B.far - B.near)) * B.wide;
+  if (wide > 0.1) why.push("wide");
+  score += wide;
+  const dx = Math.cos(b.aim), dy = Math.sin(b.aim);
+  if (b.kind === "snipe") {
+    // way short: the first of theirs along the line he aimed, and how far the ink stopped short of him
+    const ahead = b.foes.map((p) => ({ t: (p.x - b.from.x) * dx + (p.y - b.from.y) * dy, off: Math.abs((p.y - b.from.y) * dx - (p.x - b.from.x) * dy) }))
+      .filter((q) => q.t > 0 && q.off < B.lane).sort((p, q) => p.t - q.t)[0];
+    const short = ahead ? ahead.t - len : 0;
+    const k = clamp01((short - B.shortFrom) / B.shortSpan) * B.short;
+    if (k > 0) why.push("short");
+    score += k;
+  } else if (len > 40) {
+    // thrown off line: where he ended up against where he was aimed
+    const went = Math.atan2(end.y - b.from.y, end.x - b.from.x);
+    const off = Math.abs(Math.atan2(Math.sin(went - b.aim), Math.cos(went - b.aim)));
+    const k = clamp01((off - B.offFrom) / B.offSpan) * B.offline;
+    if (k > 0) why.push("offline");
+    score += k;
+    // stranded in the open, nowhere near anyone
+    const home = b.own.some((c) => Math.hypot(end.x - c.x, end.y - c.y) < c.r);
+    const nearest = b.foes.length ? Math.min(...b.foes.map((p) => Math.hypot(p.x - end.x, p.y - end.y))) : Infinity;
+    if (!b.lost && !home && nearest > B.strandedAt) { why.push("stranded"); score += B.stranded; }
+  }
+  // the ink ends back in his own camp; or it runs off the page
+  if (len > 60 && !b.offPage && b.own.some((c) => Math.hypot(end.x - c.x, end.y - c.y) < c.r * 1.1)) { why.push("home"); score += B.home; }
+  if (b.offPage) { why.push("offpage"); score += B.offpage; }
+  const grade = score >= B.full ? 2 : score >= B.mild ? 1 : 0;
+  return { grade, score, why };
+}
+
+/** Who remarks on a botch, most wanted first: a mild one's the flicker's mutter or his camp's; a spectacular one, the enemy's laughter. */
+const BOTCH_VOICES: readonly (readonly [BotchKind, number][])[] = [
+  [["botchMe", 0.4], ["botchCamp", 0.3], ["botchFoe", 0.3]],
+  [["botchFoeCamp", 0.35], ["botchFoe", 0.25], ["botchCamp", 0.2], ["botchMe", 0.2]],
+];
+/** Who might remark on a botch of `grade`, as `streakVoices`. Pure. */
+export function botchVoices(grade: number, r: number, not?: BotchKind): BotchKind[] {
+  return voices(BOTCH_VOICES[grade >= 2 ? 1 : 0], r, not);
 }
 
 /** How often a chance to speak is taken. */
@@ -249,6 +386,7 @@ const CHANCE: Record<BubbleKind, number> = {
   idle: 1, idleUp: 1, idleDown: 1, ponder: 1, tired: 1, banter: 1, shapes: 1, paper: 1, home: 1, afield: 1, clock: 1, wait: 1, tiny: 1, chat: 1,
   last: 0.9, win: 1, lunge: 0.7, snipe: 0.5, deny: 0.6, chant: 1, chantLast: 1,
   streakMe: 1, streakFoe: 1, streakCamp: 1, streakFoeCamp: 1, streakEnd: 0.6,
+  botchMe: 1, botchCamp: 1, botchFoe: 1, botchFoeCamp: 1, botchBack: 1,
 };
 
 /** What a line is said in the light of: the sides' pen names, the paper, the hour, and how hot the war is. */
@@ -261,6 +399,8 @@ export interface Context {
   heat: number;
   /** A streak: how many links long it is (the streak kinds' lines, `{n}`). */
   streak?: number;
+  /** A botch: how bad (1 a mutter, 2 the full treatment; `botchOf`). */
+  botch?: number;
 }
 
 export interface Bubble {
@@ -277,6 +417,8 @@ export interface Bubble {
   seed: number;
   /** Held this much longer than its mood's time (ms): the first line of an exchange. */
   hold?: number;
+  /** Written this many times slower (a slow clap), and on the page that much longer. */
+  slow?: number;
   /** An exchange: a nearby comrade's reply, written as this line is read. */
   reply?: { text: string; mood: Mood; id: number; t0: number; seed: number; hold: number };
 }
@@ -289,16 +431,17 @@ export function linesFor(kind: BubbleKind, c: Context): readonly Line[] {
   if (kind in STREAK_LINES) return STREAK_LINES[kind as StreakKind][streakTier(c.streak ?? 2)];
   if (kind === "paper") return [...LINES.paper, ...(PAPER_LINES[c.paper] ?? [])];
   if (kind === "clock") { const h = CLOCK_LINES.find(([a, b]) => c.hour >= a && c.hour < b); return h ? [...h[2], ...LINES.clock] : LINES.clock; }
-  return LINES[kind as Exclude<BubbleKind, StreakKind>];
+  if (kind in BOTCH_LINES) return BOTCH_LINES[kind as BotchKind][(c.botch ?? 1) >= 2 ? 1 : 0];
+  return LINES[kind as Exclude<BubbleKind, StreakKind | BotchKind>];
 }
 
 /** The line seed `seed` picks for `kind` in context `c`: its text and mood, and a reply if it's an exchange. Pure. */
-export function lineFor(kind: BubbleKind, seed: number, c: Context): { text: string; mood: Mood; reply?: string } {
+export function lineFor(kind: BubbleKind, seed: number, c: Context): { text: string; mood: Mood; reply?: string; slow?: number } {
   const lines = linesFor(kind, c);
   const l = lines[Math.floor(unit(seed, 7) * lines.length)];
   if (typeof l === "string") return { text: fill(l, c), mood: MOOD[kind] };
   const text = l.late && c.heat >= BUBBLE.lateFrom ? l.late : l.t;
-  return { text: fill(text, c), mood: l.mood ?? MOOD[kind], reply: l.reply && fill(l.reply, c) };
+  return { text: fill(text, c), mood: l.mood ?? MOOD[kind], reply: l.reply && fill(l.reply, c), slow: l.slow };
 }
 
 /**
@@ -306,8 +449,8 @@ export function lineFor(kind: BubbleKind, seed: number, c: Context): { text: str
  * eraser has rubbed out (e), and a key that changes only when that does. Pure.
  * Reduced motion: written at once, and gone at once (no scrub).
  */
-export function noteAt(mood: Mood, t0: number, seed: number, ms: number, reduced = false, hold = 0) {
-  const { writeMs, eraseMs } = BUBBLE.timing[mood], showMs = BUBBLE.timing[mood].showMs + hold;
+export function noteAt(mood: Mood, t0: number, seed: number, ms: number, reduced = false, hold = 0, slow = 1) {
+  const T = BUBBLE.timing[mood], writeMs = T.writeMs * slow, eraseMs = T.eraseMs, showMs = T.showMs + T.writeMs * (slow - 1) + hold;
   const dt = ms - t0;
   if (dt < 0 || dt >= showMs) return null;
   const f = Math.floor((dt * BUBBLE.fps) / 1000), q = (f * 1000) / BUBBLE.fps;
@@ -315,11 +458,11 @@ export function noteAt(mood: Mood, t0: number, seed: number, ms: number, reduced
   const e = reduced ? 0 : Math.max(0, Math.min(1, (q - (showMs - eraseMs)) / eraseMs));
   return { p, e, key: `${seed}|${p.toFixed(3)}|${e.toFixed(3)}` };
 }
-export const bubbleAt = (b: Bubble, ms: number, reduced = false) => noteAt(b.mood, b.t0, b.seed, ms, reduced, b.hold);
+export const bubbleAt = (b: Bubble, ms: number, reduced = false) => noteAt(b.mood, b.t0, b.seed, ms, reduced, b.hold, b.slow);
 export const replyAt = (b: Bubble, ms: number, reduced = false) => (b.reply ? noteAt(b.reply.mood, b.reply.t0, b.reply.seed, ms, reduced, b.reply.hold) : null);
 
 /** How long a note stays, all told, its reply included. */
-export const showOf = (b: Bubble) => Math.max(BUBBLE.timing[b.mood].showMs + (b.hold ?? 0), b.reply ? b.reply.t0 - b.t0 + BUBBLE.timing[b.reply.mood].showMs + b.reply.hold : 0);
+export const showOf = (b: Bubble) => Math.max(BUBBLE.timing[b.mood].showMs + BUBBLE.timing[b.mood].writeMs * ((b.slow ?? 1) - 1) + (b.hold ?? 0), b.reply ? b.reply.t0 - b.t0 + BUBBLE.timing[b.reply.mood].showMs + b.reply.hold : 0);
 
 /** One note at a time, rarely. */
 export class Bubbles {
@@ -335,14 +478,15 @@ export class Bubbles {
    * the last (a shout or chant may follow sooner), and only on the seeded
    * chance. `mate`: a nearby comrade, for the reply in an exchange.
    */
-  offer(kind: BubbleKind, id: number, t0: number, seed: number, c: Context, mate?: number): Bubble | null {
+  offer(kind: BubbleKind, id: number, t0: number, seed: number, c: Context, mate?: number, gapMs?: number): Bubble | null {
     if (!LIFE.bubbles) return null;
     if (this.next || (this.cur && t0 < this.cur.t0 + showOf(this.cur))) return null;
-    const { text, mood, reply } = lineFor(kind, seed, c);
+    const { text, mood, reply, slow } = lineFor(kind, seed, c);
     const loud = mood === "shout" || mood === "chant";
-    if (t0 - this.last < (loud ? BUBBLE.loudGapMs : BUBBLE.gapMs)) return null;
+    if (t0 - this.last < (gapMs ?? (loud ? BUBBLE.loudGapMs : BUBBLE.gapMs))) return null;
     if (unit(seed, 5) >= CHANCE[kind]) return null;
     this.cur = { kind, id, anchor: ANCHOR[kind], text, mood, t0, side: unit(seed, 11) < 0.5 ? -1 : 1, seed };
+    if (slow) this.cur.slow = slow;
     if (reply && mate !== undefined) {
       const x = BUBBLE.exchange;
       this.cur.hold = x.holdMs;
@@ -360,8 +504,9 @@ export class Bubbles {
    */
   urgent(kind: BubbleKind, id: number, t0: number, seed: number, c: Context): Bubble | null {
     if (!LIFE.bubbles) return null;
-    const { text, mood } = lineFor(kind, seed, c);
+    const { text, mood, slow } = lineFor(kind, seed, c);
     const b: Bubble = { kind, id, anchor: ANCHOR[kind], text, mood, t0, side: unit(seed, 11) < 0.5 ? -1 : 1, seed };
+    if (slow) b.slow = slow;
     const cur = this.cur;
     if (cur && t0 < cur.t0 + showOf(cur)) {
       // cut it short: its eraser starts at t0, or as soon as it's written
@@ -379,11 +524,11 @@ export class Bubbles {
   }
 
   /** Is it time for a stray thought? Once per window, on a seeded chance (a long wait: more often). */
-  idleDue(ms: number, seed: number, waited = 0) {
+  idleDue(ms: number, seed: number, waited = 0, boost = false) {
     const w = Math.floor(ms / BUBBLE.idleEveryMs);
     if (w === this.window) return false;
     this.window = w;
-    return unit(seed, w, 13) < (waited > BUBBLE.longWaitMs ? BUBBLE.idleChance * 2 : BUBBLE.idleChance);
+    return unit(seed, w, 13) < (boost ? BUBBLE.botch.backChance : waited > BUBBLE.longWaitMs ? BUBBLE.idleChance * 2 : BUBBLE.idleChance);
   }
 
   /** The note showing at `ms`, if any. */

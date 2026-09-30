@@ -685,6 +685,90 @@ export default async function (T, out) {
       await clear();
     }
   }
+  // --- notes, round five: botches, and notes kept off the page's border, header and title block ---
+  //   edge-<theme>-<voice>-<n>          the streak shots that poked past the border or sat on the title block (compare round four's)
+  //   botch-<theme>-<voice>-<grade>     each botch voice, a mutter (1) and the full treatment (2), bird's-eye
+  //   botch-<theme>-clap                the enemy camp's slow clap, frame by frame (GIF and a strip)
+  //   botch-<theme>-real-<grade>        a real botched flick fired through the game, graded by the game's own hook
+  //   botch-<theme>-back                the callback on the other side's next go
+  if (want("notes5")) {
+    const clear = async () => { await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100); };
+    const overview = async () => { await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); }); await step(0, 150); };
+    for (const theme of (process.env.THEMES ?? "lamplight,blueprint").split(",")) {
+      await page.evaluate((id) => window.pft.theme?.apply(id), theme);
+      await war(7, 12);
+      await overview();
+      const camp = await fullest("mine");
+      const men = await menIn(camp);
+      // the edges: the same forced lines as round four's streak shots
+      for (const [n, v] of [[2, "streakFoe"], [5, "streakFoeCamp"], [5, "streakCamp"]]) {
+        const got = await page.evaluate(({ n, v, id }) => { const p = window.pft; p.bubbles.reset(); const b = p.speakStreak(n, id, p.wall, 4242 + n, v); p.poke(); return b ? b.text : null; }, { n, v, id: men[0].id });
+        console.log(`edge ${theme} ${v} ${n}:`, got);
+        await step(n >= 4 ? 1500 : 1000, 150);
+        await page.screenshot({ path: `${out}/edge-${theme}-${v}-${n}.png` });
+        await clear();
+      }
+      // each botch voice, forced at both grades, the ink ending short of their lines
+      const me = men[0];
+      const end = { x: me.x + 40, y: me.y - 60 };
+      for (const grade of [1, 2]) for (const v of ["botchMe", "botchCamp", "botchFoe", "botchFoeCamp"]) {
+        const got = await page.evaluate(({ grade, v, id, end }) => { const p = window.pft; p.bubbles.reset(); const b = p.speakBotch(grade, id, end, p.wall, 7000 + grade * 13, v); p.poke(); return b ? `${b.kind} ${b.mood}: ${b.text}` : null; }, { grade, v, id: me.id, end });
+        console.log(`botch ${theme} ${v} ${grade}:`, got);
+        if (!got) continue;
+        await step(1400, 150);
+        await page.screenshot({ path: `${out}/botch-${theme}-${v}-${grade}.png` });
+        await clear();
+      }
+      // the slow clap, frame by frame
+      const clap = await page.evaluate(({ id, end }) => { const p = window.pft; for (let k = 0; k < 600; k++) { p.bubbles.reset(); const b = p.speakBotch(2, id, end, p.wall, 100 + k, "botchFoeCamp"); if (b?.text === "clap. clap. clap.") { p.poke(); return b.bid ?? b.id; } } return null; }, { id: me.id, end });
+      console.log(`clap ${theme}:`, clap);
+      if (clap !== null) {
+        const base = await page.evaluate((id) => { const b = window.pft.s.bases[id]; return { x: b.x, y: b.y }; }, clap);
+        const name = `botch-${theme}-clap`;
+        await seq(name, 44, 1000 / 12, { [name]: await box(base, 170) });
+        const fs = await import("node:fs");
+        const pick = [6, 13, 20, 27, 34, 43].map((k) => `${out}/${name}-${String(k).padStart(3, "0")}.png`).filter((f) => fs.existsSync(f));
+        if (pick.length === 6) spawnSync("ffmpeg", ["-loglevel", "error", "-y", ...pick.flatMap((f) => ["-i", f]), "-filter_complex", "hstack=inputs=6", `${out}/${name}-strip.png`], { stdio: "inherit" });
+        await clear();
+      }
+      // a real botch, through the game: search the engine for a flick of each grade, fire it, and let the game's hook grade it
+      for (const want of [2, 1]) {
+        await overview();
+        const f = await page.evaluate(async (want) => {
+          const g = await import("/src/game.ts");
+          const p = window.pft, s = p.s, foe = 1 - s.current;
+          const foes = s.soldiers.filter((x) => x.alive && x.owner === foe), own = s.bases.filter((b) => b.owner === s.current);
+          for (const x of s.soldiers.filter((y) => y.alive && y.owner === s.current)) {
+            if (!g.canFlick(s, x.id, "snipe")) continue;
+            for (let a = 0; a < 360; a += 6) for (const len of want === 2 ? [70, 90] : [200, 260, 320]) {
+              const f = { soldier: x.id, kind: "snipe", angle: (a * Math.PI) / 180, length: len, bend: 0, wob: 3 };
+              const o = g.preview(s, f);
+              const bo = p.botchOf({ kind: "snipe", from: o.path[0], aim: f.angle, path: o.path, killed: o.killed.length, lost: o.lost, crashed: o.crashed !== undefined, offPage: o.events.some((e) => e.kind === "edge"), foes, own });
+              if (bo.grade === want) return { f, why: bo.why, score: bo.score };
+            }
+          }
+          return null;
+        }, want);
+        if (!f) { console.log(`real botch ${want}: none found`); continue; }
+        // retry the seed-dependent chance: fire, and if nothing was said, try again on the next turn
+        await page.evaluate(() => window.pft.bubbles.reset());
+        await page.evaluate((f) => window.pft.flick(f), f.f);
+        let said = null;
+        for (let i = 0; i < 50 && !said; i++) { await step(1000 / 12, 30); said = await page.evaluate(() => { const b = window.pft.bubbles.cur; return b && b.kind.startsWith("botch") && window.pft.wall - b.t0 > 1000 ? `${b.kind} ${b.mood}: ${b.text}` : null; }); }
+        console.log(`real botch ${want} (${f.why.join(", ")}, ${f.score.toFixed(2)}):`, said);
+        if (said) await page.screenshot({ path: `${out}/botch-${theme}-real-${want}.png` });
+        for (let i = 0; i < 40 && await page.evaluate(() => window.pft.busy); i++) await step(1000 / 12, 20);
+        // the other side's go: wait for the callback
+        if (want === 2) {
+          let back = null;
+          for (let i = 0; i < 90 && !back; i++) { await step(500, 20); back = await page.evaluate(() => { const b = window.pft.bubbles.cur; return b && b.kind === "botchBack" && window.pft.wall - b.t0 > 900 ? `${b.kind}: ${b.text}` : null; }); }
+          console.log(`callback ${theme}:`, back);
+          if (back) await page.screenshot({ path: `${out}/botch-${theme}-back.png` });
+        }
+        await clear();
+      }
+    }
+  }
   await page.evaluate(() => window.pft.hand(false));
 }
 

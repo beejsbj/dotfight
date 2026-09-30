@@ -29,7 +29,7 @@ import { CUSTOM, RULES, SIZES, type Size } from "./rules";
 import { boldAt } from "./boil";
 import { comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
-import { ANCHOR, Bubbles, bubbleAt, heatOf, replyAt, strayKind, streakVoices, type BubbleKind, type Context, type StreakKind } from "./bubble";
+import { ANCHOR, BUBBLE, Bubbles, botchOf, botchVoices, bubbleAt, heatOf, replyAt, strayKind, streakVoices, type BotchKind, type BubbleKind, type Context, type StreakKind } from "./bubble";
 import { feel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
 import { boil, boilSeen, boilTick, forgetDrawn, life, NOTE, noteSpotNow, noteSpotsNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
@@ -796,6 +796,47 @@ function speakStreak(n: number, id: number, t0: number, seed: number, only?: Str
   return null;
 }
 
+/**
+ * A botch on the page: the shooter's miss, graded (bubble.ts botchOf) and
+ * remarked on by the flicker, his own camp, or the enemy man or camp nearest
+ * where the ink ended; not the voice that remarked last, only someone on
+ * screen, and only if nothing's up (a streak's line comes first). A
+ * spectacular one is remembered for a sly callback on the other side's go.
+ */
+let botchLast: BotchKind | undefined;
+let botchBack: { who: Player; turn: number } | null = null;
+function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number, only?: BotchKind) {
+  if (!heard() || grade < 1) return null;
+  const me = s.soldiers[id];
+  if (!me) return null;
+  if (!only && seeded(seed, 17) >= BUBBLE.botch.chance[Math.min(2, grade)]) return null;
+  const foe = other(me.owner);
+  const d = (p: Pt) => Math.hypot(p.x - end.x, p.y - end.y);
+  const onScreen = (p: Pt) => { const q = cam.toScreen(p.x, p.y); return q.x >= 20 && q.x <= W - 20 && q.y >= 60 && q.y <= H - 120; };
+  const who = (k: BotchKind): number | undefined => {
+    if (k === "botchMe") return me.alive ? id : undefined;
+    if (k === "botchCamp") return campOf(id);
+    if (k === "botchFoe") return turn.aliveOf(s, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+    const manned = s.bases.filter((b) => b.owner === foe && s.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+  };
+  for (const k of only ? [only] : botchVoices(grade, seeded(seed, grade, 79), botchLast)) {
+    const at = who(k);
+    if (at === undefined) continue;
+    const p = ANCHOR[k] === "base" ? s.bases[at] : s.soldiers[at];
+    if (!p || !onScreen(p)) continue;
+    const owner = k === "botchMe" || k === "botchCamp" ? me.owner : foe;
+    // a spectacular one rubs out whatever's up ("Charge!" and then this), unless it's a streak's line;
+    // a mild one waits its turn like any other note
+    const up = bubbles.next ?? bubbles.cur, streaking = !!up && up.kind.startsWith("streak");
+    const ls = Math.floor(seeded(seed, grade, 83) * 2 ** 31), c = { ...noteContext(owner), botch: grade };
+    const b = grade >= 2 && !streaking ? bubbles.urgent(k, at, t0, ls, c) : bubbles.offer(k, at, t0, ls, c, undefined, BUBBLE.botch.gapMs);
+    if (b) { botchLast = k; dirty = true; return b; }
+    return null; // something's up (a streak's line, a phew): it keeps the page
+  }
+  return null;
+}
+
 /** A soldier picked up: he perks up and says so; a campmate mutters. */
 function pickUp(id: number) {
   const x = s.soldiers[id];
@@ -875,8 +916,14 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   if (cheer && !away(shooter)) after(cheer.r.t0 * speed, () => feel("cheer"));
   const close = plan.cues.find((c) => c.say === "eep" && !away(s.soldiers[c.id].owner));
   if (close && away(shooter)) after(close.at * speed, () => feel("flinch"));
+  // a botch: graded from the flick as it ran; a spectacular one takes the page from the target's "phew"
+  const bo = st.n === 0 && st.ended < 3 ? botchOf({
+    kind: f.kind, from: o.path[0], aim: f.angle, path: o.path, killed: o.killed.length, lost: o.lost, crashed: o.crashed !== undefined,
+    offPage: o.events.some((e) => e.kind === "edge") || (o.lost && o.crashed === undefined),
+    foes: turn.aliveOf(s, other(shooter)), own: s.bases.filter((b) => b.owner === shooter),
+  }) : null;
   const phew = plan.cues.find((c) => c.say === "phew");
-  if (phew) speak("phew", phew.id, wall + phew.at);
+  if (phew && (bo?.grade ?? 0) < 2) speak("phew", phew.id, wall + phew.at);
   // in writing: a lunger yells as he goes, a big snipe fires with a shout; a kill
   // (or the last one: the war is won) is claimed; a campmate mourns the fallen
   const camp = campOf(f.soldier);
@@ -886,6 +933,11 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   else if (pathLen(o.path) > 480 && camp !== undefined) speak("snipe", camp);
   if (st.n >= 2) speakStreak(st.n, f.soldier, wall + arrive + 180, seed);
   else if (cheer && !o.lost) { if (s.phase === "over") { if (camp !== undefined) speak("win", camp, wall + cheer.r.t0 + 120); } else speak("kill", f.soldier, wall + cheer.r.t0 + 120); }
+  if (bo?.grade) {
+    const end = o.path[o.path.length - 1];
+    speakBotch(bo.grade, f.soldier, end, wall + arrive + 260, seed + 5);
+    if (bo.grade >= 2) botchBack = { who: shooter, turn: s.turn };
+  }
   if (st.ended >= 3 && s.phase !== "over") {
     const foe = other(shooter), me = s.soldiers[f.soldier];
     const near = s.bases.filter((b) => b.owner === foe).sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0];
@@ -2274,7 +2326,10 @@ function frame(now: number) {
   if (bk !== bubbleKey) { bubbleKey = bk; dirty = true; }
   // now and then, on your go with nothing happening, a stray thought
   const waited = wall - lastMoveWall;
-  if (screen === "game" && !away(s.current) && s.phase === "play" && !aim && !res && !busy && selected === undefined && bubbles.idleDue(wall, s.seed, waited)) {
+  // the other side's go after a spectacular botch: the callback is more likely than a stray thought
+  const back = botchBack && botchBack.who !== s.current && s.turn > botchBack.turn && s.turn <= botchBack.turn + 1 ? botchBack : null;
+  if (botchBack && s.turn > botchBack.turn + 1) botchBack = null;
+  if (screen === "game" && !away(s.current) && s.phase === "play" && !aim && !res && !busy && selected === undefined && bubbles.idleDue(wall, s.seed, waited, !!back)) {
     const mine = turn.aliveOf(s, s.current), theirs = turn.aliveOf(s, other(s.current));
     const lead = mine.length - theirs.length;
     if (mine.length) {
@@ -2283,6 +2338,7 @@ function frame(now: number) {
       const c0 = core();
       let kind = strayKind(seeded(s.seed, s.turn, Math.floor(wall / 1000), 3), { lead, waited, inBase, heat: noteContext(me.owner).heat });
       if (kind === "chant" && c0 && inLastStand(c0, me.owner)) kind = "chantLast";
+      if (back) { kind = "botchBack"; botchBack = null; }
       // an exchange wants a comrade near enough to talk to, but not so near their two dots read as one from above
       const near = comrades(s, me.owner, me, RULES.baseRadius * 2.5, me.id);
       const far = (x: Soldier) => Math.abs(Math.hypot(x.x - me.x, x.y - me.y) - RULES.baseRadius * 1.3);
@@ -2563,7 +2619,7 @@ if (import.meta.env.DEV) {
     /** Frame-exact captures: `pft.hand(true)`, then `pft.step(ms)` moves the game and the boil on together. */
     hand: (on: boolean) => { handClock = on ? { due: 0 } : null; if (on) boilClock ??= wall; else boilClock = undefined; },
     step: (ms: number) => { if (!handClock) return; handClock.due += ms; boilClock = (boilClock ?? wall) + ms; },
-    say: voice.say, voice, get wall() { return wall; }, bubbles, speak, speakStreak,
+    say: voice.say, voice, get wall() { return wall; }, bubbles, speak, speakStreak, speakBotch, botchOf,
     /** Voices rendered offline, as 16-bit mono WAV bytes (base64), for listening outside the game. */
     voiceWav: async (lines: Parameters<typeof voice.renderLines>[0]) => {
       const pcm = await voice.renderLines(lines);

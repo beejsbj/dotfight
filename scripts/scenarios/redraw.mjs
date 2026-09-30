@@ -66,6 +66,14 @@ export default async function (T, out) {
   await page.waitForTimeout(1500);
   await check("bird's-eye + streak 5");
   await page.evaluate(() => window.pft.bubbles.reset());
+  // a botch: the enemy camp's slow clap from its ring, mid-clap and done
+  const botch = await page.evaluate(({ id }) => { const p = window.pft, x = p.s.soldiers[id]; for (let k = 0; k < 400; k++) { p.bubbles.reset(); const b = p.speakBotch(2, id, { x: x.x, y: x.y }, p.wall, 300 + k, "botchFoeCamp"); if (b?.slow) { p.poke(); return b.text; } } return null; }, { id: pair[0] });
+  console.log("botch:", botch);
+  await page.waitForTimeout(1200);
+  await check("botch, clapping");
+  await page.waitForTimeout(2200);
+  await check("botch, clapped");
+  await page.evaluate(() => window.pft.bubbles.reset());
   await check("bird's-eye");
   // the lowest of the side to play: leaning in on him, the camps sit at the screen's edges
   const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).sort((a, b) => b.y - a.y)[0]; });
