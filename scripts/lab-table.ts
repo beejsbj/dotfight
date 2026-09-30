@@ -10,6 +10,7 @@ import { round4Table, summarise, type GameStats } from "../src/lab/sim";
 
 const byLabel = new Map<string, GameStats[]>();
 const configurations = new Map<string, unknown>();
+const seedsByLabel = new Map<string, Map<number, string>>();
 for (const f of process.argv.slice(2)) {
   const j = JSON.parse(readFileSync(f, "utf8")) as { games: Record<string, GameStats[]>; rules: unknown; stances: unknown; agents: unknown; maxTurns: number };
   const configuration = { rules: j.rules, stances: j.stances, agents: j.agents, maxTurns: j.maxTurns };
@@ -18,6 +19,14 @@ for (const f of process.argv.slice(2)) {
       throw new Error(`Conflicting experiment configurations for label ${label} in ${f}; use distinct --label values.`);
     }
     configurations.set(label, configuration);
+    const seen = seedsByLabel.get(label) ?? seedsByLabel.set(label, new Map()).get(label)!;
+    for (const r of recs) {
+      const prev = seen.get(r.seed);
+      if (prev !== undefined) {
+        throw new Error(`Duplicate seed ${r.seed} for label ${label} in ${f}${prev !== f ? ` (already seen in ${prev})` : ""}`);
+      }
+      seen.set(r.seed, f);
+    }
     (byLabel.get(label) ?? byLabel.set(label, []).get(label)!).push(...recs);
   }
 }

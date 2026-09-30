@@ -67,8 +67,10 @@ if (!isMainThread) {
   const rules = parseSet(arg("set"));
   const g = parseGarrison(arg("garrison"));
   if (g !== undefined) rules.garrison = g;
-  const stances = arg("stances", "half,half")!.split(",") as [string, string];
-  for (const st of stances) if (!(st in STANCES)) throw new Error(`unknown stance ${st}`);
+  const rawStances = arg("stances", "half,half")!.split(",");
+  if (rawStances.length !== 2) throw new Error(`expected exactly two --stances values, got ${rawStances.length}`);
+  for (const st of rawStances) if (!(st in STANCES)) throw new Error(`unknown stance ${st}`);
+  const stances = rawStances as [string, string];
   const first = +arg("from", "1")!;
   const last = +arg("to", String(first + games - 1))!;
   const raw = arg("raw");
