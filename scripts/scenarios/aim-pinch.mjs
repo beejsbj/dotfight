@@ -72,8 +72,18 @@ export default async function (T, out) {
   check(up.marks === before.marks && !up.busy && !up.aim, "fingers up: nothing fired", `marks ${before.marks} -> ${up.marks}`);
 
   // a fresh one-finger drag on the zoomed-out page must not start an aim
-  await T.touch("touchStart", [[195, 420]]);
-  for (let i = 1; i <= 10; i++) { await T.touch("touchMove", [[195, 420 + i * 12]]); await page.waitForTimeout(30); }
+  // (from the spot on screen farthest from all of this player's men: touching one would pick him up, which is fine, and leans in)
+  const spot = await page.evaluate(() => {
+    const p = window.pft, mine = p.s.soldiers.filter((x) => x.alive && x.owner === p.s.current).map((x) => p.cam.toScreen(x.x, x.y));
+    let best = [195, 300], bd = -1;
+    for (let x = 40; x < 360; x += 40) for (let y = 220; y < 560; y += 40) {
+      const d = Math.min(...mine.map((q) => Math.hypot(q.x - x, q.y - y)));
+      if (d > bd) { bd = d; best = [x, y]; }
+    }
+    return best;
+  });
+  await T.touch("touchStart", [spot]);
+  for (let i = 1; i <= 10; i++) { await T.touch("touchMove", [[spot[0], spot[1] + i * 12]]); await page.waitForTimeout(30); }
   const drag = await read();
   check(!drag.aim && drag.selected === undefined && !drag.mark, "a drag at bird's-eye starts no aim", JSON.stringify({ aim: drag.aim, sel: drag.selected }));
   await T.touch("touchEnd", []);

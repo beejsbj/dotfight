@@ -1758,6 +1758,7 @@ over.addEventListener("pointermove", (e) => {
     if (!aim) {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
       if (!leanedIn(selected)) { standUp(); g = { t: "none" }; return; }
+      if (leanOf() < 0.6) return; // still easing in from the page view: the aim waits until he's under the fog
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
       ratchet.reset();
       acts();
