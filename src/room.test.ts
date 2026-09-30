@@ -77,6 +77,26 @@ describe("room link rate limit waits", () => {
   afterEach(() => vi.useRealTimers());
   const limited = () => new Response('{"retryAfter":2}', { status: 429 });
 
+  it("finishing delivers a throttled winning move before stopping", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(limited())
+      .mockRejectedValueOnce(new TypeError("offline"))
+      .mockResolvedValueOnce(new Response('{"n":1}'));
+    const storage = memStorage();
+    const link = new RoomLink(saved("abc234", 0, "test", ["B", "D"]), { api: httpApi("/room", fetcher), storage });
+    link.start();
+    link.push({ winner: 0 });
+    link.finish();
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(readRoom(storage, link.code)?.pending).toEqual([{ winner: 0 }]);
+    await vi.advanceTimersByTimeAsync(2001);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(readRoom(storage, link.code)?.pending).toEqual([]);
+    expect(link.data.log[0].a).toEqual({ winner: 0 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("retains moves and deduplicates push, poll and wake during a wait", async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(limited())

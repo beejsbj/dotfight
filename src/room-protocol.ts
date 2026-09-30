@@ -75,8 +75,9 @@ export function httpApi(base = "/api/room", f: typeof fetch = (...a) => fetch(..
     return () => f(base, init);
   };
   return {
-    create: (b, signal) => call(post({ op: "create", ...b }, signal), signal),
-    join: (code, name, signal) => call(post({ op: "join", code, name }, signal), signal),
+    // Cancel a 429 wait, but let an admitted seat claim return its credentials.
+    create: (b, signal) => call(post({ op: "create", ...b }), signal),
+    join: (code, name, signal) => call(post({ op: "join", code, name }), signal),
     read: (code, since = 0, signal) => call(() => f(`${base}?code=${encodeURIComponent(code)}&since=${since}`, { cache: "no-store", signal }), signal),
     async act(b, signal) {
       const r = await call<{ n: number; status: number }>(post({ op: "act", ...b }, signal), signal);

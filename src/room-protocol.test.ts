@@ -41,13 +41,24 @@ describe("room HTTP rate limits", () => {
     const rejected = expect(result).rejects.toMatchObject({ name: "AbortError" });
     await vi.advanceTimersByTimeAsync(1000);
     expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(fetcher.mock.calls[0][1]?.signal).toBe(controller.signal);
-    expect(fetcher.mock.calls[1][1]?.signal).toBe(controller.signal);
+    expect(fetcher.mock.calls[0][1]?.signal).toBeUndefined();
+    expect(fetcher.mock.calls[1][1]?.signal).toBeUndefined();
     controller.abort();
     await rejected;
     expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(5000);
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns admitted join credentials even if the entry screen leaves in flight", async () => {
+    let reply!: (r: Response) => void;
+    const fetcher = vi.fn<typeof fetch>(() => new Promise(resolve => { reply = resolve; }));
+    const controller = new AbortController();
+    const result = httpApi("/room", fetcher).join("abc234", "Dawood", controller.signal);
+    controller.abort();
+    reply(new Response('{"seat":1,"secret":"test"}'));
+    expect(await result).toMatchObject({ seat: 1, secret: "test" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it.each([

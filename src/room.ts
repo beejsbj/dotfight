@@ -78,6 +78,7 @@ export class RoomLink {
   private polling: Promise<void> | null = null;
   private retry = 0;
   private running = false;
+  private draining = false;
   private lifetime = new AbortController();
   private readonly now: () => number;
 
@@ -124,6 +125,7 @@ export class RoomLink {
   }
 
   start() {
+    this.draining = false;
     if (this.lifetime.signal.aborted) this.lifetime = new AbortController();
     this.running = true;
     this.schedule(0);
@@ -133,6 +135,13 @@ export class RoomLink {
     this.running = false;
     this.lifetime.abort();
     clearTimeout(this.timer);
+  }
+
+  /** A finished war still owes its final move to the other phone. */
+  finish() {
+    this.draining = true;
+    this.running = true;
+    this.schedule();
   }
 
   /** The app came back to the front, or the network did: catch up now. */
@@ -156,6 +165,7 @@ export class RoomLink {
       this.timer = setTimeout(() => void this.flush(), wait);
       return;
     }
+    if (this.draining) { this.stop(); return; }
     if (hidden) return; // visibilitychange wakes us
     // on our go, still look in now and then while the friend's seat is empty, to learn their name
     const lonely = this.data.seat === 0 && this.data.names[1] === null;

@@ -755,7 +755,7 @@ function finish() {
   const w = s.winner!;
   if (screen === "game") {
     localStorage.setItem("pft:drawer", JSON.stringify(addToDrawer(drawer(), file(s, mode))));
-    if (mode.kind === "room") link?.stop();
+    if (mode.kind === "room") link?.finish();
     else localStorage.removeItem("pft:save");
   }
   // the page is turned square to the desk, the way it will be filed
@@ -1471,9 +1471,11 @@ function newRoomOnCover() {
       const setup = setupOf(newGame(pickedSize(), undefined, pageStamp()));
       const theme = currentTheme();
       const c = await roomApi.create({ name: who, engine: ENGINE, setup, theme }, entry.signal);
+      const d: RoomSaved = { v: 1, code: c.code, seat: 0, secret: c.secret, engine: ENGINE, setup, theme, names: [who, null], log: [], applied: 0, pending: [], updated: Date.now() };
+      new RoomLink(d, { api: roomApi, storage: localStorage }).save();
       if (entry.signal.aborted) return;
       restoreLabel();
-      enterRoom({ v: 1, code: c.code, seat: 0, secret: c.secret, engine: ENGINE, setup, theme, names: [who, null], log: [], applied: 0, pending: [], updated: Date.now() });
+      enterRoom(d);
       showShare();
     } catch (e) {
       if (entry.signal.aborted) return;
@@ -1531,10 +1533,12 @@ async function openRoom(code: string) {
     coverNote("picking up the red pen…");
     try {
       const j = await roomApi.join(code, who, entry.signal);
+      const d = saved(j.seat, j.secret, j.seat === 1 ? [host, who] : [who, v.names[1]]);
+      if (j.seat !== null) new RoomLink(d, { api: roomApi, storage: localStorage }).save();
       if (entry.signal.aborted) return;
       restoreLabel();
       if (j.seat === null) { enterRoom(saved(null, null, v.names)); lastNote = "someone got to the red pen first: you're watching"; return hud(); }
-      enterRoom(saved(j.seat, j.secret, j.seat === 1 ? [host, who] : [who, v.names[1]]));
+      enterRoom(d);
     } catch (e) {
       if (entry.signal.aborted) return;
       b.disabled = false;
