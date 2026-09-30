@@ -22,15 +22,16 @@ export default async function (T, out) {
     acts: document.querySelector("#acts").textContent, tilt: window.pft.cam.tgt.tilt, aim: !!window.pft.aim,
     felt: window.pft.haptics.felt.map((f) => f.ev),
   }));
-  const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).sort((a, b) => b.y - a.y)[0]; });
+  // the lowest of his men on the screen; a touch on a loaded box can land before the page is ready, so try again
+  const me = await page.evaluate(() => { const p = window.pft, s = p.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).sort((a, b) => p.cam.toScreen(b.x, b.y).y - p.cam.toScreen(a.x, a.y).y)[0]; });
   const a = await T.world(me.x, me.y);
-  await T.tap(a.x, a.y, 40);
   await T.shot(`${out}/cancel-0-start.png`);
-  await page.waitForFunction(() => window.pft.selected !== undefined, undefined, { timeout: 15000 }).catch(async () => {
-    console.log("not picked up", JSON.stringify({ me, a, state: await T.state() }));
-    await T.shot(`${out}/cancel-0-fail.png`);
-    throw new Error("tap did not pick up");
-  });
+  let picked0 = false;
+  for (let i = 0; i < 4 && !picked0; i++) {
+    await T.tap(a.x, a.y, 40);
+    picked0 = await page.waitForFunction(() => window.pft.selected !== undefined, undefined, { timeout: 5000 }).then(() => true, () => false);
+  }
+  if (!picked0) { await T.shot(`${out}/cancel-0-fail.png`); throw new Error("tap did not pick up"); }
   await page.waitForTimeout(200);
   await page.waitForFunction(() => window.pft.cam.settled);
   await page.waitForTimeout(300);
