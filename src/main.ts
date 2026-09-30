@@ -1617,6 +1617,17 @@ function select(id: number) {
   status();
 }
 
+/**
+ * Aiming only ever happens leaned in over the soldier in hand, under the fog:
+ * the camera is sitting on him (close, tilted unless "sit down to aim" is off).
+ * Anything that moves the camera off him (a pinch, the wheel) puts him down.
+ */
+function leanedIn(id: number | undefined) {
+  if (id === undefined) return false;
+  const p = s.soldiers[id], t = cam.tgt;
+  return t.m >= 1.9 && Math.hypot(t.x - p.x, t.y - p.y) < 2 && (cam.tiltScale === 0 || t.tilt > 0.3);
+}
+
 function standUp() {
   selected = undefined;
   motion.lower();
@@ -1641,10 +1652,12 @@ over.addEventListener("pointerdown", (e) => {
   over.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 2) {
-    // two fingers always mean the camera: stand up, then zoom
+    // two fingers always mean the camera: put the soldier down (no aim survives
+    // zoomed out, out of the fog), then zoom
     if (aim) sfx.creak(0);
     aim = null;
     ghost = undefined;
+    if (selected !== undefined) standUp();
     if (cam.cur.tilt > 0.02 || cam.tgt.tilt > 0) { cam.tgt = { ...cam.tgt, tilt: 0, fy: cam.fitFy }; cam.cur = { ...cam.cur, tilt: 0, fy: cam.fitFy }; }
     const { d } = pinchInfo();
     g = { t: "pinch", d0: d, m0: cam.cur.m };
@@ -1687,6 +1700,8 @@ over.addEventListener("pointerdown", (e) => {
   }
   if (humanTurn() && s.phase === "play" && !sending && w) {
     const near = nearestOwn(w);
+    // a soldier in hand but the camera off him (never should be): put him down, then treat this as a fresh touch
+    if (selected !== undefined && !leanedIn(selected)) standUp();
     if (near !== undefined || selected !== undefined) {
       if (near !== undefined && near !== selected) select(near);
       g = { t: "aim", id: e.pointerId, sx: e.clientX, sy: e.clientY, tapOn: near };
@@ -1742,6 +1757,7 @@ over.addEventListener("pointermove", (e) => {
   if (g.t === "aim" && g.id === e.pointerId && selected !== undefined) {
     if (!aim) {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
+      if (!leanedIn(selected)) { standUp(); g = { t: "none" }; return; }
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
       ratchet.reset();
       acts();
@@ -1804,7 +1820,7 @@ function stepGun() {
   if (e?.t === "fire") {
     const id = selected;
     motion.lower();
-    if (id === undefined || !humanTurn() || !turn.canFlick(s, id, kind)) return;
+    if (id === undefined || !humanTurn() || !turn.canFlick(s, id, kind) || !leanedIn(id)) return;
     learn("aim");
     const f = release(gunPull(id, kind, gunFwd + e.delta, e.power, T), T, (pw) => turn.lengthFor(s, kind, pw), turn.handFor(s, id, kind))!;
     haptic("flick", e.power);
@@ -1881,7 +1897,8 @@ function up(e: PointerEvent) {
       const lean = penLean(pw);
       aim = null;
       sfx.creak(0);
-      if (f && turn.canFlick(s, f.soldier, f.kind)) { learn("aim"); haptic("flick", pw); fire(f, pw, lean); }
+      if (f && !leanedIn(f.soldier)) { standUp(); status(); }
+      else if (f && turn.canFlick(s, f.soldier, f.kind)) { learn("aim"); haptic("flick", pw); fire(f, pw, lean); }
       else status("too soft: pull back further");
     } else if (tapped && gunTap) {
       // that tap put the raised phone down
@@ -1908,6 +1925,7 @@ over.addEventListener("pointercancel", up);
 over.addEventListener("contextmenu", (e) => e.preventDefault());
 over.addEventListener("wheel", (e) => {
   e.preventDefault();
+  if (selected !== undefined && !busy) { aim = null; standUp(); }
   if (cam.cur.tilt > 0.02) { cam.tgt = { ...cam.tgt, tilt: 0, fy: cam.fitFy }; cam.cur = { ...cam.cur, tilt: 0, fy: cam.fitFy }; }
   cam.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.002));
   dirty = true;
