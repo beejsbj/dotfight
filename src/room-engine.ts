@@ -12,14 +12,14 @@
 import { act, illegal, newGame, type Action, type GameState, type Player } from "./game";
 import { savedRules, type CoreRules, type Size } from "./rules";
 
-// core-3: garrisoned walls. A core-2 room's setup has no `garrison`, so it
+// core-4: garrisoned walls. A core-2/core-3 room's setup has no `garrison`, so it
 // replays with the flat walls it was played by (savedRules); this client
 // still opens those. The bump is for the other direction: an older client,
-// which would play a core-3 room on flat walls and drift, is told to reload.
-export const ENGINE = "core-3";
+// which would play a core-4 room on flat walls and drift, is told to reload.
+export const ENGINE = "core-4";
 
-/** Engines this client can replay: today's, and core-2 rooms from before garrisoned walls. */
-export const READS: readonly string[] = [ENGINE, "core-2"];
+/** core-2: original reach; core-3: shorter pull reach; core-4: garrisoned walls. */
+export const READS: readonly string[] = ["core-2", "core-3", ENGINE];
 export const canRead = (engine: string) => READS.includes(engine);
 
 /** What a blank page needs: the v2 record minus its actions. */

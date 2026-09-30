@@ -15,7 +15,7 @@ _2026-09-29. Branch `rules/garrison-walls`. On the game's own engine (`src/game.
 | snipe: share of what's left, lost at the wall | 3% | 44% | 85% |
 | lunge: heading jolt at the wall (1 sd) | 0.02 rad (1°) | 0.51 rad (29°) | 1.0 rad (57°) |
 
-`CORE.garrison = { snipeLoss: [0.03, 0.85], lungeShake: [0.02, 1.0], curve: 1 }`. Everything else is unchanged from round 3.
+`CORE.garrison = { snipeLoss: [0.03, 0.85], lungeShake: [0.02, 1.0], curve: 1 }`. These experiments kept everything else unchanged from round 3. The later merge of PR #21 adds the shorter pull reach; the historical tables below have not been rerun with it.
 
 **Why B:**
 - **Bases matter now.** With the bot's own positioning, a man inside is crossed out about half as often as one outside: 5.0 against 11.6 kills per 100 exposed in Quick, and 3.8 against 6.5 in Classic. On flat walls it was 8.2 against 9.3, and 5.5 against 5.9.
@@ -71,7 +71,7 @@ The screening runs (seven curves, and the first look at stances) are in [data/ro
 - **Own bases scale the same, and the wall at your back stays free.** The man flicking never counts toward a wall's garrison.
 - **Empty rings keep a floor** (3%, 0.02 rad): nearly paper, still a line on the page, like the camp's faint pull in the long war.
 - **Old games keep flat walls.** A game copies its rules when it starts; `garrison` missing from a saved record, save or room means flat walls (`savedRules` in `src/rules.ts`). A test replays two wars recorded on `origin/main`'s engine and gets the same page. `CORE.version` is 2.
-- **Rooms: `ENGINE` is bumped to `core-3`.** A room's setup carries its rules, so a core-2 room replays flat on this client, which still opens core-2 rooms (`canRead`). The bump is for the other direction: an older client opening a new room would play garrisoned moves on flat walls and drift. With the bump it's told to reload instead.
+- **Rooms: `ENGINE` is bumped to `core-4`.** PR #21 took core-3 for the shorter pull reach. This client reads core-2, core-3 and core-4 (`canRead`); older rooms without `garrison` retain flat walls and their original reach. New core-4 rooms use curve B. Older clients reject core-4 and ask for a reload, preventing them from silently playing garrisoned moves on flat walls.
 
 ## How the bot changed (fair test, not a strawman)
 
