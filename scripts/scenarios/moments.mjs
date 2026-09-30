@@ -37,6 +37,15 @@ export default async function (T, out) {
         await page.evaluate(({ at }) => { window.pft.cam.sit(at, 3.0, 0, 0.5); window.pft.cam.snap(); window.pft.poke(); }, { at });
         await page.waitForTimeout(500);
         await page.screenshot({ path: `${out}/${theme}-${b.kind}-close.png` });
+        if (b.kind === "twoFor") {
+          // the note is rubbed out by now; the "+1" stays until the extra flick is used
+          await page.evaluate(() => window.pft.cam.overview?.());
+          await page.waitForTimeout(4500);
+          await page.screenshot({ path: `${out}/${theme}-twoFor-owed-bird.png` });
+          await page.evaluate(({ at }) => { window.pft.cam.sit(at, 3.0, 0, 0.5); window.pft.cam.snap(); window.pft.poke(); }, { at });
+          await page.waitForTimeout(500);
+          await page.screenshot({ path: `${out}/${theme}-twoFor-owed-close.png` });
+        }
         await page.evaluate(() => window.pft.cam.overview?.());
       }
       if (!(await page.evaluate(() => window.pft.busy))) break;
