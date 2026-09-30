@@ -1,4 +1,4 @@
-// The moments the field announces: last stand, two for one, a lunge chain.
+// The moments the field announces: last stand, and "One more!" (two for one, a lunge chain).
 // Bot-v-bot on the core rules, played through the game's own flow (pft.act), until each
 // has happened; then a bird's-eye shot while the pencil note is written, and a close look
 // at the soldier. THEME=lamplight|blueprint; SEED picks the war.
@@ -27,7 +27,8 @@ export default async function (T, out) {
     // poll while the flick resolves for an announcement
     for (let k = 0; k < 60; k++) {
       await page.waitForTimeout(100);
-      const b = await page.evaluate(() => { const b = window.pft.bubbles.cur; return b?.important ? { kind: b.kind, text: b.text, id: b.id } : null; });
+      // "One more!" is one note for both; call it by how it was earned (a chain is owed, or a snipe took two)
+      const b = await page.evaluate(() => { const b = window.pft.bubbles.cur; return b?.important ? { kind: b.kind === "more" ? (window.pft.s.chain ? "chain" : "twoFor") : b.kind, text: b.text, id: b.id } : null; });
       if (b && !got.has(b.kind)) {
         got.add(b.kind);
         console.log("moment:", JSON.stringify(b), "turn", await page.evaluate(() => window.pft.s.turn));
@@ -37,15 +38,6 @@ export default async function (T, out) {
         await page.evaluate(({ at }) => { window.pft.cam.sit(at, 3.0, 0, 0.5); window.pft.cam.snap(); window.pft.poke(); }, { at });
         await page.waitForTimeout(500);
         await page.screenshot({ path: `${out}/${theme}-${b.kind}-close.png` });
-        if (b.kind === "twoFor") {
-          // the note is rubbed out by now; the "+1" stays until the extra flick is used
-          await page.evaluate(() => window.pft.cam.overview?.());
-          await page.waitForTimeout(4500);
-          await page.screenshot({ path: `${out}/${theme}-twoFor-owed-bird.png` });
-          await page.evaluate(({ at }) => { window.pft.cam.sit(at, 3.0, 0, 0.5); window.pft.cam.snap(); window.pft.poke(); }, { at });
-          await page.waitForTimeout(500);
-          await page.screenshot({ path: `${out}/${theme}-twoFor-owed-close.png` });
-        }
         await page.evaluate(() => window.pft.cam.overview?.());
       }
       if (!(await page.evaluate(() => window.pft.busy))) break;

@@ -304,25 +304,6 @@ export function hand(s: GameState, id: number, kind: Kind) {
 }
 
 /** Flicks a side gets at the start of its turn. */
-/**
- * An extra flick owed this turn from a snipe that took two (a lunge's is the
- * chain's): who earned it, and how many are owed. Derived from state alone
- * (flicks left against the turn's allotment less the strokes already drawn),
- * so a reload, a room or a replay shows what the live game did.
- */
-export function owedFlick(s: GameState): { soldier: number; n: number } | undefined {
-  if (s.phase !== "play" || s.chain) return undefined;
-  const p = s.current;
-  const start = s.stand[p] > 0 && s.stand[p] < s.turn ? s.rules.lastStandFlicks : 1; // a stand begun this turn doesn't bump this turn
-  let used = 0;
-  for (const m of s.marks) if (m.t === "stroke" && m.turn === s.turn && m.owner === p) used++;
-  // more flicks left than an unearned turn would leave; what's owed is the extra, never more than what's left
-  const n = Math.min(s.left, s.left - (start - used));
-  const last = s.actions[s.actions.length - 1];
-  if (n <= 0 || !used || last?.t !== "flick" || last.kind !== "snipe" || s.soldiers[last.soldier]?.owner !== p) return undefined;
-  return { soldier: last.soldier, n };
-}
-
 export const allotment = (s: GameState, p: Player) => (inLastStand(s, p) ? s.rules.lastStandFlicks : 1);
 
 /** How long a flick of this power is (0..1). Both kinds reach as far. */

@@ -9,7 +9,7 @@ import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
-  act, canArrange, canSend, garrison, illegal, newGame, other, owedFlick, pathLen, sendMax,
+  act, canArrange, canSend, garrison, illegal, newGame, other, pathLen, sendMax,
   type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
@@ -29,7 +29,7 @@ import { CUSTOM, RULES, SIZES, type Size } from "./rules";
 import { boldAt } from "./boil";
 import { comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
-import { Bubbles, bubbleAt, type BubbleKind } from "./bubble";
+import { Bubbles, bubbleAt, type BubbleKind, type Mood } from "./bubble";
 import { feel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
 import { boil, boilSeen, boilTick, forgetDrawn, life, NOTE, noteSpotNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
@@ -307,7 +307,7 @@ function status(msg?: string) {
     else if (isBot(s.current)) t = `${who} is lining up…`;
     else if (sending) t = sending.to !== undefined ? "how many go?" : sending.from !== undefined ? "…to another of your camps" : "drag from one of your camps to another";
     else if (aim) t = pull(aim).live ? `let go to ${turn.verb(s, kind)}` : "pull back further…";
-    else if (c0?.chain) t = "he lunges again, or stop";
+    else if (c0?.chain) t = `one more for ${who}: lunge on, or stop`;
     else if (unit) t = "";
     else if (motion.gun) t = motion.gun.armed < 1 ? "point the phone, hold it still…" : "flick your wrist to fire";
     else if (selected !== undefined) t = motion.live("gun") ? "pull back, or tap him and raise the phone" : LIFE.unitCam && !taught("unitcam") && taught("aim") ? "pull back and let go, or tap him again" : `pull back from anywhere, let go`;
@@ -728,17 +728,17 @@ function speak(kind: BubbleKind, id: number, t0 = wall, seed?: number) {
  * first (a note's gap is chosen once, so one picked while the camera swings out
  * to bird's-eye would sit where the screen no longer is), for at most 1.5s.
  */
-const momentQ: { kind: BubbleKind; id: number; text: string; since: number }[] = [];
-function announce(kind: BubbleKind, id: number, text: string, delay = 120) {
+const momentQ: { kind: BubbleKind; id: number; text: string; mood: Mood; since: number }[] = [];
+function announce(kind: BubbleKind, id: number, text: string, delay = 120, mood: Mood = "shout") {
   if (!heard() || !s.soldiers[id]?.alive) return;
-  momentQ.push({ kind, id, text, since: wall + delay });
+  momentQ.push({ kind, id, text, mood, since: wall + delay });
   dirty = true;
 }
 function flushMoments() {
   while (momentQ.length && wall >= momentQ[0].since && (cam.settled || wall - momentQ[0].since > 1500)) {
     const m = momentQ.shift()!;
     if (!heard() || !s.soldiers[m.id]?.alive) continue;
-    if (bubbles.moment(m.kind, m.id, wall, Math.floor(seeded(s.seed, s.turn, m.id, m.kind.length, m.text.length) * 2 ** 31), m.text)) dirty = true;
+    if (bubbles.moment(m.kind, m.id, wall, Math.floor(seeded(s.seed, s.turn, m.id, m.kind.length, m.text.length) * 2 ** 31), m.text, m.mood)) dirty = true;
   }
 }
 
@@ -884,8 +884,9 @@ let earnedBy: { id: number; kind: Kind } | null = null;
 onCue((c) => {
   if (c !== "earned" || !earnedBy) return;
   const who = earnedBy, c0 = core();
-  if (who.kind === "snipe") announce("twoFor", who.id, "2 for 1! +1 flick");
-  else if (c0?.chain) announce("chain", c0.chain.soldier, c0.chain.link > 1 ? `lunge again ×${c0.chain.link}` : "lunge again!");
+  // the same note for both ways of earning another go: a snipe that took two, a lunge that killed
+  if (who.kind === "snipe") announce("more", who.id, "One more!", 120, "say");
+  else if (c0?.chain) announce("more", c0.chain.soldier, "One more!", 120, "say");
 });
 
 // What the status line says after a flick.
@@ -896,8 +897,8 @@ function noteFor(who: Player, f: Flick, o: Outcome) {
   if (o.crashed !== undefined) return k ? `${name(who)}'s lunger took ${k}, landed among them, and was shot` : `${name(who)}'s lunger landed among them and was shot`;
   if (o.lost) return `${name(who)} flicked a soldier off the page`;
   const stood = o.stood.length ? ` · ${o.stood.map((p) => name(p)).join(" and ")}: the last ${c0?.rules.lastStandAt ?? 4}, two flicks a turn` : "";
-  if (o.earned && f.kind === "snipe") return `two with one: ${name(who)} flicks again${stood}`;
-  if (o.earned) return `${name(who)}'s lunger took ${k}: lunge again or stop${stood}`;
+  if (o.earned && f.kind === "snipe") return `one more for ${name(who)}${stood}`;
+  if (o.earned) return `${name(who)}'s lunger took ${k}: one more, lunge on or stop${stood}`;
   if (k) return `${name(who)}'s ${v === "shoot" ? "shot" : v === "move" ? "run" : v} crossed out ${k}${stood}`;
   return (f.kind === "lunge" ? `${name(who)} ${v === "move" ? "moved" : "lunged"}` : `${name(who)} missed`) + stood;
 }
@@ -2309,8 +2310,6 @@ function currentFrame(): Frame {
     if (held.length) f.stand = c0.soldiers.filter((x) => x.alive && held.includes(x.owner)).map((x) => ({ x: x.x, y: x.y }));
     const owed = c0.chain && c0.soldiers[c0.chain.soldier];
     if (owed?.alive) f.chain = { at: owed, link: c0.chain!.link };
-    const owe = owedFlick(c0);
-    if (owe && c0.soldiers[owe.soldier].alive) f.tally = { at: c0.soldiers[owe.soldier], n: owe.n, owner: c0.soldiers[owe.soldier].owner };
   }
   if (lapse) {
     const p = Math.min(1, Math.max(0, (T - lapse.t0) / lapse.dur));

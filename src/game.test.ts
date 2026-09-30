@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { botAction, botArrange, botBase } from "./bot";
 import {
-  act, alive, owedFlick, canArrange, canFlick, canPlaceBase, canSend, columnSpots, garrison, hand, illegal, isRing, newGame, pathLen, preview, replay,
+  act, alive, canArrange, canFlick, canPlaceBase, canSend, columnSpots, garrison, hand, illegal, isRing, newGame, pathLen, preview, replay,
   type Action, type Flick, type GameState, type Player,
 } from "./game";
 import { CORE, RULES, SIZES, type CoreRules, type Size } from "./rules";
@@ -153,29 +153,14 @@ describe("snipe", () => {
     expect(o).toMatchObject({ earned: true, again: true });
     expect(s).toMatchObject({ current: 0, left: 1 });
     put(s, reds[2].id, 450, 1000); put(s, reds[3].id, 500, 1000);
-    expect(owedFlick(s)).toEqual({ soldier: me.id, n: 1 });
     o = act(s, flick(me.id, "snipe", 0, 400));
     expect(o).toMatchObject({ earned: true, again: true });
-    expect(owedFlick(s)).toEqual({ soldier: me.id, n: 1 });
     // one isn't enough
     put(s, reds[4].id, 150, 700);
     o = act(s, flick(me.id, "snipe", UP, 400));
     expect(o.killed).toEqual([reds[4].id]);
     expect(o).toMatchObject({ earned: false, again: false, handover: true });
     expect(s.current).toBe(1);
-    expect(owedFlick(s)).toBeUndefined();
-  });
-
-  it("owedFlick: nothing owed on a fresh turn, one owed after a two-kill snipe", () => {
-    const s = game(PAGE, 4);
-    expect(owedFlick(s)).toBeUndefined();
-    const me = of(s, 0)[0];
-    const reds = alive(s, 1);
-    park(s, s.soldiers.filter((x) => x.owner === 1 || (x.id !== me.id && x.owner === 0)).map((x) => x.id));
-    put(s, me.id, 150, 1000);
-    put(s, reds[0].id, 150, 900); put(s, reds[1].id, 150, 850);
-    act(s, flick(me.id, "snipe", UP, 300));
-    expect(owedFlick(s)).toEqual({ soldier: me.id, n: 1 });
   });
 });
 

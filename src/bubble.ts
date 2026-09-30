@@ -25,7 +25,7 @@ export type BubbleKind =
   | "ready" | "aim" | "phew" | "dread" | "kill" | "mourn" | "send" | "arrive"
   | "last" | "win" | "lunge" | "snipe" | "deny" | "idle" | "idleUp" | "idleDown"
   // moments the field must announce (Bubbles.moment): always written, whatever the chance
-  | "stand" | "twoFor" | "chain";
+  | "stand" | "more";
 type Line = string | { t: string; mood: Mood };
 
 export const BUBBLE = {
@@ -49,7 +49,7 @@ export const BUBBLE = {
 export const MOOD: Record<BubbleKind, Mood> = {
   ready: "say", aim: "whisper", phew: "say", dread: "whisper", kill: "say", mourn: "whisper", send: "say", arrive: "say",
   last: "shout", win: "shout", lunge: "shout", snipe: "shout", deny: "say", idle: "say", idleUp: "say", idleDown: "whisper",
-  stand: "shout", twoFor: "shout", chain: "shout",
+  stand: "shout", more: "say",
 };
 
 const shout = (t: string): Line => ({ t, mood: "shout" });
@@ -90,7 +90,7 @@ export const LINES: Record<BubbleKind, readonly Line[]> = {
   idleUp: ["easy", "too easy", "they've got no chance", "Dawood would be proud", "can we go home yet", "we're so good", "look at them", "who's winning? us", "…", "is it lunch?"],
   // stray thoughts, well behind
   // moments (Bubbles.moment writes its own words)
-  stand: ["LAST STAND!"], twoFor: ["2 for 1!"], chain: ["lunge again!"],
+  stand: ["LAST STAND!"], more: ["One more!"],
   idleDown: ["we're losing aren't we", "can we go home", "Dawood wouldn't like this", "I miss camp", "don't tell mum", "is there a plan?", "…", "hm", "we can still do this", "ask Dawood for help"],
 };
 
@@ -98,7 +98,7 @@ export const LINES: Record<BubbleKind, readonly Line[]> = {
 const CHANCE: Record<BubbleKind, number> = {
   ready: 0.3, aim: 0.12, phew: 0.55, dread: 0.3, kill: 0.45, mourn: 0.4, send: 0.5, arrive: 0.5,
   last: 0.9, win: 1, lunge: 0.7, snipe: 0.5, deny: 0.6, idle: 1, idleUp: 1, idleDown: 1,
-  stand: 1, twoFor: 1, chain: 1,
+  stand: 1, more: 1,
 };
 
 export interface Bubble {
@@ -111,7 +111,7 @@ export interface Bubble {
   /** Which side of him it sits (screen): 1 right, -1 left. */
   side: 1 | -1;
   seed: number;
-  /** A moment the field must announce (last stand, two for one, a lunge chain): never chance-gated, waits its turn rather than talk over another, and chatter gives way to it. */
+  /** A moment the field must announce (last stand, one more): never chance-gated, waits its turn rather than talk over another, and chatter gives way to it. */
   important?: boolean;
 }
 
@@ -171,9 +171,9 @@ export class Bubbles {
    * is let finish first, and this one is written straight after it. Pure of
    * game state, and seeded by the caller.
    */
-  moment(kind: BubbleKind, id: number, t0: number, seed: number, text: string): Bubble | null {
+  moment(kind: BubbleKind, id: number, t0: number, seed: number, text: string, mood: Mood = "shout"): Bubble | null {
     if (!LIFE.bubbles) return null;
-    const b: Bubble = { kind, id, text, mood: "shout", t0, side: unit(seed, 11) < 0.5 ? -1 : 1, seed, important: true };
+    const b: Bubble = { kind, id, text, mood, t0, side: unit(seed, 11) < 0.5 ? -1 : 1, seed, important: true };
     const tail = this.pending.length ? this.pending[this.pending.length - 1] : this.cur?.important ? this.cur : null;
     if (tail && t0 < tail.t0 + showOf(tail) + 150) {
       b.t0 = tail.t0 + showOf(tail) + 150;

@@ -76,8 +76,6 @@ export interface Frame {
   stand?: Pt[];
   /** A lunger owed another lunge: ringed twice, with what he's owed and how many links. */
   chain?: { at: Pt; link: number };
-  /** An earned flick owed (owedFlick): a circled +n beside the soldier who earned it. */
-  tally?: { at: Pt; n: number; owner: 0 | 1 };
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
   danger?: { x: number; y: number; r: number }[];
   /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
@@ -388,8 +386,7 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
   }
   for (const q of f.road ?? []) { drawRoad(g, q.at, q.dir, px, s.soldiers.length + Math.round(q.at.x)); box.add(q.at.x, q.at.y, 34); }
   for (const q of f.stand ?? []) { drawRays(g, q, px, 5 + Math.round(q.x + q.y)); box.add(q.x, q.y, 36); }
-  if (f.chain) { drawChain(g, f, f.chain, px, box); }
-  if (f.tally) { drawTally(g, f, f.tally, px, box); }
+  if (f.chain) { drawChain(g, f.chain, px, box); }
   if (f.hint) for (const b of f.hint.bases) { pencilLoop(g, b.x, b.y, b.r + 12, 900 + b.id * 17, Math.max(1.6, px * 1.1), f.hint.p, 0.75); box.add(b.x, b.y, b.r + 24); }
   if (f.selected !== undefined && !f.aim && !f.mover) {
     const x = s.soldiers[f.selected];
@@ -441,39 +438,10 @@ function drawRays(g: Ctx, at: Pt, px: number, seed: number) {
   }
 }
 
-/** A page-space spot `dx, dy` from `at` in screen-upright terms (right, down), whichever way the page is turned. */
-function upright(f: Frame, at: Pt, dx: number, dy: number): Pt {
-  const c = Math.cos(f.view.rot), sn = Math.sin(f.view.rot);
-  return { x: at.x + dx * c + dy * sn, y: at.y - dx * sn + dy * c };
-}
-
-/** Owed another lunge: two loops round him and, in pencil beside him, "lunge again" with his link count. */
-function drawChain(g: Ctx, f: Frame, c: { at: Pt; link: number }, px: number, box: Box) {
-  const w = Math.max(2, px * 1.6);
-  pencilLoop(g, c.at.x, c.at.y, RULES.soldierRadius + 12, 31 + c.link, w, 1, 1);
-  pencilLoop(g, c.at.x, c.at.y, RULES.soldierRadius + 18, 37 + c.link, w, 1, 0.9);
-  const size = Math.max(30, Math.min(64, 22 / f.view.z));
-  const p = upright(f, c.at, size * 0.8, -size * 1.3);
-  handText(g, c.link > 1 ? `lunge again ×${c.link}` : "lunge again", p.x, p.y, size, lead(theme).note, { weight: 700, rot: -f.view.rot, alpha: 0.95, grain: 0.5 });
-  box.add(c.at.x, c.at.y, size * 6);
-}
-
-/** An earned flick owed: a circled "+1" beside the man who earned it, in his pen, big enough to read from bird's-eye. */
-function drawTally(g: Ctx, f: Frame, t: { at: Pt; n: number; owner: 0 | 1 }, px: number, box: Box) {
-  const size = Math.max(46, Math.min(96, 32 / f.view.z));
-  const p = upright(f, t.at, size * 1.2, -size * 0.9);
-  const pen = INK.pens[t.owner], w = Math.max(3, px * 2.4);
-  handText(g, `+${t.n}`, p.x, p.y + size * 0.3, size, pen, { weight: 700, rot: -f.view.rot, align: "center", alpha: 1, grain: 0.5 });
-  // circled twice, the way a hand circles what it means
-  const rng_ = rng(97 + t.n);
-  for (let k = 0; k < 2; k++) {
-    const r = size * (0.74 + k * 0.05), a0 = rng_() * 6.28;
-    const pts: Pt[] = [];
-    for (let i = 0; i <= 28; i++) { const a = a0 + (i / 28) * Math.PI * 2.1; pts.push({ x: p.x + Math.cos(a) * r * (1 + (rng_() - 0.5) * 0.06), y: p.y + Math.sin(a) * r * (1 + (rng_() - 0.5) * 0.06) }); }
-    pencilStroke(g, pts, pen, 97 + k, w, 1, 0.95, 0.5);
-  }
-  box.add(p.x, p.y, size * 1.5);
-  box.add(t.at.x, t.at.y, 20);
+/** Owed another lunge: one quiet pencil ring round him, to say he's the one who must go. */
+function drawChain(g: Ctx, c: { at: Pt; link: number }, px: number, box: Box) {
+  pencilLoop(g, c.at.x, c.at.y, RULES.soldierRadius + 13, 31 + c.link, Math.max(2, px * 1.6), 1, 1);
+  box.add(c.at.x, c.at.y, 40);
 }
 
 /** A lunger at speed: three short pencil streaks trailing from him, the way a kid draws a fast thing. */
