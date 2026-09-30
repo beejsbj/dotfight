@@ -13,7 +13,8 @@ import { idle } from "../lib/phone.mjs";
 export default async function (T, out) {
   const { page, cdp } = T;
   await page.waitForTimeout(1200);
-  const turns = +(process.env.TURNS ?? 70);
+  // Seed 11 finishes at turn 28 on core-4; 27 is its last full live turn.
+  const turns = +(process.env.TURNS ?? 27);
   // THEME=<id> measures one paper (otherwise it's whichever the load drew)
   if (process.env.THEME) await page.evaluate((id) => window.pft.theme?.apply(id), process.env.THEME);
   const info = await page.evaluate((turns) => {
@@ -23,6 +24,9 @@ export default async function (T, out) {
     return { marks: window.pft.s.marks.length, phase: window.pft.s.phase, turn: window.pft.s.turn };
   }, turns);
   console.log("page:", JSON.stringify(info));
+  if (info.phase !== "play") {
+    throw new Error(`War is not in play phase (phase: "${info.phase}", turn: ${info.turn}); choose smaller TURNS to measure a live game.`);
+  }
   await idle(T);
   await page.waitForTimeout(800);
   const pin = process.env.BOIL;
@@ -46,8 +50,8 @@ export default async function (T, out) {
   await measure("idle (boil only)", 2000);
   const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.find((x) => x.alive && x.owner === s.current); });
   const a = await T.world(me.x, me.y);
-  await T.tap(a.x, a.y, 40);
-  await measure("lean in (camera move)", 1200);
+  // Start sampling before pickup: a throttled CDP tap can outlast the lean.
+  await measure("lean in (camera move)", 1200, () => T.tap(a.x, a.y, 40));
   await T.touch("touchStart", [[195, 600]]);
   for (let i = 1; i <= 8; i++) { await T.touch("touchMove", [[195 + i, 600 + i * 14]]); await page.waitForTimeout(20); }
   await measure("aiming (held pull)", 2000);
