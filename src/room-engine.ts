@@ -10,12 +10,17 @@
 // from the sender's instead of quietly playing on a different page.
 
 import { act, illegal, newGame, type Action, type GameState, type Player } from "./game";
-import { CORE, type CoreRules, type Size } from "./rules";
+import { savedRules, type CoreRules, type Size } from "./rules";
 
-/** The engine a new room is made with. core-3: version-2 rules (a shorter reach on a steeper curve). */
-export const ENGINE = "core-3";
-/** The engines this build can read: core-2 rooms carry version-1 rules in their setup, and replay on those exactly. */
-export const READS: readonly string[] = ["core-2", ENGINE];
+// core-4: garrisoned walls. A core-2/core-3 room's setup has no `garrison`, so it
+// replays with the flat walls it was played by (savedRules); this client
+// still opens those. The bump is for the other direction: an older client,
+// which would play a core-4 room on flat walls and drift, is told to reload.
+export const ENGINE = "core-4";
+
+/** core-2: original reach; core-3: shorter pull reach; core-4: garrisoned walls. */
+export const READS: readonly string[] = ["core-2", "core-3", ENGINE];
+export const canRead = (engine: string) => READS.includes(engine);
 
 /** What a blank page needs: the v2 record minus its actions. */
 export interface Setup {
@@ -35,7 +40,7 @@ export const setupOf = (s: GameState): Setup =>
   ({ seed: s.seed, size: { ...s.size }, rules: structuredClone(s.rules), ...(s.page && { page: s.page }) });
 
 export function fresh(setup: Setup): GameState {
-  return newGame(setup.size, setup.seed >>> 0, setup.page, { ...CORE, ...setup.rules });
+  return newGame(setup.size, setup.seed >>> 0, setup.page, savedRules(setup.rules));
 }
 
 /** Whose move it is, or null once the page is won. The actor is always `current`. */
