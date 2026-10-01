@@ -324,7 +324,7 @@ export function wentTo(s: GameState, i: number): Pt | undefined {
   if (id === undefined) return undefined;
   for (let j = i + 1; j < s.marks.length; j++) {
     const n = s.marks[j];
-    if (n.t === "cross" && n.kind === "moved" && n.id === id) return { x: n.x, y: n.y };
+    if (n.t === "cross" && n.kind === "moved" && (n.id ?? (s.v === 1 ? s.flicks[n.turn - 1]?.soldierId : undefined)) === id) return { x: n.x, y: n.y };
   }
   const x = s.soldiers[id];
   return x && (x.x !== m.x || x.y !== m.y) ? { x: x.x, y: x.y } : undefined;

@@ -262,7 +262,7 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     drawDot(g, s.soldiers[f.mover.id], 1, 1, at);
     g.restore();
     box.add(at.x, at.y, 12 * stretch);
-    if (stretch > 1.04) { drawSpeed(g, at, angle, stretch, 1 / v.z, f.mover.id); box.add(at.x, at.y, 46); }
+    if (stretch > 1.04) { drawSpeed(g, at, angle, stretch, 1 / v.z, f.mover.id); box.add(at.x, at.y, 36 + (stretch - 1) * 60); }
   }
   for (const j of f.jabs ?? []) {
     if (j.p <= 0 || j.alpha <= 0) continue;
