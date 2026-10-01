@@ -735,7 +735,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   if (live) {
     const home = rotFor(who);
     cam.overview(undefined, before[f.soldier]);
-    moments.push({ at: dur + 350 * quick, fn: () => { cam.face(home); cam.overview(); } });
+    moments.push({ at: dur + 350 * quick, fn: () => { cam.face(home, reduced); cam.overview(); } });
   }
   sfx.slip(power);
   sfx.stroke(dur / 1000 / speed + 0.05, f.kind === "snipe" ? 0.6 : 0.45);

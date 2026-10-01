@@ -68,6 +68,21 @@ describe("aiming turns the page so the shot goes up the screen", () => {
 });
 
 describe("standing up after a shot on a turned page", () => {
+  for (const rot of [Math.PI / 3, -Math.PI / 3, 2 * Math.PI / 3, -2 * Math.PI / 3]) {
+    for (const me of [{ x: 40, y: 40 }, { x: 960, y: 40 }, { x: 40, y: 1660 }, { x: 960, y: 1660 }]) {
+      it(`keeps corner ${me.x},${me.y} clear of both HUD bars at rotation ${rot}`, () => {
+        const c = cam();
+        c.overview(rot, me);
+        c.snap();
+        const p = project(c.view(), me.x, me.y);
+        expect(p.x).toBeGreaterThanOrEqual(89.9);
+        expect(p.x).toBeLessThanOrEqual(300.1);
+        expect(p.y).toBeGreaterThanOrEqual(c.top + 31.9);
+        expect(p.y).toBeLessThanOrEqual(c.H - c.bottom - 31.9);
+      });
+    }
+  }
+
   it("a forward shot, even from the margin: the page sits centred, as ever (it all fits)", () => {
     const c = cam();
     c.sit({ x: 80, y: 1500 }, 2.1, 0.55, 0.74);
