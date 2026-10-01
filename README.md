@@ -20,7 +20,7 @@ Dawood made this game up at school. He and Burooj played it in grades 5 and 6, w
 - **Pass and play**: two of you, one phone. The sheet turns round on the desk to face whoever's go it is.
 - **Finished pages** are signed and filed in the drawer, where you can replay them or save them as a picture.
 
-It's made for phones. Touch one of your soldiers to lean in over him, pull back anywhere on the screen, let go, and watch the ink land from above.
+It's made for phones. Touch one of your soldiers to lean in over him, slide sideways to turn the page under your thumb, pull down anywhere on the screen, let go (slide back to where you started to cancel), and watch the ink land from above.
 
 ## The rules
 
