@@ -26,7 +26,7 @@ import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
 import { CUSTOM, FEEL, RULES, SIZES, type Size } from "./rules";
-import { boldAt } from "./boil";
+import { boldAt, lifeOf } from "./boil";
 import { beforeMarch, comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
 import { ANCHOR, BUBBLE, Bubbles, botchOf, botchVoices, bubbleAt, heatOf, replyAt, strayKind, streakVoices, type BotchKind, type BubbleKind, type Context, type StreakKind } from "./bubble";
@@ -2632,15 +2632,16 @@ function currentFrame(): Frame {
   };
   const bb = heard() && !slow && !boil.tooDear ? bubbles.showing(wall) : null;
   if (bb) {
+    const shown = lifeOf(f.s, ink).soldiers;
     f.hud = { h: H, top: cam.top, bottom: cam.bottom };
     f.heat = noteContext(s.current).heat;
     const bs = bubbleAt(bb, wall, reduced);
     if (bs) {
       if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k && noteOnScreen(k)) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
-      else { const x = s.soldiers[bb.id], at = bb.at ?? displayedAt(bb.id); if (x?.alive && noteOnScreen(at)) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && { ...s.soldiers[bb.reply.id], ...displayedAt(bb.reply.id) } }; }
+      else { const x = s.soldiers[bb.id], at = bb.at ?? displayedAt(bb.id); if (x && shown.has(x.id) && noteOnScreen(at)) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && { ...s.soldiers[bb.reply.id], ...displayedAt(bb.reply.id) } }; }
     }
     const rs = replyAt(bb, wall, reduced), rx = bb.reply && s.soldiers[bb.reply.id], rat = rx && displayedAt(rx.id);
-    if (rs && rx?.alive && rat && noteOnScreen(rat)) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rat, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: { ...s.soldiers[bb.id], ...displayedAt(bb.id) }, answers: `${bb.seed}|${bb.text}` };
+    if (rs && rx && shown.has(rx.id) && rat && noteOnScreen(rat)) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rat, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: { ...s.soldiers[bb.id], ...displayedAt(bb.id) }, answers: `${bb.seed}|${bb.text}` };
   }
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
