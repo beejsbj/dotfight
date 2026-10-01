@@ -1251,7 +1251,7 @@ function finish() {
   const w = s.winner!;
   if (screen === "game") {
     localStorage.setItem("pft:drawer", JSON.stringify(addToDrawer(drawer(), file(s, mode))));
-    if (mode.kind === "room") link?.stop();
+    if (mode.kind === "room") link?.finish();
     else localStorage.removeItem("pft:save");
   }
   // the page is turned square to the desk, the way it will be filed
@@ -1709,6 +1709,7 @@ function replayNext() {
 // --- rooms: one page, two phones, a link sent on WhatsApp ----------------------------
 
 const roomApi = httpApi();
+let roomEntry: AbortController | null = null;
 let link: RoomLink | null = null;
 let roomDrift = 0; // the move from which our page stopped matching theirs (0: never)
 const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -1913,6 +1914,8 @@ function nameOnLabel(): HTMLInputElement {
   return input;
 }
 function restoreLabel() {
+  roomEntry?.abort();
+  roomEntry = null;
   $("#cover .label input")?.replaceWith(Object.assign(document.createElement("b"), { className: "hand blue", textContent: "Dawood" }));
 }
 function coverNote(t: string) {
@@ -1952,6 +1955,8 @@ function friendsList() {
 }
 
 function newRoomOnCover() {
+  roomEntry?.abort();
+  const entry = roomEntry = new AbortController();
   const input = nameOnLabel();
   const menu = $("#cover .menu");
   menu.innerHTML = `
@@ -1968,11 +1973,15 @@ function newRoomOnCover() {
     try {
       const setup = setupOf(newGame(pickedSize(), undefined, pageStamp()));
       const theme = currentTheme();
-      const c = await roomApi.create({ name: who, engine: ENGINE, setup, theme });
+      const c = await roomApi.create({ name: who, engine: ENGINE, setup, theme }, entry.signal);
+      const d: RoomSaved = { v: 1, code: c.code, seat: 0, secret: c.secret, engine: ENGINE, setup, theme, names: [who, null], log: [], applied: 0, pending: [], updated: Date.now() };
+      new RoomLink(d, { api: roomApi, storage: localStorage }).save();
+      if (entry.signal.aborted) return;
       restoreLabel();
-      enterRoom({ v: 1, code: c.code, seat: 0, secret: c.secret, engine: ENGINE, setup, theme, names: [who, null], log: [], applied: 0, pending: [], updated: Date.now() });
+      enterRoom(d);
       showShare();
     } catch (e) {
+      if (entry.signal.aborted) return;
       b.disabled = false;
       coverNote(e instanceof RoomHttpError ? `the page server said no: ${e.message}` : "can't reach the page server: check your signal and try again");
     }
@@ -2003,6 +2012,8 @@ async function openRoom(code: string) {
     return home(e instanceof RoomHttpError && e.status === 404 ? "that page has gone: links last 30 days after the last move" : "couldn't open that page: check your signal and open the link again");
   }
   if (!roomCanRead(v.engine)) return home("that page needs a newer copy of the game: reload");
+  roomEntry?.abort();
+  const entry = roomEntry = new AbortController();
   const host = v.names[0];
   const input = v.names[1] === null ? nameOnLabel() : null;
   menu.innerHTML = input ? `
@@ -2024,11 +2035,24 @@ async function openRoom(code: string) {
     b.disabled = true;
     coverNote("picking up the red pen…");
     try {
-      const j = await roomApi.join(code, who);
+      const j = await roomApi.join(code, who, entry.signal);
+      const d = saved(j.seat, j.secret, j.seat === 1 ? [host, who] : [who, v.names[1]]);
+      // Watch may already have opened this same page while the claim was in flight.
+      // Retain its current log and give that link the credentials too, so its
+      // next save cannot overwrite the recovered seat with a spectator record.
+      if (j.seat !== null && entry.signal.aborted && link?.code === code && link.seat === null) {
+        Object.assign(link.data, { seat: j.seat, secret: j.secret, names: d.names });
+        link.save();
+        hud();
+        return;
+      }
+      if (j.seat !== null) new RoomLink(d, { api: roomApi, storage: localStorage }).save();
+      if (entry.signal.aborted) return;
       restoreLabel();
       if (j.seat === null) { enterRoom(saved(null, null, v.names)); lastNote = "someone got to the red pen first: you're watching"; return hud(); }
-      enterRoom(saved(j.seat, j.secret, j.seat === 1 ? [host, who] : [who, v.names[1]]));
+      enterRoom(d);
     } catch (e) {
+      if (entry.signal.aborted) return;
       b.disabled = false;
       coverNote(e instanceof RoomHttpError ? `the page server said no: ${e.message}` : "can't reach the page server: check your signal and try again");
     }

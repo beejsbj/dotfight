@@ -2,15 +2,29 @@
 // each Lua script's logic mirrored in JS. Not deployed (underscore file).
 
 import { SCRIPTS, type Evaluator } from "./_rooms.js";
+import { RATE_SCRIPT } from "./_rate-limit.js";
 
-export function stubRedis() {
+export function stubRedis(now = () => Date.now()) {
   const hashes = new Map<string, Map<string, string>>();
   const lists = new Map<string, string[]>();
   const ttl = new Map<string, number>();
+  const counters = new Map<string, { n: number; expires: number }>();
   const exists = (k: string) => hashes.has(k) || lists.has(k);
   const ev: Evaluator & { hashes: typeof hashes; lists: typeof lists; ttl: typeof ttl } = {
     hashes, lists, ttl,
     async eval(script, [m, log], a) {
+      if (script === RATE_SCRIPT) {
+        let c = counters.get(m);
+        if (c && c.expires <= now()) { counters.delete(m); ttl.delete(m); c = undefined; }
+        if (c && c.n >= +a[0]) return Math.max(1, Math.floor((c.expires - now()) / 1000));
+        if (!c) {
+          c = { n: 0, expires: now() + +a[1] * 1000 };
+          counters.set(m, c);
+          ttl.set(m, +a[1]);
+        }
+        c.n++;
+        return 0;
+      }
       if (script === SCRIPTS.create) {
         if (exists(m)) return 0;
         hashes.set(m, new Map([["v", "1"], ["engine", a[0]], ["setup", a[1]], ["theme", a[2]], ["created", a[3]], ["name0", a[4]], ["secret0", a[5]]]));
@@ -56,4 +70,3 @@ export function stubRedis() {
   };
   return ev;
 }
-

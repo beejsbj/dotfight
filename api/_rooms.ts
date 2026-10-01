@@ -19,6 +19,14 @@ export interface Evaluator {
 
 export const TTL_S = 30 * 24 * 60 * 60; // rooms live 30 days past their last move
 export const LIMITS = { name: 24, setup: 2048, action: 4096, theme: 32, log: 3000 };
+// Per IP, independent fixed windows starting with the first request. Two
+// phones poll at most 80/min; a reconnect can drain the entire 3000-entry log.
+export const RATE_LIMITS = {
+  create: { requests: 12, windowSeconds: 3600 },
+  join: { requests: 60, windowSeconds: 60 },
+  act: { requests: 3600, windowSeconds: 60 },
+  read: { requests: 600, windowSeconds: 60 },
+} as const;
 
 const CODE_CHARS = "23456789abcdefghjkmnpqrstuvwxyz"; // no 0/o, 1/i/l
 export const CODE_RE = /^[23456789abcdefghjkmnpqrstuvwxyz]{6}$/;

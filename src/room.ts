@@ -7,7 +7,7 @@
 // does (`push()`). The engine is only touched through `room-engine.ts`.
 
 import type { Setup } from "./room-engine";
-import type { Entry, RoomApi, Seat } from "./room-protocol";
+import { RoomHttpError, type Entry, type RoomApi, type Seat } from "./room-protocol";
 
 export interface Saved {
   v: 1;
@@ -64,6 +64,9 @@ export function forgetRoom(storage: Env["storage"], code: string) {
   storage.setItem(INDEX, JSON.stringify(listRooms(storage).map((r) => r.code).filter((c) => c !== code)));
 }
 
+/** A refusal the server won't change its mind about; 5xx and 408 may pass. */
+const permanent = (e: unknown) => e instanceof RoomHttpError && e.status < 500 && e.status !== 408;
+
 const same = (e: Entry, seat: Seat | null, a: unknown) => e.seat === seat && JSON.stringify(e.a) === JSON.stringify(a);
 
 export class RoomLink {
@@ -78,6 +81,8 @@ export class RoomLink {
   private polling: Promise<void> | null = null;
   private retry = 0;
   private running = false;
+  private draining = false;
+  private lifetime = new AbortController();
   private readonly now: () => number;
 
   constructor(public data: Saved, private env: Env) {
@@ -123,13 +128,23 @@ export class RoomLink {
   }
 
   start() {
+    this.draining = false;
+    if (this.lifetime.signal.aborted) this.lifetime = new AbortController();
     this.running = true;
     this.schedule(0);
   }
 
   stop() {
     this.running = false;
+    this.lifetime.abort();
     clearTimeout(this.timer);
+  }
+
+  /** A finished war still owes its final move to the other phone. */
+  finish() {
+    this.draining = true;
+    this.running = true;
+    this.schedule();
   }
 
   /** The app came back to the front, or the network did: catch up now. */
@@ -153,6 +168,7 @@ export class RoomLink {
       this.timer = setTimeout(() => void this.flush(), wait);
       return;
     }
+    if (this.draining) { this.stop(); return; }
     if (hidden) return; // visibilitychange wakes us
     // on our go, still look in now and then while the friend's seat is empty, to learn their name
     const lonely = this.data.seat === 0 && this.data.names[1] === null;
@@ -163,12 +179,15 @@ export class RoomLink {
 
   /** Fetch whatever is new. Only when nothing of ours is in flight. */
   poll(): Promise<void> {
+    if (this.lifetime.signal.aborted) return Promise.resolve();
     if (this.data.pending.length) return this.flush();
     if (this.polling) return this.polling;
+    const signal = this.lifetime.signal;
     this.polling = (async () => {
       try {
         const d = this.data;
-        const v = await this.env.api.read(d.code, d.log.length);
+        const v = await this.env.api.read(d.code, d.log.length, signal);
+        if (signal.aborted) return;
         let news = this.offline;
         this.offline = false;
         if (v.engine !== d.engine) { this.broken = "this page needs a newer copy of the game: reload"; news = true; }
@@ -180,6 +199,7 @@ export class RoomLink {
         }
         if (news) { this.lastNews = this.now(); this.save(); this.env.onNews?.(); }
       } catch (e) {
+        if (signal.aborted) return;
         this.netFail(e);
       } finally {
         this.polling = null;
@@ -190,20 +210,24 @@ export class RoomLink {
 
   /** Send our moves, oldest first. A lost reply is fine: the retry finds it already there. */
   flush(): Promise<void> {
+    if (this.lifetime.signal.aborted) return Promise.resolve();
     if (this.flushing) return this.flushing;
     this.flushing = (async () => {
       const d = this.data;
+      const signal = this.lifetime.signal;
       try {
         while (d.pending.length && d.seat !== null && d.secret) {
           const a = d.pending[0];
           const i = d.log.length;
-          const r = await this.env.api.act({ code: d.code, seat: d.seat, secret: d.secret, i, a });
+          const r = await this.env.api.act({ code: d.code, seat: d.seat, secret: d.secret, i, a }, signal);
+          if (signal.aborted) return;
           if (r.ok) {
             d.log.push({ seat: d.seat, a, at: this.now() });
             d.applied++;
             d.pending.shift();
           } else {
-            const v = await this.env.api.read(d.code, i);
+            const v = await this.env.api.read(d.code, i, signal);
+            if (signal.aborted) return;
             if (v.entries[0] && same(v.entries[0], d.seat, a)) {
               // it had landed; the reply hadn't
               d.log.push(v.entries[0]);
@@ -223,6 +247,15 @@ export class RoomLink {
         if (this.offline) { this.offline = false; this.env.onNews?.(); }
         this.retry = 0;
       } catch (e) {
+        if (signal.aborted) return;
+        if (permanent(e) && this.draining) {
+          // a finished war's last move was refused for good (the page expired, the
+          // seat is wrong, the log is full): retrying can't help, so stop. The move
+          // stays in local storage.
+          console.warn("room: final move refused:", e);
+          this.stop();
+          return;
+        }
         this.netFail(e);
         this.retry = Math.min(4, this.retry + 1);
       } finally {

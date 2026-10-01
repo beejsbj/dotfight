@@ -11,7 +11,9 @@ function roomApi(): Plugin {
   return {
     name: "room-api",
     configureServer(server) {
-      const env = loadEnv(server.config.mode, root, ["KV_", "UPSTASH_"]);
+      // Explicit local-only stub mode never loads Redis credentials or env files.
+      const stub = process.env.ROOM_REDIS_STUB === "1";
+      const env = stub ? {} : loadEnv(server.config.mode, root, ["KV_", "UPSTASH_"]);
       for (const [k, v] of Object.entries(env)) process.env[k] ??= v;
       server.middlewares.use("/api/room", async (req, res) => {
         try {
@@ -19,7 +21,10 @@ function roomApi(): Plugin {
           const chunks: Buffer[] = [];
           for await (const c of req) chunks.push(c as Buffer);
           const url = new URL(req.originalUrl ?? req.url ?? "/", "http://localhost");
-          const r: Response = await mod[req.method === "POST" ? "POST" : "GET"](
+          const handler = stub
+            ? (await server.ssrLoadModule("/api/_dev-room.ts")).handler
+            : mod;
+          const r: Response = await handler[req.method === "POST" ? "POST" : "GET"](
             new Request(url, { method: req.method, headers: req.headers as HeadersInit, body: req.method === "POST" ? Buffer.concat(chunks) : undefined }),
           );
           res.statusCode = r.status;
