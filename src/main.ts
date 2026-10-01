@@ -358,6 +358,7 @@ function reset() {
   inkTL.clear();
   sfx.creak(0);
   life.clear();
+  voice.reset();
   bubbles.reset();
   bubbleKey = "";
   streak = { who: -1, turn: -1, kind: "", n: 0, last: undefined };

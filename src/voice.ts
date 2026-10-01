@@ -146,6 +146,17 @@ let lastAny: number | undefined;
 let n = 0;
 let chain: { ac: AudioContext; bus: AudioNode; out: GainNode } | null = null;
 
+/** Abandon this page's voices, including sources scheduled for a later syllable. */
+export function reset() {
+  chain?.out.disconnect();
+  chain?.bus.disconnect();
+  chain = null;
+  busyUntil = [];
+  lastSaid.clear();
+  lastAny = undefined;
+  n = 0;
+}
+
 /**
  * Should `what` be said now? Its own cooldown, room among the voices
  * already going, and a little space after the last one started. Pure over its inputs.
