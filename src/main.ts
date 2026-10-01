@@ -26,7 +26,7 @@ import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
 import { CUSTOM, FEEL, RULES, SIZES, type Size } from "./rules";
-import { boldAt } from "./boil";
+import { boldAt, lifeOf } from "./boil";
 import { comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
 import { ANCHOR, BUBBLE, Bubbles, botchOf, botchVoices, bubbleAt, heatOf, replyAt, strayKind, streakVoices, type BotchKind, type BubbleKind, type Context, type StreakKind, type Mood } from "./bubble";
@@ -829,8 +829,12 @@ function campOf(id: number) {
   const own = s.bases.filter((b) => b.owner === x.owner).sort((a, b) => Math.hypot(a.x - x.x, a.y - x.y) - Math.hypot(b.x - x.x, b.y - x.y));
   return own[0]?.id;
 }
-/** A walker's position on the displayed march, rather than the reducer's destination. */
+/** The displayed ink head or march, rather than the reducer's destination. */
 function displayedAt(id: number): Pt {
+  if (res?.mover === id) {
+    const it = inkTime(T - res.t0, res.snags);
+    if (it < res.dur) return headAt(res.o.path, 1 - Math.pow(1 - Math.max(0, it / res.dur), 2));
+  }
   const w = lapse?.walkers.find((w) => w.id === id);
   if (!w || !lapse) return s.soldiers[id];
   const p = Math.min(1, Math.max(0.001, (T - lapse.t0) / lapse.dur));
@@ -2647,7 +2651,7 @@ function currentFrame(): Frame {
           const next = turn.aliveOf(s, x.owner)[0];
           if (next) { bb.id = next.id; x = next; }
         }
-        if (x && (x.alive || bb.important) && (bb.important || noteOnScreen(bb.at ?? x))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: bb.at ?? x, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && s.soldiers[bb.reply.id] }; }
+        if (x && (x.alive || bb.important) && (bb.important || noteOnScreen(bb.at ?? displayedAt(x.id)))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: bb.at ?? displayedAt(x.id), p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && s.soldiers[bb.reply.id] }; }
     }
     const rs = replyAt(bb, wall, reduced), rx = bb.reply && s.soldiers[bb.reply.id];
     if (rs && rx?.alive && noteOnScreen(rx)) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rx, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: s.soldiers[bb.id], answers: `${bb.seed}|${bb.text}` };
@@ -2689,10 +2693,13 @@ function currentFrame(): Frame {
       f.sendArrow = { from, to: arrowTo, ok: w !== undefined && w !== sending.from && !canSend(c0, sending.from, w, 1) };
     }
   }
-  if (c0 && c0.phase === "play" && (screen === "game" || screen === "replay" || screen === "view")) {
+  if (c0 && (c0.phase === "play" || res) && (screen === "game" || screen === "replay" || screen === "view")) {
     // a side in its last stand keeps its survivors marked; a lunger owed another lunge is ringed with his link count
     const held = ([0, 1] as Player[]).filter((p) => c0.stand[p] > 0 && (!res || it >= res.dur || !res.o.stood.includes(p)));
-    if (held.length) f.stand = c0.soldiers.filter((x) => x.alive && held.includes(x.owner)).map((x) => ({ ...displayedAt(x.id), id: x.id }));
+    if (held.length) {
+      const living = lifeOf(c0, ink).soldiers;
+      f.stand = c0.soldiers.filter((x) => living.has(x.id) && held.includes(x.owner)).map((x) => ({ ...displayedAt(x.id), id: x.id }));
+    }
     const owed = c0.chain && c0.soldiers[c0.chain.soldier];
     if ((!res || it >= res.dur) && owed?.alive) f.chain = { at: owed, link: c0.chain!.link };
   }
