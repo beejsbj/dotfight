@@ -24,7 +24,8 @@ try {
   await p.evaluate(() => document.fonts.ready);
   await p.waitForTimeout(900);
   await p.evaluate(() => {
-    const r = window.pft.fileWar(23, 34);
+    const r = window.pft.fileWar(23, 4);
+    r.mode = { kind: "pnp" }; // keep both sides still while framing the capture
     window.pft.resumeRecord(r);
     document.querySelector("#top").style.visibility = "hidden";
     document.querySelector("#bottom").style.visibility = "hidden";
