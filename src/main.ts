@@ -221,6 +221,7 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 /** The pen's and a moving man's own motion (LIFE.pen, the ride's smear): not with reduced motion. */
 const lively = () => !reduced && !slow && !boil.tooDear;
 function applyTilt() { cam.tiltScale = settings.tilt && !reduced ? 1 : 0; }
+cam.cut = reduced; // reduced motion: the camera cuts, it doesn't swoop, zoom or spin
 applyTilt();
 
 // The line boil (boil.ts): the living are drawn over and over. Not with reduced

@@ -118,3 +118,29 @@ describe("standing up after a shot on a turned page", () => {
     });
   }
 });
+
+describe("reduced motion cuts every camera move", () => {
+  it("lands a lean-in, a page turn and a stand-up in one tick", () => {
+    const c = cam();
+    c.cut = true;
+    c.sit({ x: 300, y: 500 }, 2.1, 0.55, 0.74);
+    c.turnTo(Math.PI);
+    expect(c.tick(16)).toBe(true);
+    expect(c.cur).toEqual(c.tgt);
+    expect(c.cur.m).toBe(2.1);
+    expect(c.cur.rot).toBeCloseTo(Math.PI, 9);
+    c.overview();
+    c.tick(16);
+    expect(c.cur).toEqual(c.tgt);
+    expect(c.cur.m).toBe(1);
+  });
+
+  it("without it the same move eases over many frames", () => {
+    const c = cam();
+    c.sit({ x: 300, y: 500 }, 2.1, 0.55, 0.74);
+    c.tick(16);
+    expect(c.cur.m).toBeGreaterThan(1);
+    expect(c.cur.m).toBeLessThan(2.1);
+    expect(c.settled).toBe(false);
+  });
+});
