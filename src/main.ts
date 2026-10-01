@@ -1010,9 +1010,10 @@ function stepUnitCam() {
     else cam.tgt = { ...cam.tgt, rot: u.back.rot };
     if (reduced || slow) cam.snap();
     penDrop = T; // the pen comes back down onto him
+    dirty = true; // includes the reduced/slow camera snap and the pen returning
     status();
   }
-  if (p.phase === "done") unit = null;
+  if (p.phase === "done") { unit = null; dirty = true; }
 }
 /** Any touch cuts the unit cam short. */
 function skipUnitCam() { if (unit && !unit.rising) unit.skip = T - unit.t0; }
@@ -2525,7 +2526,7 @@ function frame(now: number) {
     }
   }
   if (res) { stepResolve(); active = true; }
-  if (unit) { stepUnitCam(); active = true; }
+  if (unit) stepUnitCam();
   if (volley && (LIFE.crowd && lively() || volley.stamp) && wall - volley.t0 < volley.plan.ends) active = true;
   const live = fx.end(T) > T || inkTL.end(0) > 0;
   if (live || wasLive || aim || botAim || lampOn.moving || dawn.moving || T - penDrop < (LIFE.pen ? SETTLE_MS + 240 : 260) || (penLift && T - penLift.t0 < LIFT_MS)) active = true;
