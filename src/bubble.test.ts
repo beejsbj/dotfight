@@ -175,7 +175,7 @@ describe("pencil notes", () => {
     expect([...texts("lunge", ctx)]).toContain("Lunge!");
     expect([...texts("lunge", ctx)]).not.toContain("Luuunge!");
     expect([...texts("lunge", hot)]).toContain("Luuunge!");
-    expect([...texts("lunge", hot)]).toContain("fooor Dawooood!");
+    expect([...texts("lunge", hot)]).toContain("fooor Dawood!");
     expect(heatOf(0, 0, 40, false)).toBe(0);
     expect(heatOf(30, 30, 40, true)).toBe(1);
     expect(heatOf(6, 4, 40, false)).toBeLessThan(BUBBLE.lateFrom);

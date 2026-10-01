@@ -13,7 +13,7 @@
 // Each line has a mood, and each mood its own hand: tiny (only caught leaning
 // in), whisper, say, shout (big, stretched, scrawled, a spiky burst), chant
 // (from a camp, in beats). Lines grow with the war: "for Dawood!" early,
-// "fooor Dawooood!" once the crosses pile up.
+// "fooor Dawood!" once the crosses pile up.
 //
 // It's pencil, not ink: written stroke by stroke on the same sheet, read, then
 // rubbed out with an eraser (a scrub that lifts it, a smudge, a few crumbs),
@@ -122,7 +122,7 @@ export const LINES: Record<Exclude<BubbleKind, StreakKind | BotchKind>, readonly
   // a pen pointed at him
   dread: ["!", "!!", "eep", "not me not me", "mum?", "oh no", "gulp", "why me", "I have a family", "…", tiny("please no"), "I'm too round to die", "he's looking at me"],
   // the shooter, his kill landed
-  kill: ["got him!", "yes!", "down!", "ha!", grow("for Dawood!", "fooor Dawooood!"), "another one", "sorry mate", "did you see that?", "one for the book", shout("YES!"), shout("got him!"), "nothing personal", "tell Dawood"],
+  kill: ["got him!", "yes!", "down!", "ha!", grow("for Dawood!", "fooor Dawood!"), "another one", "sorry mate", "did you see that?", "one for the book", shout("YES!"), shout("got him!"), "nothing personal", "tell Dawood"],
   // a campmate crossed out beside him
   mourn: ["no…", "he owed me lunch", "we'll remember him", "…", "he was so young", "who'll tell his mum", "Dawood, why", "avenge him", "that was my bunk mate", "he had a sandwich", "he never learned to snipe", tiny("not him")],
   // marching off
@@ -130,7 +130,7 @@ export const LINES: Record<Exclude<BubbleKind, StreakKind | BotchKind>, readonly
   // arriving in a camp
   arrive: ["made it", "we're here", "budge up", "room for one more?", "nice camp", "tea?", "what did we miss", "is this the front?", "smaller than I thought", "hello new camp"],
   // stray thoughts on your go
-  idle: [grow("for Dawood!", "fooor Dawooood!"), "mum?", "hold the line", "…", "not me", "hm", "is it lunch?", "I spy…", "whose go is it?", "is Dawood watching?", "my feet hurt", "anyone got a rubber?", "what's the plan", "dot dot dot", "I need a wee", "did we win yet", "who drew me", "is this a test", "ready when you are", "I'm bored", "left or right?", "is that a smudge", "I've got a pen mark", "ooh, a fly"],
+  idle: [grow("for Dawood!", "fooor Dawood!"), "mum?", "hold the line", "…", "not me", "hm", "is it lunch?", "I spy…", "whose go is it?", "is Dawood watching?", "my feet hurt", "anyone got a rubber?", "what's the plan", "dot dot dot", "I need a wee", "did we win yet", "who drew me", "is this a test", "ready when you are", "I'm bored", "left or right?", "is that a smudge", "I've got a pen mark", "ooh, a fly"],
   // stray thoughts, well ahead
   idleUp: ["easy", "too easy", "they've got no chance", "Dawood would be proud", "can we go home yet", "we're so good", "look at them", "who's winning? us", "…", "is it lunch?", "this is going well", "I could do this all day"],
   // stray thoughts, well behind
@@ -164,19 +164,19 @@ export const LINES: Record<Exclude<BubbleKind, StreakKind | BotchKind>, readonly
     chat("is that a cross?", "don't look"), chat("whose go is it", "not ours"), chat("I'm knackered", "you've not moved"), chat("{them} look scared", "so do you"),
     chat("do erasers hurt?", "shh"), chat("I'll go first", "after you")],
   // the last few (from their camp)
-  last: ["hold the line!", "to the last!", "we few", "it's just us", grow("for Dawood!", "fooor Dawooood!"), "not like this", "stand fast!", whisper("it's been an honour"), "they shall not pass", "remember the camp"],
+  last: ["hold the line!", "to the last!", "we few", "it's just us", grow("for Dawood!", "fooor Dawood!"), "not like this", "stand fast!", whisper("it's been an honour"), "they shall not pass", "remember the camp"],
   // the war is won (from the winners' camp)
-  win: ["we won!", "Victory!", "hooray!", "chaaampions!", "tell Dawood!", "fooor Dawooood!", "we did it!", say("I never doubted us"), "Da-wood! Da-wood!", "who's the best"],
+  win: ["we won!", "Victory!", "hooray!", "chaaampions!", "tell Dawood!", "fooor Dawood!", "we did it!", say("I never doubted us"), "Dawood! Dawood!", "who's the best"],
   // a lunge, as he leaves (from his camp)
-  lunge: [grow("Lunge!", "Luuunge!"), grow("Charge!", "Chaaarge!"), grow("for Dawood!", "fooor Dawooood!"), grow("Geronimo!", "Geronimooo!"), "wheeee!", grow("banzai!", "banzaaai!"), "hold my hat!", "cover him!", grow("go go go", "goooo!"), "run!"],
+  lunge: [grow("Lunge!", "Luuunge!"), grow("Charge!", "Chaaarge!"), grow("for Dawood!", "fooor Dawood!"), grow("Geronimo!", "Geronimooo!"), "wheeee!", grow("banzai!", "banzaaai!"), "hold my hat!", "cover him!", grow("go go go", "goooo!"), "run!"],
   // a big snipe, as it fires (from his camp)
-  snipe: [grow("Bang!", "Baaang!"), "eat this!", grow("Fire!", "Fiiire!"), "take that!", "pew pew!", "incoming!", grow("for Dawood!", "fooor Dawooood!"), "watch this"],
+  snipe: [grow("Bang!", "Baaang!"), "eat this!", grow("Fire!", "Fiiire!"), "take that!", "pew pew!", "incoming!", grow("for Dawood!", "fooor Dawood!"), "watch this"],
   // a camp that shot the intruder
   deny: ["not in our camp!", "gotcha!", "who's next?", "nice try", "denied!", "wrong camp mate", shout("GET OUT!"), "welcome to camp", "no entry", "we saw you coming"],
   // a camp's chant, in beats
-  chant: ["Da-wood! Da-wood!", "{me}! {me}! {me}!", "we want lunch! we want lunch!", "one more! one more!", "lunge lunge lunge", "hold-the-line! hold-the-line!", "{them} out! {them} out!", "Da-wood! Da-wood! Da-wood!"],
+  chant: ["Dawood! Dawood!", "{me}! {me}! {me}!", "we want lunch! we want lunch!", "one more! one more!", "lunge lunge lunge", "hold-the-line! hold-the-line!", "{them} out! {them} out!", "Dawood! Dawood! Dawood!"],
   // the last few, chanting from their camp
-  chantLast: ["hold! hold! hold!", "never! never!", "we few! we few!", "Da-wood! Da-wood!", "not today! not today!"],
+  chantLast: ["hold! hold! hold!", "never! never!", "we few! we few!", "Dawood! Dawood!", "not today! not today!"],
 };
 
 /** Lines about the paper, by theme id (added to `paper` on that paper). */
@@ -209,8 +209,8 @@ export const STREAK_LINES: Record<StreakKind, readonly [readonly Line[], readonl
   // the streaker himself, mid-chain: cocky, then frantic
   streakMe: [
     ["again!", "one more", "that's {n}", "easy", "hold my hat", "I'm on a roll", "did you see that?", "who's next?", "still going", whisper("I can't stop"), "warming up", "don't clap yet", "and another", "is this allowed?"],
-    [shout("{N}!"), shout("I can't stop!"), shout("who's next?!"), "someone stop me", shout("for Dawood!", "fooor Dawooood!"), shout("wheee!"), "I'm unstoppable", "my legs won't stop", shout("hat trick!"), "I'm a bit dizzy", "keep the pen on me", shout("MORE!")],
-    [shout("{N}!!"), shout("I AM THE PEN"), shout("nobody stop me"), shout("fooor Dawooood!"), shout("I can't feel my dot"), shout("AAAAAH"), shout("tell mum I'm famous"), shout("put me in the rulebook"), "I think I'm going to be sick", shout("I'M A LEGEND"), shout("where's the brake?!"), shout("I've gone too far"), "I've forgotten how to stop", shout("NEXT!")],
+    [shout("{N}!"), shout("I can't stop!"), shout("who's next?!"), "someone stop me", shout("for Dawood!", "fooor Dawood!"), shout("wheee!"), "I'm unstoppable", "my legs won't stop", shout("hat trick!"), "I'm a bit dizzy", "keep the pen on me", shout("MORE!")],
+    [shout("{N}!!"), shout("I AM THE PEN"), shout("nobody stop me"), shout("fooor Dawood!"), shout("I can't feel my dot"), shout("AAAAAH"), shout("tell mum I'm famous"), shout("put me in the rulebook"), "I think I'm going to be sick", shout("I'M A LEGEND"), shout("where's the brake?!"), shout("I've gone too far"), "I've forgotten how to stop", shout("NEXT!")],
   ],
   // the next enemy man in line, bracing
   streakFoe: [
@@ -222,7 +222,7 @@ export const STREAK_LINES: Record<StreakKind, readonly [readonly Line[], readonl
   streakCamp: [
     [whisper("that's {n}!"), "go on!", "look at him", "go on, son", "he's off!", whisper("is he allowed to do that?"), "that's our lad", "steady…"],
     [shout("{n}! {n}!"), shout("go go go!"), "that's our boy!", shout("he's on fire!"), chant("one more! one more!"), "we taught him that", shout("{N} for {me}!"), "don't stop now!"],
-    [chant("{n}! {n}! {n}!"), chant("Da-wood! Da-wood!"), chant("go-on! go-on! go-on!"), chant("MORE! MORE! MORE!"), shout("we're not worthy!"), chant("legend! legend!"), shout("put him in the book!"), chant("{me}! {me}! {me}!"), shout("{N}! that's {N}!"), chant("again! again! again!")],
+    [chant("{n}! {n}! {n}!"), chant("Dawood! Dawood!"), chant("go-on! go-on! go-on!"), chant("MORE! MORE! MORE!"), shout("we're not worthy!"), chant("legend! legend!"), shout("put him in the book!"), chant("{me}! {me}! {me}!"), shout("{N}! that's {N}!"), chant("again! again! again!")],
   ],
   // the camp he's tearing through
   streakFoeCamp: [
