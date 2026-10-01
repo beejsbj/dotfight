@@ -124,7 +124,7 @@ let lastPull: { id: number; angle: number } | null = null;
 // Convoys between turns: the engine moves them the moment the pen changes
 // hands; the page holds their new dots back and shows the march as a quick
 // time-lapse before the next go (see holdLapse / runLapse).
-interface Walk { id: number; from: Pt; to: Pt; departing: boolean }
+interface Walk { id: number; from: Pt; to: Pt; departing?: boolean }
 let lapseDue: { walkers: Walk[]; marks: number[]; out: number; home: number } | null = null;
 let lapse: { walkers: Walk[]; t0: number; dur: number } | null = null;
 
