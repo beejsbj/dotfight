@@ -23,6 +23,8 @@ export type HapticEvent =
   | "notch" // a detent while pulling back (arg: power 0..1)
   | "wobble" // the hand starts to shake on a held flick
   | "flick" // let go (arg: power 0..1)
+  | "brink" // the pull is back at the start: let go to cancel
+  | "dial" // the page turning under the thumb clicks past a notch (arg 1: the straight-ahead one)
   | "settle" // a camp is drawn (under a tap)
   | "land" // a flicked line reaches its end (after a drag)
   | "kill" // a cross drawn (arg: which cross on this line, 1-based)
@@ -74,6 +76,9 @@ export function pattern(ev: HapticEvent, arg = 0): Pattern {
     // a tremor: uneven, fading in
     case "wobble": return { android: [12, 40, 16, 60, 20, 40, 14], ios: [0, 70, 170], priority: 2 };
     case "flick": return { android: [Math.round(32 + 30 * clamp01(arg))], ios: [0], priority: 3 };
+    case "brink": return { android: [10], ios: [0], priority: 1 };
+    // the lightest thing here: a dial's click every 30 degrees, a firmer one passing straight ahead
+    case "dial": return { android: [arg >= 1 ? 20 : 8], ios: [0], priority: 1 };
     case "settle": case "land": return { android: [16], ios: [0], priority: 1 };
     case "kill": {
       const n = Math.max(1, Math.round(arg) || 1);
@@ -143,6 +148,35 @@ export class Ratchet {
     this.shook = true;
     return true;
   }
+}
+
+/**
+ * The page turning under the thumb, felt as a dial: a click at every STEP of
+ * turn from where the aim began, both ways, so a full turn is twelve clicks and
+ * straight ahead is one of them. Nothing snaps: the clicks are only felt, so
+ * they never fight a fine aim.
+ */
+export class Dial {
+  static STEP = Math.PI / 6;
+  /** A click line must be cleared by this much (radians, ~2 px of thumb) before it clicks, so a thumb resting on one doesn't chatter. */
+  static HYSTERESIS = 0.035;
+  private p = 0; // the last line clicked past (0 = straight ahead, where the aim began)
+  reset() { this.p = 0; }
+  /** The line just clicked past, as a count of STEPs from straight ahead (any multiple of 12 is straight ahead again), or null. */
+  step(angle: number): number | null {
+    const S = Dial.STEP, h = Dial.HYSTERESIS;
+    const dir = Math.sign(angle - this.p);
+    if (!dir) return null;
+    // the furthest line strictly past the last one in this direction, cleared by the hysteresis
+    const k = dir > 0 ? Math.floor((angle - h) / S + 1e-9) : Math.ceil((angle + h) / S - 1e-9);
+    const line = k * S;
+    if (dir * (line - this.p) <= 1e-9) return null;
+    this.p = line;
+    return k || 0; // never -0
+
+  }
+  /** Is this click the straight-ahead one? */
+  static home(k: number) { return k % 12 === 0; }
 }
 
 // --- backends -----------------------------------------------------------------

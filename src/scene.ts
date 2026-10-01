@@ -1028,8 +1028,8 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   } else {
     // under the soldier, toward you: the way your thumb pulls
     pencilArrow(g, { x: 6, y: 34 }, { x: 14, y: 128 }, 0.12, 77, 2.4, Math.min(1, p * 1.6), 0.9);
-    handText(g, "pull back from anywhere,", 0, 176, 32, pencil, { upTo: p * 2 - 0.5, weight: 400, rot: -0.03, align: "center" });
-    handText(g, "then let go", 0, 210, 32, pencil, { upTo: p * 2 - 1, weight: 400, rot: -0.03, align: "center" });
+    handText(g, "slide sideways to turn,", 0, 176, 32, pencil, { upTo: p * 2 - 0.5, weight: 400, rot: -0.03, align: "center" });
+    handText(g, "pull down, then let go", 0, 210, 32, pencil, { upTo: p * 2 - 1, weight: 400, rot: -0.03, align: "center" });
   }
   g.restore();
 }

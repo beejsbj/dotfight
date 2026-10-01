@@ -18,6 +18,13 @@ export interface Pose {
 }
 
 // how quickly each part of the pose catches up (per second)
+/**
+ * While aiming the page follows the thumb closely (per second). The lag behind
+ * a moving thumb is about 1/rate: at 28/s a brisk sweep (300 px/s, 5 rad/s on a
+ * phone) trails by ~10 degrees and catches up in ~35 ms, so the page reads as
+ * under the thumb, and an exponential ease never overshoots.
+ */
+export const AIM_ROT_RATE = 28;
 const RATE = { pos: 8, m: 7, rot: 5.5, tilt: 7, fy: 7 };
 
 export class Camera {
@@ -36,6 +43,8 @@ export class Camera {
   quick = 1;
   cur: Pose = { x: RULES.pageW / 2, y: RULES.pageH / 2, m: 1, rot: 0, tilt: 0, fy: 0.5 };
   tgt: Pose = { ...this.cur };
+  /** How fast the page's turn catches up (per second); unset = the easy default. Aiming sets a snappier one. */
+  rotRate: number | undefined;
   private shakeAmp = 0;
   private shakeT = 0;
   private shakeSeed = 0;
@@ -74,12 +83,28 @@ export class Camera {
 
   // --- where to look -------------------------------------------------------
 
-  /** Stand up: the whole page, flat. */
-  overview(rot = this.tgt.rot) {
+  /**
+   * Stand up: the whole page, flat. With `keep`, a page still turned for a shot
+   * (it hangs off the sides of a phone) slides across so that point, and the
+   * line running straight up from it, stays on screen.
+   */
+  overview(rot = this.tgt.rot, keep?: Pt) {
     // the same facing, reached the short way round from wherever we are
     const TAU = Math.PI * 2;
     const r = rot + Math.round((this.cur.rot - rot) / TAU) * TAU;
     this.tgt = { x: RULES.pageW / 2, y: RULES.pageH / 2, m: 1, rot: r, tilt: 0, fy: this.fitFy };
+    if (!keep) return;
+    const z = this.fitZ, c = Math.cos(r), s = Math.sin(r);
+    const p = project(this.view(this.tgt), keep.x, keep.y);
+    const edge = Math.min(90, this.W * 0.25);
+    const fitsX = (Math.abs(c) * RULES.pageW + Math.abs(s) * RULES.pageH) * z <= this.W;
+    const overX = fitsX ? 0 : p.x < edge ? p.x - edge : p.x > this.W - edge ? p.x - (this.W - edge) : 0;
+    const padY = Math.min(32, Math.max(0, this.H - this.top - this.bottom) / 4);
+    const top = this.top + padY, bottom = this.H - this.bottom - padY;
+    const overY = p.y < top ? p.y - top : p.y > bottom ? p.y - bottom : 0;
+    // Slide along both screen axes, keeping corner soldiers clear of the HUD.
+    this.tgt.x += (c * overX + s * overY) / z;
+    this.tgt.y += (-s * overX + c * overY) / z;
   }
   /** Sit down behind a soldier: low, close, the page running away from you. */
   sit(at: Pt, m = 2.3, tilt = 0.62, fy = 0.66) {
@@ -96,6 +121,23 @@ export class Camera {
     while (r < this.tgt.rot - 1e-6) r += Math.PI * 2;
     while (r - this.tgt.rot > Math.PI * 2 - 1e-6) r -= Math.PI * 2;
     this.tgt.rot = r;
+  }
+  /**
+   * Turn the page so world direction `angle` points straight up the screen (the
+   * shot always goes up, the pull always comes down). Reached from the current
+   * target the short way, so a continuous aim never spins the long way round.
+   */
+  aimUp(angle: number, rate = AIM_ROT_RATE) {
+    const TAU = Math.PI * 2, r = -(angle + Math.PI / 2);
+    this.tgt.rot = r + Math.round((this.tgt.rot - r) / TAU) * TAU;
+    this.rotRate = rate;
+  }
+  /** Back to facing `rot` (the player's own way up), eased the short way. */
+  face(rot: number, snap = false) {
+    const TAU = Math.PI * 2;
+    this.tgt.rot = rot + Math.round((this.cur.rot - rot) / TAU) * TAU;
+    this.rotRate = undefined;
+    if (snap) this.cur.rot = this.tgt.rot;
   }
   snap() {
     this.cur = { ...this.tgt };
@@ -127,7 +169,7 @@ export class Camera {
     a.x += (b.x - a.x) * k(RATE.pos);
     a.y += (b.y - a.y) * k(RATE.pos);
     a.m += (b.m - a.m) * k(RATE.m);
-    a.rot += (b.rot - a.rot) * k(RATE.rot);
+    a.rot += (b.rot - a.rot) * k(this.rotRate ?? RATE.rot);
     a.tilt += (b.tilt - a.tilt) * k(RATE.tilt);
     a.fy += (b.fy - a.fy) * k(RATE.fy);
     this.shakeT += dt;

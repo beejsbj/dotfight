@@ -118,6 +118,9 @@ export const clatter = (hard = 0.6) => {
   });
 };
 /** The slip: the pen gets away from the finger. */
+/** The page turning under the thumb clicks past a notch: a tiny paper tick, a little fuller straight ahead. */
+export const dial = (home = false) => knock(home ? 1700 : 2900, home ? 0.02 : 0.012, home ? 0.09 : 0.05);
+
 export const slip = (power: number) => { knock(2400, 0.015, 0.2 + power * 0.25); scratch(0.03, 0.4, 6200, 0.004); };
 
 // While you hold a charged flick, the pen creaks under the finger.
