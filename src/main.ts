@@ -841,10 +841,7 @@ function pendingState(): AnyState {
 function displayedAt(id: number): Pt {
   if (res?.mover === id) {
     const it = inkTime(T - res.t0, res.snags);
-    if (it < res.dur) {
-      const p = Math.min(1, it / res.dur);
-      return headAt(res.o.path, 1 - Math.pow(1 - p, 2));
-    }
+    if (it < res.dur) return resolveHead(res, it);
   }
   const pending = lapseDue?.walkers.find((w) => w.id === id);
   if (pending) return pending.from;
@@ -1184,6 +1181,12 @@ function nearestIndex(pts: Pt[], p: Pt) {
   return bi;
 }
 
+/** The same eased, snag-aware ink head positions the rider, pen and live notes. */
+function resolveHead(r: Resolve, it: number) {
+  const p = Math.min(1, Math.max(0, it / r.dur));
+  return headAt(r.o.path, 1 - Math.pow(1 - p, 2));
+}
+
 // where the head of a line is at progress p, and which way it is going
 function headAt(pts: Pt[], p: number) {
   const n = pts.length - 1, h = Math.min(n, Math.max(0, p * n));
@@ -1221,8 +1224,7 @@ function stepResolve() {
 function resolvePen(r: Resolve, it: number): PenPose | undefined {
   if (!r.pen) return undefined;
   const p = Math.min(1, it / r.dur);
-  const e = 1 - Math.pow(1 - p, 2);
-  const h = headAt(r.o.path, e);
+  const h = resolveHead(r, it);
   const ink = inkLeft(r.owner);
   if (it < r.dur) {
     // already tipped toward the shot, it pitches further forward as it skids
@@ -2773,7 +2775,7 @@ function currentFrame(): Frame {
   if (res) {
     const r = res;
     const p = Math.min(1, it / r.dur);
-    const h = headAt(r.o.path, 1 - Math.pow(1 - p, 2));
+    const h = resolveHead(r, it);
     // riding his ink: stretched out along it, most at the start when it's fastest
     if (r.mover !== undefined && it < r.dur) f.mover = { id: r.mover, at: h, angle: h.angle, stretch: LIFE.chosen && lively() ? 1 + 0.6 * (1 - p) : 1 };
     f.pen = resolvePen(r, it);
