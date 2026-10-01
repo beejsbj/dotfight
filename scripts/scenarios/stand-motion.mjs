@@ -7,9 +7,10 @@ export default async function(T){
  const reset=async()=>{await page.evaluate(()=>{const p=window.pft;p.hand(false);p.speed=1;p.slow=false;p.boilOn=false;p.LIFE.bubbles=false;const r=p.fileWar(11,24);r.mode={kind:'pnp'};p.resumeRecord(r);});await idle(T,120000);await page.evaluate(()=>window.pft.hand(true));};
  const step=async ms=>{const wall=await page.evaluate(ms=>{const p=window.pft,w=p.wall;p.step(ms);return w;},ms);await page.waitForFunction(w=>window.pft.wall>w,wall,{timeout:120000});};
  await reset();
- const chosen=await page.evaluate(async()=>{const p=window.pft,g=await import('/src/game.ts');for(const x of p.s.soldiers.filter(x=>x.alive&&x.owner===p.s.current&&p.s.stand[x.owner]))for(let a=0;a<360;a+=30){const f={t:'flick',soldier:x.id,kind:'lunge',angle:a*Math.PI/180,length:80,bend:0,wob:0};const o=g.preview(p.s,f);if(!o.lost&&o.crashed===undefined&&Math.hypot(o.path.at(-1).x-x.x,o.path.at(-1).y-x.y)>40){p.announce('more',x.id,'One more!',0);return {f,from:{x:x.x,y:x.y},id:x.id};}}throw Error('no safe last-stand lunge');});
+ const chosen=await page.evaluate(async()=>{const p=window.pft,g=await import('/src/game.ts');p.bubbles.reset();p.cam.snap();p.LIFE.bubbles=true;for(const x of p.s.soldiers.filter(x=>x.alive&&x.owner===p.s.current&&p.s.stand[x.owner]))for(let a=0;a<360;a+=30){const f={t:'flick',soldier:x.id,kind:'lunge',angle:a*Math.PI/180,length:80,bend:0,wob:0};const o=g.preview(p.s,f);if(!o.lost&&o.crashed===undefined&&Math.hypot(o.path.at(-1).x-x.x,o.path.at(-1).y-x.y)>40){p.announce('more',x.id,'One more!',0);return {f,from:{x:x.x,y:x.y},id:x.id,gates:{slow:p.slow,tooDear:p.boil.tooDear,screen:p.screen,settled:p.cam.settled}};}}throw Error('no safe last-stand lunge');});
+ console.log('selected lunge fixture',JSON.stringify(chosen));
  for(let i=0;i<5;i++)await step(50);
- assert.equal(await page.evaluate(()=>window.pft.bubbles.cur?.kind),'more');
+ assert.equal(await page.evaluate(()=>{window.pft.LIFE.bubbles=false;return window.pft.bubbles.cur?.kind;}),'more');
  const begin=await page.evaluate(({f,id})=>{const p=window.pft;p.act(f);p.renderNow();const fr=p.frame(),ray=p.standRays.get(id);return {mover:fr.mover.at,bubble:fr.bubble.at,ray:{x:ray.ox+42,y:ray.oy+42},endpoint:p.s.soldiers[id]};},chosen);
  const close=(a,b)=>assert.ok(Math.hypot(a.x-b.x,a.y-b.y)<.01,JSON.stringify({a,b}));
  close(begin.mover,chosen.from);close(begin.bubble,begin.mover);close(begin.ray,begin.mover);assert.ok(Math.hypot(begin.endpoint.x-begin.mover.x,begin.endpoint.y-begin.mover.y)>40);
