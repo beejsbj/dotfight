@@ -204,7 +204,7 @@ new ResizeObserver(() => resize()).observe($("#top"));
 for (const ev of ["touchend", "click", "keydown"]) window.addEventListener(ev, sfx.unlock, { passive: true });
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 /** The pen's and a moving man's own motion (LIFE.pen, the ride's smear): not with reduced motion. */
-const lively = () => !reduced;
+const lively = () => !reduced && !slow && !boil.tooDear;
 function applyTilt() { cam.tiltScale = settings.tilt && !reduced ? 1 : 0; }
 applyTilt();
 
@@ -2612,6 +2612,8 @@ function differ(a: ImageData | null, b: ImageData | null, only?: (x: number, y: 
 // What the living see this frame (life.ts): whose go it is, who's in hand, where the pen points.
 let chosenAt = { id: -1, t0: 0 };
 function seeLife(f: Frame) {
+  // A struggling device has neither soldier poses nor dread notes to consume this work.
+  if (slow || boil.tooDear) { dreadWas.clear(); return; }
   const sel = f.selected ?? (f.aim ? f.aim.soldierId : undefined);
   if (sel !== chosenAt.id) chosenAt = { id: sel ?? -1, t0: wall };
   const r = f.view.rot;
