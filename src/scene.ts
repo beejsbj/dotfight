@@ -684,9 +684,13 @@ export const noteSpotsNow = () => spots.slice();
 /** A spot is close if it's in the first ring round him, on the page as found, over nothing heavier than a few lines. */
 const CLOSE = { miss: 0.5, clutter: 8 };
 function noteSpot(f: Frame, b: Note, fits: Fit[], angK = 1) {
-  const key = `${b.seed}|${b.text}|${b.at.x},${b.at.y}${NOTE.angle === undefined ? "" : `|${NOTE.angle}`}`;
+  const key = `${f.s.seed}|${b.seed}|${b.text}|${b.anchor}|${b.owner}${NOTE.angle === undefined ? "" : `|${NOTE.angle}`}`;
   const had = spots.find((m) => m.key === key);
-  if (had) return had;
+  if (had) {
+    // Keep the chosen page offset as the speaker moves; no new clutter search.
+    had.at = { x: b.at.x, y: b.at.y };
+    return had;
+  }
   const { s } = f, R = RULES.soldierRadius, B = noteBounds(f);
   const rot = f.view.rot, c = Math.cos(rot), sn = Math.sin(rot);
   const toPage = (lx: number, ly: number): Pt => ({ x: b.at.x + lx * c + ly * sn, y: b.at.y - lx * sn + ly * c });
