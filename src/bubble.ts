@@ -34,7 +34,8 @@ export type BubbleKind =
   // a streak (chained lunges, or snipes that keep earning): the streaker, the enemy man next in line; his home camp, the camp he's tearing through, its relief when he stops
   | "streakMe" | "streakFoe" | "streakCamp" | "streakFoeCamp" | "streakEnd"
   // a botch (the shooter's embarrassing miss): the flicker, his own camp, the enemy man or camp; and a sly callback on the other side's next go
-  | "botchMe" | "botchCamp" | "botchFoe" | "botchFoeCamp" | "botchBack";
+  | "botchMe" | "botchCamp" | "botchFoe" | "botchFoeCamp" | "botchBack"
+  | "stand" | "more";
 export type Anchor = "man" | "base";
 export type StreakKind = "streakMe" | "streakFoe" | "streakCamp" | "streakFoeCamp" | "streakEnd";
 export type BotchKind = "botchMe" | "botchCamp" | "botchFoe" | "botchFoeCamp" | "botchBack";
@@ -79,6 +80,7 @@ export const BUBBLE = {
 
 /** Each moment's usual mood and where it's written from; a line can say otherwise about the mood. */
 export const MOOD: Record<BubbleKind, Mood> = {
+  stand: "shout", more: "say",
   ready: "say", aim: "whisper", phew: "say", dread: "whisper", kill: "say", mourn: "whisper", send: "say", arrive: "say",
   idle: "say", idleUp: "say", idleDown: "whisper", ponder: "whisper", tired: "whisper", banter: "say", shapes: "say", paper: "say",
   home: "say", afield: "whisper", clock: "say", wait: "tiny", tiny: "tiny", chat: "say",
@@ -87,6 +89,7 @@ export const MOOD: Record<BubbleKind, Mood> = {
   botchMe: "whisper", botchCamp: "whisper", botchFoe: "say", botchFoeCamp: "say", botchBack: "say",
 };
 export const ANCHOR: Record<BubbleKind, Anchor> = {
+  stand: "man", more: "man",
   ready: "man", aim: "man", phew: "man", dread: "man", kill: "man", mourn: "man", send: "man", arrive: "man",
   idle: "man", idleUp: "man", idleDown: "man", ponder: "man", tired: "man", banter: "man", shapes: "man", paper: "man",
   home: "man", afield: "man", clock: "man", wait: "man", tiny: "man", chat: "man",
@@ -109,6 +112,7 @@ const chant = (t: string): Line => ({ t, mood: "chant" });
  * ("Blue", "Red", "White", "Yellow", "Lead", …); `{paper}` is the paper's name.
  */
 export const LINES: Record<Exclude<BubbleKind, StreakKind | BotchKind>, readonly Line[]> = {
+  stand: ["LAST STAND!"], more: ["One more!"],
   // picked up
   ready: ["I'm ready", "ready!", "me?", "ok!", "finally", "pick me!", "right then", "here we go", "oh. me.", "again?", whisper("be gentle"), "put me down", "I was napping", "at last"],
   // aimed with (the pull held)
@@ -382,6 +386,7 @@ export function botchVoices(grade: number, r: number, not?: BotchKind): BotchKin
 
 /** How often a chance to speak is taken. */
 const CHANCE: Record<BubbleKind, number> = {
+  stand: 1, more: 1,
   ready: 0.3, aim: 0.12, phew: 0.55, dread: 0.3, kill: 0.45, mourn: 0.4, send: 0.5, arrive: 0.5,
   idle: 1, idleUp: 1, idleDown: 1, ponder: 1, tired: 1, banter: 1, shapes: 1, paper: 1, home: 1, afield: 1, clock: 1, wait: 1, tiny: 1, chat: 1,
   last: 0.9, win: 1, lunge: 0.7, snipe: 0.5, deny: 0.6, chant: 1, chantLast: 1,
@@ -404,6 +409,7 @@ export interface Context {
 }
 
 export interface Bubble {
+  important?: boolean;
   kind: BubbleKind;
   /** The man (anchor "man"), or the camp's base (anchor "base"). */
   id: number;
@@ -468,6 +474,7 @@ export const showOf = (b: Bubble) => Math.max(BUBBLE.timing[b.mood].showMs + BUB
 
 /** One note at a time, rarely. */
 export class Bubbles {
+  pending: Bubble[] = [];
   cur: Bubble | null = null;
   /** A streak's line, waiting for the one up to be rubbed out. */
   next: Bubble | null = null;
@@ -482,7 +489,7 @@ export class Bubbles {
    */
   offer(kind: BubbleKind, id: number, t0: number, seed: number, c: Context, mate?: number, gapMs?: number): Bubble | null {
     if (!LIFE.bubbles) return null;
-    if (this.next || (this.cur && t0 < this.cur.t0 + showOf(this.cur))) return null;
+    if (this.pending.length || this.next || (this.cur && t0 < this.cur.t0 + showOf(this.cur))) return null;
     const { text, mood, reply, slow } = lineFor(kind, seed, c);
     const loud = mood === "shout" || mood === "chant";
     if (t0 - this.last < (gapMs ?? (loud ? BUBBLE.loudGapMs : BUBBLE.gapMs))) return null;
@@ -506,6 +513,7 @@ export class Bubbles {
    */
   urgent(kind: BubbleKind, id: number, t0: number, seed: number, c: Context): Bubble | null {
     if (!LIFE.bubbles) return null;
+    if (this.pending.length || this.cur?.important) return null;
     const { text, mood, slow } = lineFor(kind, seed, c);
     const b: Bubble = { kind, id, anchor: ANCHOR[kind], text, mood, t0, side: unit(seed, 11) < 0.5 ? -1 : 1, seed };
     if (slow) b.slow = slow;
@@ -526,6 +534,21 @@ export class Bubbles {
     return b;
   }
 
+  moment(kind: BubbleKind, id: number, t0: number, seed: number, text: string, mood: Mood = "shout"): Bubble | null {
+    if (!LIFE.bubbles) return null;
+    const b: Bubble = { kind, id, anchor: "man", text, mood, t0, side: unit(seed, 11) < 0.5 ? -1 : 1, seed, important: true };
+    this.next = null;
+    const tail = this.pending.length ? this.pending[this.pending.length - 1] : this.cur?.important ? this.cur : null;
+    if (tail && t0 < tail.t0 + showOf(tail) + 150) {
+      b.t0 = tail.t0 + showOf(tail) + 150;
+      this.pending.push(b);
+    } else {
+      this.cur = b;
+    }
+    this.last = Math.max(this.last, b.t0);
+    return b;
+  }
+
   /** Is it time for a stray thought? Once per window, on a seeded chance (a long wait: more often). */
   idleDue(ms: number, seed: number, waited = 0, boost = false) {
     const w = Math.floor(ms / BUBBLE.idleEveryMs);
@@ -537,13 +560,14 @@ export class Bubbles {
   /** The note showing at `ms`, if any. */
   showing(ms: number) {
     if (this.cur && ms >= this.cur.t0 + showOf(this.cur)) this.cur = null;
+    if (!this.cur && this.pending.length) this.cur = this.pending.shift()!;
     if (!this.cur && this.next) { this.cur = this.next; this.next = null; }
     return this.cur && ms >= this.cur.t0 ? this.cur : null;
   }
 
-  clear() { this.cur = null; this.next = null; }
+  clear() { this.cur = null; this.next = null; this.pending = []; }
   /** Forget the last one too, so the next chance can be taken at once (dev captures). */
-  reset() { this.cur = null; this.next = null; this.last = -Infinity; this.window = -1; }
+  reset() { this.cur = null; this.next = null; this.pending = []; this.last = -Infinity; this.window = -1; }
 }
 
 /**

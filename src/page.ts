@@ -337,7 +337,11 @@ export function drawMark(g: Ctx, m: Mark, p = 1, wob = 0, to?: Pt) {
   else if (m.t === "walk") drawWalk(g, m.a, m.b, pen, m.seed, p);
   else if (m.t === "stand") {
     // the last few, ringed where they stood when their comrades were gone
-    m.at.forEach((q, j) => inkCircle(g, q.x, q.y, RULES.soldierRadius + 9, pen, m.seed + j * 17, 1.7 * k, 1, p));
+    // twice, and heavier than a camp's line: it has to read from bird's-eye
+    m.at.forEach((q, j) => {
+      inkCircle(g, q.x, q.y, RULES.soldierRadius + 9, pen, m.seed + j * 17, 2.7 * k, 1, p);
+      inkCircle(g, q.x, q.y, RULES.soldierRadius + 14, pen, m.seed + j * 17 + 9, 1.6 * k, 1, Math.max(0, (p - 0.3) / 0.7));
+    });
   } else if (m.kind === "moved") {
     // the old dot stays, and a small arrow leaves it: he went that way (a cross means dead, so never a cross)
     if (m.id === undefined) inkDot(g, m.x, m.y, RULES.soldierRadius, pen, m.seed, 1, 1, wob); // (his dot is the page's own, from dotSpots)

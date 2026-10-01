@@ -44,7 +44,7 @@ describe("pencil notes", () => {
 
   it("every moment has lines, in its mood unless a line says otherwise, and an anchor", () => {
     for (const k of kinds) {
-      expect(LINES[k].length).toBeGreaterThan(3);
+      if (!["stand", "more"].includes(k)) expect(LINES[k].length).toBeGreaterThan(3);
       for (let seed = 0; seed < 40; seed++) {
         const l = lineFor(k, seed, ctx);
         expect(l.text.length).toBeGreaterThan(0);
@@ -270,6 +270,47 @@ it("a fresh page forgets queued notes, cooldown and its idle window", () => {
   expect(b.next).toBeNull();
   expect(b.idleDue(1000, 42)).toBe(due);
   expect(b.offer("idle", 3, 1100, 3, ctx)).not.toBeNull();
+});
+
+describe("moments the field must announce", () => {
+  it("are always written, and chatter gives way to them", () => {
+    const b = new Bubbles();
+    const chat = b.offer("idle", 1, 1000, 3, ctx)!;
+    expect(chat).not.toBeNull();
+    const m = b.moment("stand", 2, 1500, 9, "LAST STAND!")!;
+    expect(b.showing(1600)?.text).toBe("LAST STAND!");
+    expect(m.important).toBe(true);
+    expect(b.pending).toHaveLength(0);
+  });
+
+  it("wait their turn rather than talk over each other, in order", () => {
+    const b = new Bubbles();
+    const a = b.moment("more", 1, 1000, 1, "One more!")!;
+    const c = b.moment("stand", 2, 1100, 2, "LAST STAND!")!;
+    expect(c.t0).toBeGreaterThanOrEqual(1000 + showOf(a));
+    expect(b.showing(1200)?.text).toBe("One more!");
+    expect(b.showing(c.t0 + showOf(a) + 1 > 0 ? 1000 + showOf(a) + 1 : 0)).toBeNull(); // the gap between them
+    expect(b.showing(c.t0 + 10)?.text).toBe("LAST STAND!");
+  });
+
+  it("keep chatter quiet while one is waiting", () => {
+    const b = new Bubbles();
+    b.moment("more", 1, 1000, 1, "One more!");
+    b.moment("stand", 2, 1100, 2, "LAST STAND!");
+    expect(b.offer("idle", 3, 1000 + 20000, 5, ctx)).toBeNull();
+  });
+});
+
+
+it("reset clears mandatory moments and a streak cannot interrupt one", () => {
+  const b = new Bubbles();
+  b.moment("more", 1, 1000, 1, "One more!", "say");
+  b.moment("stand", 2, 1100, 2, "LAST STAND!");
+  expect(b.urgent("streakMe", 1, 1200, 3, { ...ctx, streak: 2 })).toBeNull();
+  expect(b.showing(1300)?.text).toBe("One more!");
+  b.reset();
+  expect(b.pending).toHaveLength(0);
+  expect(b.showing(10000)).toBeNull();
 });
 
 it.each([-1, 0, 50])("urgent notes interrupt exchanges at reply begin %i ms", (offset) => {

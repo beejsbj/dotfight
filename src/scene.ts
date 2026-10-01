@@ -77,6 +77,10 @@ export interface Frame {
   orders?: { a: Pt; b: Pt; at: Pt[] }[];
   /** Soldiers out on the open road between camps (a convoy in transit), marked in pencil as marching and exposed: where he stands and the way he faces. */
   road?: { at: Pt; dir: number }[];
+  /** A side in its last stand: its survivors, kept marked in pencil for the rest of the war. */
+  stand?: (Pt & { id: number })[];
+  /** A lunger owed another lunge: ringed twice, with what he's owed and how many links. */
+  chain?: { at: Pt; link: number };
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
   danger?: { x: number; y: number; r: number }[];
   /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
@@ -110,6 +114,9 @@ export const pageState = { epoch: 0, S: 1.6 };
 export const stageStats = { live: 0, air: 0, frames: 0, boil: 0, field: 0, streak: 0 };
 export const field = new PencilLayer();
 export const streak = new PencilLayer();
+/** Each survivor carries one small, cached sprite; marching only changes its CSS placement. */
+export const standRays = new Map<number, PencilLayer>();
+
 export const boil = new BoilLayer();
 /** What the living are feeling (life.ts): the boil draws each soldier in his pose. */
 export const life = new Life();
@@ -121,6 +128,8 @@ export interface Els {
   boilHost: HTMLElement;
   fieldHost: HTMLElement;
   streakHost: HTMLElement;
+  raysHost: HTMLElement;
+
   live: HTMLCanvasElement;
   /** Notes: pencil on the same sheet, the theme's blend like the live layer; its own dirty box, hidden when no one's talking. */
   talk: HTMLCanvasElement;
@@ -146,6 +155,7 @@ class Box {
 }
 
 let lastCss = { field: "", streak: "", desk: "", page: "", live: "", talk: "", boil: ["", ""] };
+
 let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
 let talkDirty: { x: number; y: number; w: number; h: number } | null = null;
 let airKey = "";
@@ -188,6 +198,12 @@ function place(els: Els, f: Frame) {
       const m = cssMatrix(layerMatrix(v, layer.S, layer.ox, layer.oy));
       if (m !== lastCss[name]) { layer.c.style.transform = m; lastCss[name] = m; }
     }
+
+  }
+  for (const layer of standRays.values()) {
+    if (layer.c.parentElement !== els.raysHost) els.raysHost.append(layer.c);
+    const m = cssMatrix(layerMatrix(v, layer.S, layer.ox, layer.oy));
+    if (layer.c.style.transform !== m) layer.c.style.transform = m;
   }
   const lc = stageCss(v);
   const lk = lc.transform + lc.origin;
@@ -202,15 +218,27 @@ export function renderStage(els: Els, f: Frame) {
   page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold, f.pageSource);
   boil.set(plan, s, pageState.S);
   const road = f.road ?? [];
-  const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road]);
-  if (field.draw(key, road.map((q) => q.at), pageState.S, 42, (g) => {
+  const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road, f.chain]);
+  const marks = [...road.map((q) => q.at), ...(f.chain ? [f.chain.at] : [])];
+  if (field.draw(key, marks, pageState.S, 42, (g) => {
     for (const q of road) drawRoad(g, q.at, q.dir, 3, s.soldiers.length + Math.round(q.at.x));
+    if (f.chain) drawChain(g, f.chain, 3, new Box());
   })) stageStats.field++;
+  const survivors = new Set((f.stand ?? []).map((q) => q.id));
+  for (const [id, layer] of standRays) if (!survivors.has(id)) { layer.c.remove(); standRays.delete(id); }
+  for (const q of f.stand ?? []) {
+    let layer = standRays.get(q.id);
+    if (!layer) { layer = new PencilLayer(); standRays.set(q.id, layer); }
+    const rayKey = `${theme.id}|${pageState.epoch}|${pageState.S}|${q.id}`;
+    if (layer.draw(rayKey, [{ x: 0, y: 0 }], pageState.S, 42, (g) => drawRays(g, { x: 0, y: 0 }, 3, q.id + 5))) stageStats.field++;
+    layer.ox = q.x - 42; layer.oy = q.y - 42;
+  }
   const mover = f.mover && (f.mover.stretch ?? 1) > 1.04 ? f.mover : undefined;
   const speedKey = JSON.stringify([theme.id, pageState.epoch, pageState.S, mover]);
   if (streak.draw(speedKey, mover ? [mover.at] : [], pageState.S, 80, (g) => {
     drawSpeed(g, mover!.at, mover!.angle ?? 0, mover!.stretch ?? 1, 3, mover!.id);
   })) stageStats.streak++;
+
   place(els, f);
   seen = onScreen(f);
   bold = f.boil?.bold ?? 0;
@@ -253,6 +281,8 @@ export const boilSeen = () => seen;
 
 export function forgetDrawn() {
   field.key = ""; streak.key = "";
+  for (const layer of standRays.values()) layer.key = "";
+
   liveDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   talkDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   inked = { x: 0, y: 0, w: 1e6, h: 1e6 };
@@ -456,6 +486,22 @@ function drawRoad(g: Ctx, at: Pt, dir: number, px: number, seed: number) {
     pencilLine(g, { x: cx - ux * s - uy * s, y: cy - uy * s + ux * s }, { x: cx, y: cy }, w, seed + 40 + d, false);
     pencilLine(g, { x: cx - ux * s + uy * s, y: cy - uy * s - ux * s }, { x: cx, y: cy }, w, seed + 50 + d, false);
   }
+}
+
+/** The last few: short pencil rays all round each one, the way a kid draws something shining, or shouting. */
+function drawRays(g: Ctx, at: Pt, px: number, seed: number) {
+  const r0 = RULES.soldierRadius + 12, n = 10, w = Math.max(2.2, px * 1.7);
+  const rand = rng(seed);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rand() * 0.2, l = 8 + rand() * 6;
+    pencilLine(g, { x: at.x + Math.cos(a) * r0, y: at.y + Math.sin(a) * r0 }, { x: at.x + Math.cos(a) * (r0 + l), y: at.y + Math.sin(a) * (r0 + l) }, w, seed + i, false);
+  }
+}
+
+/** Owed another lunge: one quiet pencil ring round him, to say he's the one who must go. */
+function drawChain(g: Ctx, c: { at: Pt; link: number }, px: number, box: Box) {
+  pencilLoop(g, c.at.x, c.at.y, RULES.soldierRadius + 13, 31 + c.link, Math.max(2, px * 1.6), 1, 1);
+  box.add(c.at.x, c.at.y, 40);
 }
 
 /** A lunger at speed: three short pencil streaks trailing from him, the way a kid draws a fast thing. */

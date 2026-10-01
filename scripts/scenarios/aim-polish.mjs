@@ -113,6 +113,21 @@ export default async function (T, out) {
   await page.waitForTimeout(300);
   const m0 = (await read()).marks;
   await page.evaluate(() => { window.pft.speed = 0.3; });
+  // Capture the return operation in the page itself so a sparse polling
+  // interval cannot miss the original-player return before hand-over.
+  await page.evaluate(async (id) => {
+    const p = window.pft, { inkTime } = await import("/src/inkclock.ts");
+    window.returnTrace = [];
+    window.traceSoldier = id;
+    window.originalFace = p.cam.face;
+    p.cam.face = function (...args) {
+      const r = p.res, result = window.originalFace.apply(this, args), s = p.s.soldiers[id];
+      if (r) window.returnTrace.push({ settled: inkTime(p.T-r.t0,r.snags) >= r.dur,
+        resActive: true, owner: r.owner, rot: this.tgt.rot, cur: this.cur.rot,
+        m: this.cur.m, x: this.toScreen(s.x,s.y).x });
+      return result;
+    };
+  }, me.id);
   await T.touch("touchEnd", []);
   await page.waitForTimeout(150);
   const r4 = await read();
@@ -128,6 +143,13 @@ export default async function (T, out) {
     if (shot5 && !shot6 && Math.abs(wrap(last.rot - aimed.rot)) > 0.01) { shot6 = true; await page.waitForTimeout(350); await T.shot(`${out}/polish-6-turning-back.png`); }
     await page.waitForTimeout(50);
   }
+  await page.waitForFunction((own) => !window.pft.res || window.returnTrace.some((x) =>
+    x.settled && x.resActive && Math.abs(Math.atan2(Math.sin(x.rot-own),Math.cos(x.rot-own))) < .01), own, { timeout: 120000 });
+  const returned = await page.evaluate((own) => window.returnTrace.filter((x) =>
+    x.owner === window.pft.s.soldiers[window.traceSoldier].owner && x.settled && x.resActive && Math.abs(Math.atan2(Math.sin(x.rot-own),Math.cos(x.rot-own))) < .01), own);
+  check(returned.length > 0, "  recorded the original-player return during settled ink before hand-over", `${returned.length} return operations`);
+  samples.push(...returned);
+  await page.evaluate(() => { window.pft.cam.face = window.originalFace; });
   const running = samples.filter((x) => !x.settled), landed = samples.filter((x) => x.settled);
   check(running.length > 3 && running.every((x) => Math.abs(wrap(x.rot - aimed.rot)) < 0.01), "  and holds it while the ink runs", `${running.length} samples, rot ${running.map((x) => deg(x.rot)).slice(-2).join(", ")}`);
   check(landed.length > 0 && Math.abs(wrap(landed[landed.length - 1].rot - own)) < 0.01, "  then turns back to face its player once the ink has landed", `${landed.length} samples, rot ${landed.map((x) => deg(x.rot)).join(" ")}`);
