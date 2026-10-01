@@ -16,6 +16,7 @@ const wrap = (a) => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
 export default async function (T, out) {
   const { page } = T;
   page.setDefaultTimeout(120000);
+  const feel = await page.evaluate(async () => (await import("/src/rules.ts")).FEEL);
   await page.waitForTimeout(1500); // the cover's lamp comes on first (starting a game at once would cancel it, and every shot would be dark)
   await page.evaluate(() => {
     const r = window.pft.fileWar(7, 6);
@@ -95,7 +96,7 @@ export default async function (T, out) {
   await moveTo(xq, y0 + 100, 12);
   await page.waitForTimeout(400);
   const r2 = await read();
-  check(r2.mark && !r2.ring && r2.ruleShown && Math.abs(r2.drawn - (100 - 16)) < 2.5 && Math.abs(r2.stopTop - (16 + 150)) < 0.5, "pulled 100px: the rule is drawn to the thumb, its end bar at full pull", `drawn ${r2.drawn}px stop ${r2.stopTop}px`);
+  check(r2.mark && !r2.ring && r2.ruleShown && Math.abs(r2.drawn - (100 - feel.minPullPx)) < 2.5 && Math.abs(r2.stopTop - (feel.minPullPx + feel.maxPullPx)) < 0.5, "pulled 100px: the rule is drawn to the thumb, its end bar at full pull", `drawn ${r2.drawn}px stop ${r2.stopTop}px`);
   await T.shot(`${out}/polish-3-pulled.png`);
   const aimed = await page.evaluate(() => ({ rot: window.pft.cam.tgt.rot, angle: window.pft.aim.angle }));
   check(Math.abs(wrap(aimed.angle - (-(Math.PI / 2 + own) - Math.PI / 2))) < 0.05, "  aimed a quarter turn left", `angle ${deg(aimed.angle)}`);
