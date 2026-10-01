@@ -3,7 +3,7 @@ import { botAction, botArrange, botBase } from "./bot";
 import { act, canPlaceBase, illegal, newGame, type GameState } from "./game";
 import { inkTime, totalHold, wallTime } from "./inkclock";
 import * as legacy from "./legacy";
-import { addToDrawer, apply, blank, file, fromRecord, readDrawer, readSave, steps, toRecord, unfile, type Filed, type GameRecord } from "./record";
+import { addToDrawer, apply, blank, file, fromRecord, readDrawer, readSave, settleSave, steps, toRecord, unfile, type Filed, type GameRecord } from "./record";
 import { CORE, SIZES, savedRules } from "./rules";
 // two wars (Quick, Classic) recorded on origin/main's engine before garrisoned walls, with how they ended
 import beforeRaw from "./__fixtures__/core-v1-wars.json?raw";
@@ -141,6 +141,25 @@ describe("record (old saves and drawer pages, June prototype)", () => {
     expect(readSave(JSON.stringify({ s: { ...s, v: 3 } }))).toBeNull();
     expect(readSave(JSON.stringify({ s: { ...s, v: 2 } }))).toBeNull(); // a v2 needs its actions
     expect(readSave(null)).toBeNull();
+  });
+
+  it("a save left terminal (closed before the finale) is filed in the drawer and cleared; a live one is not", () => {
+    const over = war(5);
+    expect(over.phase).toBe("over");
+    const mode = { kind: "bot", level: 1 } as const;
+    const out = settleSave({ s: over, mode }, [], 9);
+    expect(out.filed).toBe(true);
+    expect(out.save).toBeNull();
+    expect(out.drawer).toHaveLength(1);
+    expect(unfile(out.drawer[0])).toEqual(over);
+    // filing it twice (a second launch before the first finished) leaves one copy
+    expect(settleSave({ s: over, mode }, out.drawer, 10).drawer).toHaveLength(1);
+    const live = war(5, 6);
+    expect(live.phase).toBe("play");
+    const kept = settleSave({ s: live, mode }, [], 9);
+    expect(kept).toMatchObject({ filed: false, drawer: [] });
+    expect(kept.save?.s).toBe(live);
+    expect(settleSave(null, []).filed).toBe(false);
   });
 
   it("the drawer keeps one copy of a page, newest first, capped", () => {

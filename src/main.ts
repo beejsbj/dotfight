@@ -23,7 +23,7 @@ import { LIFT_MS, SETTLE_MS, leaning, lift, PEN, settle, shiver, type PenPose } 
 import { gunPull, tip, type Pose as Held } from "./motion";
 import * as motion from "./motion-input";
 import { screenDirToWorld } from "./projection";
-import { addToDrawer, apply, blank, file, readDrawer, readSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
+import { addToDrawer, apply, blank, file, readDrawer, readSave, settleSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
 import { CUSTOM, FEEL, RULES, SIZES, type Size } from "./rules";
 import { boldAt, lifeOf } from "./boil";
@@ -166,6 +166,18 @@ const load = () => readSave(localStorage.getItem("pft:save"));
 /** The paper a page was started on (pages from before themes were Lamplight). */
 const paperOf = (p?: GameState["page"]) => themeOf(p?.theme).id;
 const drawer = () => readDrawer(localStorage.getItem("pft:drawer"));
+
+/**
+ * A page that was won but never filed (the app closed between the winning flick
+ * and the finale): file it in the drawer and clear the save, as finish() would.
+ * Run before the cover reads the save, so it is never stranded.
+ */
+function fileFinishedSave() {
+  const out = settleSave(load(), drawer());
+  if (!out.filed) return;
+  localStorage.setItem("pft:drawer", JSON.stringify(out.drawer));
+  localStorage.removeItem("pft:save");
+}
 
 // --- layout -----------------------------------------------------------------
 
@@ -1318,6 +1330,7 @@ function showTitle() {
 
 // The slip tucked in the cover, and the page on the desk under it.
 function coverMenu() {
+  fileFinishedSave();
   const saved = load();
   const d = drawer();
   titleDesk(saved);
