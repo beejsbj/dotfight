@@ -969,10 +969,11 @@ function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number
  * first (a note's gap is chosen once, so one picked while the camera swings out
  * to bird's-eye would sit where the screen no longer is), for at most 1.5s.
  */
-const momentQ: { kind: BubbleKind; id: number; text: string; mood: Mood; since: number }[] = [];
-function announce(kind: BubbleKind, id: number, text: string, delay = 120, mood: Mood = "shout") {
+const momentQ: { kind: BubbleKind; id: number; text: string; mood: Mood; since: number; salt: number }[] = [];
+/** `salt` tells apart the same line said twice in one turn (a lunge chain's "One more!"), so each gets its own placement. */
+function announce(kind: BubbleKind, id: number, text: string, delay = 120, mood: Mood = "shout", salt = 0) {
   if (!heard() || slow || boil.tooDear || !s.soldiers[id]?.alive) return;
-  momentQ.push({ kind, id, text, mood, since: wall + delay });
+  momentQ.push({ kind, id, text, mood, since: wall + delay, salt });
   dirty = true;
 }
 function flushMoments() {
@@ -989,7 +990,7 @@ function flushMoments() {
     const speaker = s.soldiers[m.id];
     if (!speaker) continue;
     if (!speaker.alive && m.kind === "stand") m.id = turn.aliveOf(s, speaker.owner)[0]?.id ?? m.id;
-    if (bubbles.moment(m.kind, m.id, wall, Math.floor(seeded(s.seed, s.turn, m.id, m.kind.length, m.text.length) * 2 ** 31), m.text, m.mood)) { dirty = true; return; }
+    if (bubbles.moment(m.kind, m.id, wall, Math.floor(seeded(s.seed, s.turn, m.id, m.kind.length, m.text.length, m.salt) * 2 ** 31), m.text, m.mood)) { dirty = true; return; }
   }
 }
 
@@ -1157,8 +1158,9 @@ onCue((c) => {
   if (c !== "earned" || !earnedBy) return;
   const who = earnedBy, c0 = core();
   // the same note for both ways of earning another go: a snipe that took two, a lunge that killed
-  if (who.kind === "snipe") announce("more", who.id, "One more!", 120, "say");
-  else if (c0?.chain) announce("more", c0.chain.soldier, "One more!", 120, "say");
+  const salt = (c0?.chain?.link ?? 0) * 8 + (c0?.left ?? 0);
+  if (who.kind === "snipe") announce("more", who.id, "One more!", 120, "say", salt);
+  else if (c0?.chain) announce("more", c0.chain.soldier, "One more!", 120, "say", salt);
 
 });
 
