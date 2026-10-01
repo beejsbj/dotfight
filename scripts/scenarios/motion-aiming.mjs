@@ -115,16 +115,31 @@ export default async function (T, out) {
     return ev(() => window.pft.s.soldiers[window.pft.selected]);
   }
 
-  // Start a pull (thumb held down) that points world angle `ang` with `px` of pull.
+  // The full pull in screen px: the game's own FEEL.maxPullPx when the dev hook exposes it (PR #28),
+  // so a retuned rule can't leave "full power" short; otherwise 240, the rules-v2 value.
+  const fullPull = () => ev(() => window.pft.FEEL?.maxPullPx ?? 240);
+
+  // Start a pull (thumb held down) that points world angle `ang` with `px` of pull. The thumb does
+  // two things (main.ts updateAim): sliding sideways turns the page to the aim (TURN_DEAD px free,
+  // then 2*PI over the phone's width less the free zones), and pulling straight down sets the power.
+  // Our page is never turned in a bot war, so straight up the screen is world -PI/2.
   async function pullToward(me, ang, px) {
-    const a = await T.world(me.x, me.y);
-    const t = await T.world(me.x + Math.cos(ang) * 400, me.y + Math.sin(ang) * 400);
-    const sa = Math.atan2(t.y - a.y, t.x - a.x);
-    const sx = 195, sy = 640;
+    const dx = await ev((ang) => {
+      const TAU = Math.PI * 2, fwd = -Math.PI / 2, dead = 8;
+      let d = ang - fwd;
+      d -= TAU * Math.round(d / TAU);
+      const eff = d / (TAU / Math.max(200, window.pft.cam.W - dead * 2));
+      return eff + Math.sign(eff || 1) * dead;
+    }, ang);
+    const sx = 195, sy = 480; // room below to pull the full distance on a 390x844 phone
     await T.touch("touchStart", [[sx, sy]]);
     await page.waitForTimeout(60);
-    for (let i = 1; i <= 12; i++) {
-      await T.touch("touchMove", [[sx - Math.cos(sa) * px * (i / 12), sy - Math.sin(sa) * px * (i / 12)]]);
+    for (let i = 1; i <= 6; i++) { // turn the page onto the aim
+      await T.touch("touchMove", [[sx + (dx * i) / 6, sy]]);
+      await page.waitForTimeout(22);
+    }
+    for (let i = 1; i <= 12; i++) { // then pull down for power
+      await T.touch("touchMove", [[sx + dx, sy + px * (i / 12)]]);
       await page.waitForTimeout(22);
     }
   }
@@ -199,7 +214,7 @@ export default async function (T, out) {
       let { a: me, b: foe } = await duel();
       me = await pickUp(me);
       const stop = await clip(T, out, `2-${hand}`);
-      await pullToward(me, Math.atan2(foe.y - me.y, foe.x - me.x), 150); // full power: the wobble grows
+      await pullToward(me, Math.atan2(foe.y - me.y, foe.x - me.x), await fullPull()); // full power: the wobble grows
       // hold the charged pull; the gyro says how the hand is doing
       // hold the charged pull, the gyro saying how the hand is doing, until the wobble has grown (game clock)
       const t0 = await ev(() => window.pft.T);
