@@ -126,7 +126,7 @@ let lastPull: { id: number; angle: number } | null = null;
 // hands; the page holds their new dots back and shows the march as a quick
 // time-lapse before the next go (see holdLapse / runLapse).
 interface Walk { id: number; from: Pt; to: Pt; departing?: boolean }
-let lapseDue: { walkers: Walk[]; marks: number[]; out: number; home: number } | null = null;
+let lapseDue: { walkers: Walk[]; marks: number[]; out: number; home: number; seen?: AnyState } | null = null;
 let lapse: { walkers: Walk[]; t0: number; dur: number } | null = null;
 
 // A send being drawn (pick a camp, drag to another, choose how many), and
@@ -753,7 +753,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     }
   }
   snags.sort((a, b) => a.at - b.at);
-  const seen = beforeMarch(s, lapseDue?.walkers ?? []);
+  const seen = pendingState();
   feelFlick(o, f, dur, snags, n, seen);
   let volleyHold = 0;
   if (o.crashed !== undefined) {
@@ -824,13 +824,19 @@ function noteContext(owner: Player): Context {
 }
 /** The camp a man speaks from: his home base, else his side's nearest. */
 function campOf(id: number) {
-  const x = s.soldiers[id];
+  const x = pendingState().soldiers[id];
   if (!x) return undefined;
   const home = "home" in x ? x.home : undefined;
   if (home !== undefined && s.bases[home]) return home;
   const own = s.bases.filter((b) => b.owner === x.owner).sort((a, b) => Math.hypot(a.x - x.x, a.y - x.y) - Math.hypot(b.x - x.x, b.y - x.y));
   return own[0]?.id;
 }
+/** One departure snapshot per pending march; the reducer remains at the destination. */
+function pendingState(): AnyState {
+  if (!lapseDue) return s;
+  return lapseDue.seen ??= beforeMarch(s, lapseDue.walkers);
+}
+
 /** The displayed ink head or march, rather than the reducer's destination. */
 function displayedAt(id: number): Pt {
   if (res?.mover === id) {
@@ -890,7 +896,7 @@ function countStreak(o: Outcome, f: Flick, who: Player) {
  */
 function speakStreak(n: number, id: number, t0: number, seed: number, only?: StreakKind) {
   if (!heard() || slow || boil.tooDear || n < 2) return null;
-  const seen = beforeMarch(s, lapseDue?.walkers ?? []);
+  const seen = pendingState();
   const me = seen.soldiers[id];
   if (!me) return null;
   const foe = other(me.owner);
@@ -926,7 +932,7 @@ let botchLast: BotchKind | undefined;
 let botchBack: { who: Player; turn: number } | null = null;
 function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number, only?: BotchKind) {
   if (!heard() || slow || boil.tooDear || grade < 1) return null;
-  const seen = beforeMarch(s, lapseDue?.walkers ?? []);
+  const seen = pendingState();
   const me = seen.soldiers[id];
   if (!me) return null;
   if (!only && seeded(seed, 17) >= BUBBLE.botch.chance[Math.min(2, grade)]) return null;
@@ -2638,10 +2644,13 @@ function currentFrame(): Frame {
   const lf = fx.live(T), li = inkTL.live(it);
   if (lf.size || li.size) {
     const liveSet = new Set([...lf, ...li]);
+    // Their old dots are standing ink, free to boil; only the new marks wait.
+    // runLapse clears lapseDue and restores the existing animated dot keys.
+    for (const w of lapseDue?.walkers ?? []) liveSet.delete(`d${w.id}`);
     ink = { p: (k) => (inkTL.pending(k, it) ? inkTL.p(k, it) : fx.p(k, T)), live: liveSet };
   }
   const f: Frame = {
-    s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
+    s: pendingState(), pageSource: s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
     selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
   const bb = heard() && !slow && !boil.tooDear ? bubbles.showing(wall) : null;
@@ -2657,10 +2666,11 @@ function currentFrame(): Frame {
           const next = turn.aliveOf(s, x.owner)[0];
           if (next) { bb.id = next.id; x = next; }
         }
-        if (x && (x.alive || bb.important) && (bb.important || noteOnScreen(bb.at ?? displayedAt(x.id)))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: bb.at ?? displayedAt(x.id), p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && s.soldiers[bb.reply.id] }; }
+        if (x && (x.alive || bb.important) && (bb.important || noteOnScreen(bb.at ?? displayedAt(x.id)))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: bb.at ?? displayedAt(x.id), p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && { ...s.soldiers[bb.reply.id], ...displayedAt(bb.reply.id) } }; }
+
     }
-    const rs = replyAt(bb, wall, reduced), rx = bb.reply && s.soldiers[bb.reply.id];
-    if (rs && rx?.alive && noteOnScreen(rx)) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rx, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: s.soldiers[bb.id], answers: `${bb.seed}|${bb.text}` };
+    const rs = replyAt(bb, wall, reduced), rx = bb.reply && s.soldiers[bb.reply.id], rat = rx && displayedAt(rx.id);
+    if (rs && rx?.alive && rat && noteOnScreen(rat)) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rat, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: { ...s.soldiers[bb.id], ...displayedAt(bb.id) }, answers: `${bb.seed}|${bb.text}` };
   }
 
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
@@ -2824,7 +2834,7 @@ function seeLife(f: Frame) {
   const r = f.view.rot;
   const ink = f.ink ?? SETTLED;
   life.see({
-    s, up: Math.atan2(-Math.cos(r), -Math.sin(r)), zoom: cam.cur.m,
+    s: f.s, up: Math.atan2(-Math.cos(r), -Math.sin(r)), zoom: cam.cur.m,
     pendingStand: new Set([...ink.live].flatMap((k) => {
       const m = k[0] === "m" ? s.marks[+k.slice(1)] : undefined;
       return m?.t === "stand" && ink.p(k) <= 0 ? [m.owner] : [];

@@ -44,6 +44,8 @@ export interface Aim {
 
 export interface Frame {
   s: GameState;
+  /** Stable engine identity while s temporarily shows pending departures. */
+  pageSource?: GameState;
   view: View;
   lamp: Lamp;
   ink: Ink;
@@ -212,7 +214,7 @@ export function renderStage(els: Els, f: Frame) {
   const { s, dpr } = f;
   const ink = f.ink ?? SETTLED;
   const plan = boilPlan(f, ink);
-  page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold);
+  page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold, f.pageSource);
   boil.set(plan, s, pageState.S);
   const road = f.road ?? [];
   const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road, f.chain]);
