@@ -11,12 +11,17 @@
 // pen lives on the untilted overlay. A camera move therefore costs a few
 // style writes and a couple of hundred pixels of gradient, not a repaint.
 
+import { inscribedBounds } from "./note-bounds";
+import { walkerAt } from "./timeline";
 import { BoilLayer, planBoil, type Plan } from "./boil";
-import type { Pt } from "./game";
+import type { Anchor, Mood } from "./bubble";
+import { rng, type Pt } from "./game";
 import type { AnyState as GameState } from "./record";
-import { INK, handText, lead, pencilArrow, pencilLine, pencilLoop } from "./ink";
+import { INK, arcText, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilStroke, rubOut } from "./ink";
+import { Life } from "./life";
+import { PencilLayer } from "./pencil-layer";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
-import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
+import { drawBase, drawDot, drawMark, drawSignature, wentTo, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
 import { cssMatrix, layerMatrix, project, stageCss, toLocal, unproject, type View } from "./projection";
 import { RULES } from "./rules";
@@ -40,6 +45,8 @@ export interface Aim {
 
 export interface Frame {
   s: GameState;
+  /** Stable engine identity while s temporarily shows pending departures. */
+  pageSource?: GameState;
   view: View;
   lamp: Lamp;
   ink: Ink;
@@ -55,7 +62,7 @@ export interface Frame {
   ghost?: { x: number; y: number; ok: boolean; owner: 0 | 1 };
   /** Setup: the no-go rings round enemy bases, faintly hatched. */
   keepOut?: { x: number; y: number; r: number }[];
-  mover?: { id: number; at: Pt };
+  mover?: { id: number; at: Pt; angle?: number; stretch?: number };
   pen?: PenPose;
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] };
   /** Convoys walking (the time-lapse between turns): each soldier from where he stood to where he'll stand. */
@@ -68,25 +75,64 @@ export interface Frame {
   sendArrow?: { from: Pt; to: Pt; ok: boolean };
   /** Sends ordered this turn: the road in pencil, the ones going ringed. */
   orders?: { a: Pt; b: Pt; at: Pt[] }[];
+  /** Soldiers out on the open road between camps (a convoy in transit), marked in pencil as marching and exposed: where he stands and the way he faces. */
+  road?: { at: Pt; dir: number }[];
+  /** A side in its last stand: its survivors, kept marked in pencil for the rest of the war. */
+  stand?: (Pt & { id: number })[];
+  /** A lunger owed another lunge: ringed twice, with what he's owed and how many links. */
+  chain?: { at: Pt; link: number };
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
   danger?: { x: number; y: number; r: number }[];
   /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
   teach?: { kind: "aim" | "place" | "arrange" | "note"; at: Pt; p: number; rot: number; note?: string; text?: string };
   sig?: Signature;
+  /** A volley (life.ts): the defenders' jabs, drawn on and glinting away, and the intruder's cross if the rules haven't drawn one. */
+  jabs?: { pts: Pt[]; p: number; alpha: number; owner: 0 | 1; seed: number }[];
+  stamp?: { x: number; y: number; owner: 0 | 1; seed: number; p: number };
+  /** Screen height and the HUD's top and bottom bars (css px), to keep notes clear of them. */
+  hud?: { h: number; top: number; bottom: number };
+  /** A soldier's (or a camp's) line (bubble.ts), pencilled on the page: beside him with a tail to him, or arcing along the camp's ring (`r`). How much is written (p) and how much rubbed out (e). */
+  bubble?: Note;
+  /** The reply in an exchange, a nearby comrade's, while the first line is read. */
+  reply?: Note;
+  /** How hot the war is (bubble.ts heatOf): a shout grows with it. */
+  heat?: number;
   /** The line boil: whether the living boil at all, wall time (ms) for its frame, and how bold (boil.ts boldAt). */
   boil?: { on: boolean; ms: number; bold: number };
 }
 
+export interface Note {
+  text: string; mood: Mood; anchor: Anchor; at: Pt; r?: number; p: number; e: number; side: 1 | -1; seed: number; owner: 0 | 1;
+  /** An exchange: the other speaker. */
+  with?: Pt;
+  /** An exchange's answer: the first line's key (seed|text), whose spot it must keep clear of. */
+  answers?: string;
+}
+
 export const page = new PageLayer();
 export const pageState = { epoch: 0, S: 1.6 };
-export const stageStats = { live: 0, air: 0, frames: 0, boil: 0 };
+export const stageStats = { live: 0, air: 0, frames: 0, boil: 0, field: 0, streak: 0 };
+export const field = new PencilLayer();
+export const streak = new PencilLayer();
+/** Each survivor carries one small, cached sprite; marching only changes its CSS placement. */
+export const standRays = new Map<number, PencilLayer>();
+
 export const boil = new BoilLayer();
+/** What the living are feeling (life.ts): the boil draws each soldier in his pose. */
+export const life = new Life();
+boil.life = life;
 
 export interface Els {
   desk: HTMLCanvasElement;
   pageHost: HTMLElement;
   boilHost: HTMLElement;
+  fieldHost: HTMLElement;
+  streakHost: HTMLElement;
+  raysHost: HTMLElement;
+
   live: HTMLCanvasElement;
+  /** Notes: pencil on the same sheet, the theme's blend like the live layer; its own dirty box, hidden when no one's talking. */
+  talk: HTMLCanvasElement;
   light: HTMLCanvasElement;
   haze: HTMLCanvasElement;
 }
@@ -108,8 +154,10 @@ class Box {
   get empty() { return this.x0 > this.x1; }
 }
 
-let lastCss = { desk: "", page: "", live: "", boil: ["", ""] };
+let lastCss = { field: "", streak: "", desk: "", page: "", live: "", talk: "", boil: ["", ""] };
+
 let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
+let talkDirty: { x: number; y: number; w: number; h: number } | null = null;
 let airKey = "";
 let deskTheme = ""; // the theme the desk canvas was painted for
 
@@ -143,22 +191,60 @@ function place(els: Els, f: Frame) {
     const bm = cssMatrix(layerMatrix(v, page.S, p.ox, p.oy));
     if (bm !== lastCss.boil[i]) { b.style.transform = bm; lastCss.boil[i] = bm; }
   });
+  for (const [name, layer, host] of [["field", field, els.fieldHost], ["streak", streak, els.streakHost]] as const) {
+    if (layer.c.parentElement !== host) { host.replaceChildren(layer.c); lastCss[name] = ""; }
+    layer.c.style.visibility = layer.empty ? "hidden" : "";
+    if (!layer.empty) {
+      const m = cssMatrix(layerMatrix(v, layer.S, layer.ox, layer.oy));
+      if (m !== lastCss[name]) { layer.c.style.transform = m; lastCss[name] = m; }
+    }
+
+  }
+  for (const layer of standRays.values()) {
+    if (layer.c.parentElement !== els.raysHost) els.raysHost.append(layer.c);
+    const m = cssMatrix(layerMatrix(v, layer.S, layer.ox, layer.oy));
+    if (layer.c.style.transform !== m) layer.c.style.transform = m;
+  }
   const lc = stageCss(v);
   const lk = lc.transform + lc.origin;
   if (lk !== lastCss.live) { els.live.style.transform = lc.transform; els.live.style.transformOrigin = lc.origin; lastCss.live = lk; }
+  if (lk !== lastCss.talk) { els.talk.style.transform = lc.transform; els.talk.style.transformOrigin = lc.origin; lastCss.talk = lk; }
 }
 
 export function renderStage(els: Els, f: Frame) {
   const { s, dpr } = f;
   const ink = f.ink ?? SETTLED;
   const plan = boilPlan(f, ink);
-  page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold);
+  page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold, f.pageSource);
   boil.set(plan, s, pageState.S);
+  const road = f.road ?? [];
+  const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road, f.chain]);
+  const marks = [...road.map((q) => q.at), ...(f.chain ? [f.chain.at] : [])];
+  if (field.draw(key, marks, pageState.S, 42, (g) => {
+    for (const q of road) drawRoad(g, q.at, q.dir, 3, s.soldiers.length + Math.round(q.at.x));
+    if (f.chain) drawChain(g, f.chain, 3, new Box());
+  })) stageStats.field++;
+  const survivors = new Set((f.stand ?? []).map((q) => q.id));
+  for (const [id, layer] of standRays) if (!survivors.has(id)) { layer.c.remove(); standRays.delete(id); }
+  for (const q of f.stand ?? []) {
+    let layer = standRays.get(q.id);
+    if (!layer) { layer = new PencilLayer(); standRays.set(q.id, layer); }
+    const rayKey = `${theme.id}|${pageState.epoch}|${pageState.S}|${q.id}`;
+    if (layer.draw(rayKey, [{ x: 0, y: 0 }], pageState.S, 42, (g) => drawRays(g, { x: 0, y: 0 }, 3, q.id + 5))) stageStats.field++;
+    layer.ox = q.x - 42; layer.oy = q.y - 42;
+  }
+  const mover = f.mover && (f.mover.stretch ?? 1) > 1.04 ? f.mover : undefined;
+  const speedKey = JSON.stringify([theme.id, pageState.epoch, pageState.S, mover]);
+  if (streak.draw(speedKey, mover ? [mover.at] : [], pageState.S, 80, (g) => {
+    drawSpeed(g, mover!.at, mover!.angle ?? 0, mover!.stretch ?? 1, 3, mover!.id);
+  })) stageStats.streak++;
+
   place(els, f);
   seen = onScreen(f);
   bold = f.boil?.bold ?? 0;
   if (boil.draw(f.boil?.ms ?? 0, bold, seen)) stageStats.boil++;
   renderLive(els.live.getContext("2d")!, els.live, f, ink, dpr);
+  renderTalk(els.talk.getContext("2d")!, els.talk, f, dpr);
   renderAir(els, f);
   stageStats.frames++;
 }
@@ -194,7 +280,11 @@ function onScreen(f: Frame) {
 export const boilSeen = () => seen;
 
 export function forgetDrawn() {
+  field.key = ""; streak.key = "";
+  for (const layer of standRays.values()) layer.key = "";
+
   liveDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
+  talkDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   inked = { x: 0, y: 0, w: 1e6, h: 1e6 };
   boil.redrawAll();
 }
@@ -223,24 +313,39 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
   s.marks.forEach((m, i) => {
     const k = `m${i}`;
     if (page.has(k) || !ink.live.has(k)) return;
-    drawMark(g, m, ink.p(k));
+    drawMark(g, m, ink.p(k), 0, wentTo(s, i));
     if (m.t === "stroke") for (const p of m.pts) box.add(p.x, p.y, 8);
     else if (m.t === "walk") { box.add(m.a.x, m.a.y, 10); box.add(m.b.x, m.b.y, 10); }
     else if (m.t === "stand") for (const p of m.at) box.add(p.x, p.y, 24);
-    else box.add(m.x, m.y, 20);
+    else box.add(m.x, m.y, 34);
   });
   const walking = new Set(f.walkers?.map((w) => w.id));
   for (const x of s.soldiers) {
     const jot = `d${x.id}`;
     if (ink.live.has(jot) && !walking.has(x.id) && f.drag?.id !== x.id) { drawDot(g, x, 1, ink.p(jot)); box.add(x.x, x.y, 12); }
   }
-  if (f.mover) { drawDot(g, s.soldiers[f.mover.id], 1, 1, f.mover.at); box.add(f.mover.at.x, f.mover.at.y, 12); }
+  if (f.mover) {
+    const { at, angle = 0, stretch = 1 } = f.mover;
+    g.save();
+    // stretched along his way, thinner across it (keeping his size)
+    g.translate(at.x, at.y); g.rotate(angle); g.scale(stretch, 1 / stretch); g.rotate(-angle); g.translate(-at.x, -at.y);
+    drawDot(g, s.soldiers[f.mover.id], 1, 1, at);
+    g.restore();
+    box.add(at.x, at.y, 12 * stretch);
+  }
+  for (const j of f.jabs ?? []) {
+    if (j.p <= 0 || j.alpha <= 0) continue;
+    inkFlick(g, j.pts, INK.pens[j.owner], j.seed, RULES.inkWidth * 0.6, j.p, j.alpha);
+    for (const q of j.pts) box.add(q.x, q.y, 6);
+  }
+  if (f.stamp && f.stamp.p > 0) {
+    const t = f.stamp;
+    inkCross(g, t.x, t.y, RULES.soldierRadius * 2.1, INK.pens[t.owner], t.seed, 2.8, 1, t.p);
+    box.add(t.x, t.y, RULES.soldierRadius * 3.2);
+  }
   for (const w of f.walkers ?? []) {
     if (w.p <= 0) continue; // held: still standing where the page shows him
-    const e = w.p * w.p * (3 - 2 * w.p);
-    const at = { x: w.from.x + (w.to.x - w.from.x) * e, y: w.from.y + (w.to.y - w.from.y) * e };
-    // a little bob as he marches
-    at.y -= Math.abs(Math.sin(w.p * Math.PI * 7)) * 2.5 * (1 - w.p);
+    const at = walkerAt(w.from, w.to, w.p);
     drawDot(g, s.soldiers[w.id], 1, 1, at);
     box.add(at.x, at.y, 12);
   }
@@ -267,6 +372,24 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
   const x0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.x)) * dpr) - 4), y0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.y)) * dpr) - 4);
   const x1 = Math.min(el.width, Math.ceil(Math.max(...pts.map((p) => p.x)) * dpr) + 4), y1 = Math.min(el.height, Math.ceil(Math.max(...pts.map((p) => p.y)) * dpr) + 4);
   liveDirty = x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+}
+
+/** The note layer: nothing on it but a soldier's line, so it's hidden the rest of the time. */
+function renderTalk(g: Ctx, el: HTMLCanvasElement, f: Frame, dpr: number) {
+  if (!f.bubble && !f.reply && !talkDirty) return;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  if (talkDirty) g.clearRect(talkDirty.x, talkDirty.y, talkDirty.w, talkDirty.h);
+  talkDirty = null;
+  if (!f.bubble && !f.reply) { if (el.style.visibility !== "hidden") el.style.visibility = "hidden"; return; }
+  const v = f.view, box = new Box();
+  worldTransform(g, v, dpr);
+  if (f.bubble) drawNote(g, f, f.bubble, box);
+  if (f.reply) drawNote(g, f, f.reply, box);
+  if (el.style.visibility === "hidden") el.style.visibility = "";
+  const pts = [[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]].map(([x, y]) => toLocal(v, x, y));
+  const x0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.x)) * dpr) - 4), y0 = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.y)) * dpr) - 4);
+  const x1 = Math.min(el.width, Math.ceil(Math.max(...pts.map((p) => p.x)) * dpr) + 4), y1 = Math.min(el.height, Math.ceil(Math.max(...pts.map((p) => p.y)) * dpr) + 4);
+  talkDirty = x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
 }
 
 function shadowEnds(p: PenPose, lamp: Lamp) {
@@ -345,6 +468,54 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
   if (f.aim) { drawAim(g, s, f.aim, px); box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + (f.aim.sight !== undefined ? 90 : 24)); }
 }
 
+/**
+ * A soldier out on the open road: a broken pencil ring round him (nobody's
+ * camp is round him now, so he's out in the open) and a pair of chevrons ahead
+ * of him, marching. Pencil, so it's the paper's remark on the page, never ink history.
+ */
+function drawRoad(g: Ctx, at: Pt, dir: number, px: number, seed: number) {
+  const r = RULES.soldierRadius + 8, w = Math.max(2.4, px * 1.9);
+  const n = 10;
+  for (let i = 0; i < n; i += 2) {
+    const a0 = (i / n) * Math.PI * 2 + 0.2, a1 = ((i + 1.2) / n) * Math.PI * 2 + 0.2;
+    pencilLine(g, { x: at.x + Math.cos(a0) * r, y: at.y + Math.sin(a0) * r }, { x: at.x + Math.cos(a1) * r, y: at.y + Math.sin(a1) * r }, w, seed + i, false);
+  }
+  const ux = Math.cos(dir), uy = Math.sin(dir);
+  for (const d of [r + 5, r + 12]) {
+    const cx = at.x + ux * d, cy = at.y + uy * d, s = 6.5;
+    pencilLine(g, { x: cx - ux * s - uy * s, y: cy - uy * s + ux * s }, { x: cx, y: cy }, w, seed + 40 + d, false);
+    pencilLine(g, { x: cx - ux * s + uy * s, y: cy - uy * s - ux * s }, { x: cx, y: cy }, w, seed + 50 + d, false);
+  }
+}
+
+/** The last few: short pencil rays all round each one, the way a kid draws something shining, or shouting. */
+function drawRays(g: Ctx, at: Pt, px: number, seed: number) {
+  const r0 = RULES.soldierRadius + 12, n = 10, w = Math.max(2.2, px * 1.7);
+  const rand = rng(seed);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rand() * 0.2, l = 8 + rand() * 6;
+    pencilLine(g, { x: at.x + Math.cos(a) * r0, y: at.y + Math.sin(a) * r0 }, { x: at.x + Math.cos(a) * (r0 + l), y: at.y + Math.sin(a) * (r0 + l) }, w, seed + i, false);
+  }
+}
+
+/** Owed another lunge: one quiet pencil ring round him, to say he's the one who must go. */
+function drawChain(g: Ctx, c: { at: Pt; link: number }, px: number, box: Box) {
+  pencilLoop(g, c.at.x, c.at.y, RULES.soldierRadius + 13, 31 + c.link, Math.max(2, px * 1.6), 1, 1);
+  box.add(c.at.x, c.at.y, 40);
+}
+
+/** A lunger at speed: three short pencil streaks trailing from him, the way a kid draws a fast thing. */
+function drawSpeed(g: Ctx, at: Pt, angle: number, stretch: number, px: number, seed: number) {
+  const ux = Math.cos(angle), uy = Math.sin(angle), w = Math.max(1.4, px * 1.1);
+  const len = 14 + (stretch - 1) * 60;
+  [-1, 0, 1].forEach((k, i) => {
+    const gap = 10 + Math.abs(k) * 2, lat = k * 6;
+    const a = { x: at.x - ux * gap - uy * lat, y: at.y - uy * gap + ux * lat };
+    const b = { x: a.x - ux * len * (k ? 0.65 : 1), y: a.y - uy * len * (k ? 0.65 : 1) };
+    pencilLine(g, a, b, w, seed * 7 + i, false);
+  });
+}
+
 function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
   g.save();
   g.beginPath();
@@ -390,6 +561,492 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   }
 }
 
+// A soldier's line: a word or two pencilled in his side's colour in a gap on
+// the page beside him, with a little speech tail to him, the way someone at
+// the desk would scribble it, then rubbed out. Pencil on the same sheet: no
+// fill, no second surface, the theme's blend, under the lamp like every other
+// mark. The gap is found once per note (the emptiest of a ring of spots round
+// him: clear of men, camp rings and lines, on the page and off the HUD) and
+// remembered, so it holds still while the camera moves. Upright the way you're
+// looking, sized to read from bird's-eye as well as leaning in.
+export const NOTE = {
+  /** The lead's tooth, whatever the theme's pen. */
+  grain: 0.5,
+  alpha: 0.9,
+  /** A loose pencil ring round the words (off: just the words and their tail). */
+  ring: true,
+  /** A man's note may be written smaller to fit close to him where the paper's full: these scales, in turn. */
+  fit: [1, 0.85, 0.72],
+  /** ...but its letters never under this many css px (bird's-eye on a phone). */
+  minPx: 15.5,
+  /** Dev: write every man's note at this angle (radians, screen-relative), for captures. */
+  angle: undefined as number | undefined,
+};
+const HUD_INSET = 20;
+/**
+ * The paper a note may be written on: inside the page, below the printed
+ * header (page number, date, a blueprint's title block: `paper.top`), and
+ * inside a drawing sheet's frame; then only what's on screen clear of the HUD.
+ */
+function noteBounds(f: Frame): { x0: number; y0: number; x1: number; y1: number } {
+  const P = theme.paper, frame = P.marginStyle === "frame";
+  const B = { x0: frame ? RULES.margin + 16 : 12, y0: P.top + 6, x1: RULES.pageW - (frame ? 38 : 12), y1: RULES.pageH - (frame ? 38 : 12) };
+  const v = f.view, hud = f.hud;
+  if (!hud) return B;
+  // the part of the screen clear of the HUD, in page units
+  const l = HUD_INSET, r = f.sw - HUD_INSET, t = hud.top + HUD_INSET, bt = hud.h - hud.bottom - HUD_INSET;
+  const pts = [[l, t], [r, t], [r, bt], [l, bt]].map(([x, y]) => unproject(v, x, y));
+  if (pts.some((p) => !p) || bt - t < 60) return B;
+  const visible = inscribedBounds(pts.map((p) => p!));
+  return { x0: Math.max(B.x0, visible.x0), x1: Math.min(B.x1, visible.x1), y0: Math.max(B.y0, visible.y0), y1: Math.min(B.y1, visible.y1) };
+}
+
+/** A polyline with points at least `d` apart (a flick's line is a few hundred points and nearly straight). */
+function thin(pts: Pt[], d: number): Pt[] {
+  const out: Pt[] = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) { const l = out[out.length - 1]; if (Math.hypot(pts[i].x - l.x, pts[i].y - l.y) >= d) out.push(pts[i]); }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+// How full the paper is round the man, rasterised once per note: a grid of
+// cells (half a note-size square) in local (screen-upright) units centred on
+// him, each holding the cost of writing over it. Men, camp rings, crosses and
+// lines are painted in with their weights; a candidate rectangle then costs
+// the sum of the cells it samples, whatever its angle.
+class Clutter {
+  private g: Float32Array;
+  private n: number;
+  constructor(private cell: number, private half: number) {
+    this.n = Math.ceil((half * 2) / cell) + 1;
+    this.g = new Float32Array(this.n * this.n);
+  }
+  private idx(x: number, y: number) {
+    const i = Math.floor((x + this.half) / this.cell), j = Math.floor((y + this.half) / this.cell);
+    return i < 0 || j < 0 || i >= this.n || j >= this.n ? -1 : j * this.n + i;
+  }
+  add(x: number, y: number, w: number) { const k = this.idx(x, y); if (k >= 0) this.g[k] += w; }
+  /** Paint `w` into every cell within `r` of (x, y). */
+  disc(x: number, y: number, r: number, w: number) {
+    for (let v = y - r; v <= y + r + 1e-6; v += this.cell) for (let u = x - r; u <= x + r + 1e-6; u += this.cell) this.add(u, v, w);
+  }
+  /** Paint `w` per step along the segment a-b, a step every half cell. */
+  seg(a: Pt, b: Pt, w: number) {
+    const l = Math.hypot(b.x - a.x, b.y - a.y), n = Math.max(1, Math.ceil(l / (this.cell * 0.5)));
+    for (let i = 0; i <= n; i++) this.add(a.x + ((b.x - a.x) * i) / n, a.y + ((b.y - a.y) * i) / n, w);
+  }
+  ring(x: number, y: number, r: number, w: number) {
+    const n = Math.max(8, Math.ceil((Math.PI * 2 * r) / (this.cell * 0.5)));
+    for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; this.add(x + Math.cos(a) * r, y + Math.sin(a) * r, w); }
+  }
+  /** Paint `w` over a rectangle turned by `ang`, a step every half cell. */
+  rect(cx: number, cy: number, hw: number, hh: number, ang: number, w: number) {
+    const ca = Math.cos(ang), sa = Math.sin(ang), d = this.cell * 0.5;
+    for (let v = -hh; v <= hh + 1e-6; v += d) for (let u = -hw; u <= hw + 1e-6; u += d) this.add(cx + u * ca - v * sa, cy + u * sa + v * ca, w);
+  }
+  at(x: number, y: number) { const k = this.idx(x, y); return k < 0 ? 0 : this.g[k]; }
+}
+
+// How each mood is written: size and weight, how neat the hand is, and what's
+// round the words (a shout's ring is spiky, and it's underlined twice).
+const MOODS: Record<Mood, { size: number; weight: number; alpha: number; tilt: number; skew: number; stretch: number; ring: number; spiky: boolean; under: number }> = {
+  tiny: { size: 0.42, weight: 400, alpha: 0.62, tilt: 0.02, skew: 0, stretch: 1, ring: 0, spiky: false, under: 0 },
+  whisper: { size: 0.8, weight: 400, alpha: 0.72, tilt: 0.01, skew: 0, stretch: 1, ring: 0.55, spiky: false, under: 0 },
+  say: { size: 1, weight: 700, alpha: 0.9, tilt: 0.03, skew: 0, stretch: 1, ring: 0.8, spiky: false, under: 0 },
+  shout: { size: 1.2, weight: 700, alpha: 1, tilt: 0.08, skew: -0.14, stretch: 1.08, ring: 0.95, spiky: true, under: 2 },
+  chant: { size: 1.05, weight: 700, alpha: 0.95, tilt: 0.02, skew: 0, stretch: 1.04, ring: 0, spiky: false, under: 0 },
+};
+/** A shout grows with the war's heat (Frame.heat), up to this. */
+const SHOUT_GROW = 0.3;
+
+// The angles a note may be written at, relative to the way you're looking
+// (so never upside down for the reader), and what each costs: upright and
+// slight tilts for choice, steeper ones, up to vertical, when they find clear paper.
+const ANGLES: [number, number][] = [[0, 0], [0.22, 0.5], [-0.22, 0.5], [0.5, 1.4], [-0.5, 1.4], [0.85, 2.6], [-0.85, 2.6], [1.2, 3.4], [-1.2, 3.4], [Math.PI / 2, 3.8], [-Math.PI / 2, 3.8]];
+
+// The gap the note goes in (page units from the man) and the angle it's
+// written at (screen-relative), chosen once per note and remembered. Where
+// the paper round him is full, the note is tried again in smaller writing
+// (down to a floor that still reads from bird's-eye) so it can sit close to
+// him; only if none fits close is it written full size further out, with a
+// long tail. It's never dropped.
+type Spot = { key: string; dx: number; dy: number; ang: number; side: 1 | -1; at: Pt; hw: number; hh: number; k: number };
+/** A size to try a note at: its half extents (turned with it) and its letter size, all page units. */
+type Fit = { hw: number; hh: number; size: number };
+const spots: Spot[] = []; // the last few notes' spots (a line and its reply are up together)
+/** Dev: where the note showing was put (page offset from the man, its angle, which size), or null. */
+export const noteSpotNow = () => spots[spots.length - 1] ?? null;
+/** Dev: the last few notes' spots (an exchange's two among them). */
+export const noteSpotsNow = () => spots.slice();
+/** A spot is close if it's in the first ring round him, on the page as found, over nothing heavier than a few lines. */
+const CLOSE = { miss: 0.5, clutter: 8 };
+function noteSpot(f: Frame, b: Note, fits: Fit[], angK = 1) {
+  const key = `${b.seed}|${b.text}|${f.s.seed}|${b.anchor}|${b.owner}${NOTE.angle === undefined ? "" : `|${NOTE.angle}`}`;
+  const had = spots.find((m) => m.key === key);
+  if (had) {
+    // Keep the chosen page offset as the speaker moves; no new clutter search.
+    had.at = { x: b.at.x, y: b.at.y };
+    return had;
+  }
+  const { s } = f, R = RULES.soldierRadius, B = noteBounds(f);
+  const rot = f.view.rot, c = Math.cos(rot), sn = Math.sin(rot);
+  const toPage = (lx: number, ly: number): Pt => ({ x: b.at.x + lx * c + ly * sn, y: b.at.y - lx * sn + ly * c });
+  const toLocal_ = (x: number, y: number): Pt => ({ x: (x - b.at.x) * c - (y - b.at.y) * sn, y: (x - b.at.x) * sn + (y - b.at.y) * c });
+  // what's on the paper near him: crosses as points, strokes and roads as their lines, all in local (screen-upright) units.
+  // One grid for every size tried, at the full size's cell.
+  const F = fits[0];
+  const reach = R + Math.max(F.hw, F.hh) * 2.2 + F.size * 3;
+  const cell = F.size * 0.5, grid = new Clutter(cell, reach + Math.max(F.hw, F.hh) + cell);
+  const near = (p: Pt) => Math.hypot(p.x - b.at.x, p.y - b.at.y) < reach + F.size * 6;
+  const L_ = (p: Pt) => toLocal_(p.x, p.y);
+  for (const x of s.soldiers) if (near(x)) { const q = L_(x); grid.disc(q.x, q.y, R + 3, 10); }
+  for (const k of s.bases) if (Math.hypot(k.x - b.at.x, k.y - b.at.y) < reach + k.r) { const q = L_(k); grid.ring(q.x, q.y, k.r, 1); }
+  for (const m of s.marks) {
+    if (m.t === "cross") { if (near(m)) { const q = L_(m); grid.disc(q.x, q.y, 9, 6); } }
+    else if (m.t === "walk") { if (near(m.a) || near(m.b)) grid.seg(L_(m.a), L_(m.b), 0.6); }
+    else if (m.t === "stand") { for (const p of m.at) if (near(p)) { const q = L_(p); grid.disc(q.x, q.y, 9, 6); } }
+    else if (m.pts.some(near)) { const pts = thin(m.pts, cell).map(L_); for (let j = 1; j < pts.length; j++) grid.seg(pts[j - 1], pts[j], 0.6); }
+  }
+  // an exchange: the other man's ring is taken, and so is the line he's already said
+  const P = b.with ? L_(b.with) : null;
+  if (P) grid.disc(P.x, P.y, R + F.size * 0.4, 10);
+  const first = b.answers ? spots.find((m) => m.key.startsWith(`${b.answers}|`)) : undefined;
+  if (first) { const q = L_({ x: first.at.x + first.dx, y: first.at.y + first.dy }); grid.rect(q.x, q.y, first.hw + cell, first.hh + cell, first.ang, 14); }
+  type Best = { cost: number; dx: number; dy: number; ang: number; side: 1 | -1; close: boolean };
+  // the cheapest spot, and the cheapest close one (preferred: close to him is the point)
+  const search = ({ hw, hh, size }: Fit): Best | null => {
+    let best: Best | null = null, bestClose: Best | null = null;
+    const seed = rng(b.seed ^ 0x5eed);
+    const nu = Math.max(2, Math.ceil((hw * 2) / cell)), nv = Math.max(2, Math.ceil((hh * 2) / cell));
+    for (const [ang, angCost] of NOTE.angle === undefined ? ANGLES : [[NOTE.angle, 0]]) {
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      // the turned rect's reach on the page, whichever way the screen is turned
+      const th = ang - rot, ex = Math.abs(Math.cos(th)) * hw + Math.abs(Math.sin(th)) * hh, ey = Math.abs(Math.sin(th)) * hw + Math.abs(Math.cos(th)) * hh;
+      for (let ring = 0; ring < 2; ring++) {
+        for (let i = 0; i < 12; i++) {
+          const a = -Math.PI / 2 + (i / 12) * Math.PI * 2; // up first
+          const gap = size * (ring ? 1.7 : 0.85); // room for the tail
+          // how far the turned rect reaches toward him along this direction
+          const along = Math.abs(Math.cos(a - ang)) * hw + Math.abs(Math.sin(a - ang)) * hh;
+          const lx = Math.cos(a) * (R + along + gap), ly = Math.sin(a) * (R + along + gap);
+          const p = toPage(lx, ly);
+          const q = { x: Math.max(B.x0 + ex, Math.min(B.x1 - ex, p.x)), y: Math.max(B.y0 + ey, Math.min(B.y1 - ey, p.y)) };
+          const miss = Math.hypot(q.x - p.x, q.y - p.y);
+          const L = toLocal_(q.x, q.y);
+          // over his own dot once clamped: no good
+          const mx = -L.x * ca - L.y * sa, my = L.x * sa - L.y * ca;
+          if (Math.abs(mx) <= hw + R && Math.abs(my) <= hh + R) continue;
+          let cost = angCost * angK + (miss / size) * 4 + (miss > size * 1.5 ? 30 : 0);
+          cost += 2.5 * (1 + Math.sin(a)) / 2 + (ring ? 1.5 : 0) + seed() * 0.6; // above him for choice, close for choice
+          if (P) {
+            // an exchange: on his own side, away from the other man, so each line is plainly its speaker's
+            const dM = Math.hypot(L.x, L.y) || 1, dP = Math.hypot(P.x, P.y) || 1;
+            cost += (Math.hypot(L.x - P.x, L.y - P.y) < dM ? 25 : 0) + 6 * (1 + (L.x * P.x + L.y * P.y) / (dM * dP)) / 2;
+          }
+          // what the turned rect covers, a sample per cell; given up on, row by row, once it can't beat the best
+          // (clutter only adds, so what's pruned could never have been picked)
+          const canClose = ring === 0 && miss < size * CLOSE.miss;
+          let over = 0, lost = false;
+          for (let v = 0; v <= nv && !lost; v++) {
+            const y = -hh + (v / nv) * hh * 2;
+            for (let u = 0; u <= nu; u++) {
+              const x = -hw + (u / nu) * hw * 2;
+              over += grid.at(L.x + x * ca - y * sa, L.y + x * sa + y * ca);
+            }
+            const t = cost + over;
+            lost = !!best && t >= best.cost && (!canClose || over >= CLOSE.clutter || (!!bestClose && t >= bestClose.cost));
+          }
+          if (lost) continue;
+          cost += over;
+          const close = canClose && over < CLOSE.clutter;
+          const cand = { cost, dx: q.x - b.at.x, dy: q.y - b.at.y, ang, side: (lx < 0 ? -1 : 1) as 1 | -1, close };
+          if (!best || cost < best.cost) best = cand;
+          if (close && (!bestClose || cost < bestClose.cost)) bestClose = cand;
+        }
+      }
+    }
+    return bestClose ?? best;
+  };
+  // full size if it fits close to him; else smaller, down the list; else full size, further out
+  let pick: { best: Best | null; k: number } | null = null, full: Best | null = null;
+  for (let k = 0; k < fits.length; k++) {
+    const best = search(fits[k]);
+    if (k === 0) full = best;
+    if (best?.close) { pick = { best, k }; break; }
+  }
+  const chosen = pick ?? { best: full, k: 0 };
+  const { hw, hh, size } = fits[chosen.k];
+  const up = toPage(0, -(R + hh + size));
+  const w = chosen.best ?? { dx: up.x - b.at.x, dy: up.y - b.at.y, ang: 0, side: 1 as const };
+  const spot: Spot = { key, at: { x: b.at.x, y: b.at.y }, hw, hh, k: chosen.k, dx: w.dx, dy: w.dy, ang: w.ang, side: w.side };
+  spots.push(spot);
+  if (spots.length > 4) spots.shift();
+  return spot;
+}
+
+// A camp speaks: its line arcs along the outside of its ring, on the side
+// facing the top of the screen (or the first side that's on the page), so
+// the speaker is plain from bird's-eye. A chant is written in beats, a word
+// at a time; a shout is bigger, stretched and leaning, with shout marks
+// flung out from the ring.
+function drawBaseNote(g: Ctx, f: Frame, b: Note, box: Box) {
+  const pen = INK.pens[b.owner], M = MOODS[b.mood];
+  const heat = f.heat ?? 0;
+  const base = Math.max(30, Math.min(70, 25 / f.view.z));
+  let size = base * M.size * (b.mood === "shout" ? 1 + SHOUT_GROW * heat : 1);
+  const R = b.r ?? RULES.baseRadius;
+  const rot = f.view.rot;
+  const r = rng(b.seed + 3);
+  // which side of the ring: up the screen for choice, else whichever is on the page; and if no side
+  // keeps the run on the page (a camp by the edge), written smaller, down to what still reads from above
+  const B = noteBounds(f), c = Math.cos(rot), sn = Math.sin(rot);
+  const toPage = (lx: number, ly: number): Pt => ({ x: b.at.x + lx * c + ly * sn, y: b.at.y - lx * sn + ly * c });
+  const size0 = size;
+  let rr = 0, half = 0, mid = -Math.PI / 2;
+  for (const k of NOTE.fit) {
+    if (k < 1 && size0 * k * f.view.z < NOTE.minPx) break;
+    size = size0 * k;
+    const gap = size * 0.55;
+    rr = R + gap + size * 0.45; // the letters' baseline, a little off the ring
+    // the run must fit round the ring: written smaller if it wouldn't
+    g.save();
+    g.font = `${M.weight} ${size}px Caveat, "Patrick Hand", cursive`;
+    half = (g.measureText(b.text).width * M.stretch) / 2 / rr;
+    g.restore();
+    const most = Math.PI * 0.72;
+    if (half > most) { size *= most / half; half = most; }
+    let bestCost = Infinity, off = 0;
+    // the sides in order of choice: the top, the bottom, left and right, then the diagonals
+    [-Math.PI / 2, Math.PI / 2, 0, Math.PI, -Math.PI / 4, (-3 * Math.PI) / 4, Math.PI / 4, (3 * Math.PI) / 4].forEach((m, i) => {
+      // the run's ends and middle: how far off the page (or under the HUD) they'd be, plus a preference for the top
+      // (a shout's marks fly out past the letters, and a little past the run's ends)
+      let miss = 0;
+      const out = rr + size * (M.spiky ? 1.35 : 1), ends = M.spiky ? 0.3 : 0.08;
+      for (let j = 0; j <= 8; j++) {
+        const a = m - half - ends + ((half + ends) * 2 * j) / 8;
+        const p = toPage(Math.cos(a) * out, Math.sin(a) * out);
+        miss += Math.max(0, B.x0 - p.x, p.x - B.x1) + Math.max(0, B.y0 - p.y, p.y - B.y1);
+      }
+      if (miss + i * size * 0.4 < bestCost) { bestCost = miss + i * size * 0.4; mid = m; off = miss; }
+    });
+    if (off <= 1) break; // on the page
+  }
+  const lw = Math.max(2.2, size * 0.065);
+  // a chant comes in beats: a word at a time; the rest letter by letter
+  let upTo = b.p;
+  if (b.mood === "chant") {
+    const words = b.text.split(" "), n = words.length, k = Math.min(n, Math.floor(b.p * (n + 0.999)));
+    upTo = words.slice(0, k).join(" ").length / b.text.length + (k < n ? 0.0001 : 0);
+  }
+  g.save();
+  g.translate(b.at.x, b.at.y);
+  g.rotate(-rot);
+  // the words read the right way up on the near side of the ring: written on the far side, they'd be upside down, so flip the run
+  const flip = Math.sin(mid) > 1e-6;
+  if (flip) { g.scale(-1, -1); mid -= Math.PI; }
+  const tilt = (r() - 0.5) * 2 * M.tilt;
+  if (M.skew) g.transform(1, 0, M.skew * 0.3, 1, 0, 0);
+  arcText(g, b.text, 0, 0, rr, mid + tilt, size, pen, { upTo, alpha: NOTE.alpha * M.alpha, weight: M.weight, grain: NOTE.grain, stretch: M.stretch, jitter: b.mood === "shout" ? size * 0.12 : size * 0.04, seed: b.seed + 5 });
+  // a shout's marks: short strokes flung out past the words, on as the words finish
+  if (M.spiky) {
+    const n = 5, on = Math.max(0, (b.p - 0.6) / 0.4);
+    for (let i = 0; i < n; i++) {
+      const a = mid - half - 0.25 + ((half * 2 + 0.5) * (i + 0.5)) / n + (r() - 0.5) * 0.1;
+      const r0 = rr + size * 0.5 + r() * size * 0.2, r1 = r0 + size * (0.45 + r() * 0.35);
+      pencilStroke(g, [{ x: Math.cos(a) * r0, y: Math.sin(a) * r0 }, { x: Math.cos(a) * r1, y: Math.sin(a) * r1 }], pen, b.seed + 31 + i, lw * 1.1, Math.min(1, on * n - i), NOTE.alpha, NOTE.grain);
+    }
+  }
+  // a chant's beat marks: a short tick under each word, in time
+  if (b.mood === "chant") {
+    const words = b.text.split(" "), n = words.length, k = Math.min(n, Math.floor(b.p * (n + 0.999)));
+    let acc = 0;
+    g.save();
+    g.font = `${M.weight} ${size}px Caveat, "Patrick Hand", cursive`;
+    const ws = words.map((w) => g.measureText(w + " ").width * M.stretch);
+    g.restore();
+    for (let i = 0; i < n; i++) {
+      const a = mid - half + (acc + ws[i] / 2) / rr;
+      acc += ws[i];
+      if (i >= k) continue;
+      const r0 = rr - size * 0.9, r1 = rr - size * 0.55;
+      pencilStroke(g, [{ x: Math.cos(a - 0.03) * r0, y: Math.sin(a - 0.03) * r0 }, { x: Math.cos(a + 0.03) * r1, y: Math.sin(a + 0.03) * r1 }], pen, b.seed + 41 + i, lw, 1, NOTE.alpha * 0.8, NOTE.grain);
+    }
+  }
+  if (b.e > 0) {
+    // rubbed out: the arc's box, a band round the ring where the words are
+    const ex = rr + size * 1.3;
+    const a0 = mid - half - 0.4, a1 = mid + half + 0.4;
+    const xs = [Math.cos(a0) * (rr - size), Math.cos(a1) * (rr - size), Math.cos(a0) * ex, Math.cos(a1) * ex, Math.cos(mid) * ex], ys = [Math.sin(a0) * (rr - size), Math.sin(a1) * (rr - size), Math.sin(a0) * ex, Math.sin(a1) * ex, Math.sin(mid) * ex];
+    for (const m of [mid - Math.PI / 2, mid + Math.PI / 2]) if (m > a0 && m < a1) { xs.push(Math.cos(m) * ex); ys.push(Math.sin(m) * ex); }
+    rubOut(g, Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), b.seed + 11, b.e, size, pen, 9);
+  }
+  g.restore();
+  box.add(b.at.x, b.at.y, rr + size * 2.4);
+}
+
+/** How a man's note is laid out at letter size `size`: its rows, where they sit, and the loop round them. */
+interface NoteLay {
+  size: number; rows: string[]; lineH: number;
+  /** Text origin: rows start at (x0, y0), a line apart, so the ink is centred on the note. */
+  x0: number; y0: number;
+  /** The ink's half extents; where a shout's underlines go. */
+  tw: number; th: number; underY: number;
+  /** The loop: a stadium, straight along `a` each side of the middle, round ends of radius `R`. rx, ry: its half extents. */
+  a: number; R: number; rx: number; ry: number;
+}
+function layNote(g: Ctx, f: Frame, text: string, M: (typeof MOODS)[Mood], size0: number, ringOn: boolean): NoteLay {
+  let size = size0;
+  g.save();
+  g.font = `${M.weight} ${size}px Caveat, "Patrick Hand", cursive`;
+  const measure = (t: string) => g.measureText(t).width * M.stretch;
+  // a long line wraps at the space nearest its middle rather than running across a third of the page
+  const most = (f.sw * 0.34) / f.view.z;
+  let rows = [text];
+  if (measure(text) > most && text.includes(" ")) {
+    const words = text.split(" ");
+    let best = 1, bestD = Infinity;
+    for (let i = 1; i < words.length; i++) { const d = Math.abs(measure(words.slice(0, i).join(" ")) - measure(words.slice(i).join(" "))); if (d < bestD) { bestD = d; best = i; } }
+    rows = [words.slice(0, best).join(" "), words.slice(best).join(" ")];
+  }
+  const w = Math.max(...rows.map(measure));
+  // still too wide (one long word): written smaller
+  if (w > most) { size *= most / w; g.font = `${M.weight} ${size}px Caveat, "Patrick Hand", cursive`; }
+  const lineH = size * 0.95;
+  // the ink itself, not the font's box: each row centred (handText's "center"), stretched and leaned as a shout is
+  let xl = Infinity, xr = -Infinity, top = Infinity, bot = -Infinity;
+  rows.forEach((row, i) => {
+    const m = g.measureText(row), hw = m.width / 2, y = i * lineH;
+    xl = Math.min(xl, -hw - m.actualBoundingBoxLeft); xr = Math.max(xr, -hw + m.actualBoundingBoxRight);
+    top = Math.min(top, y - m.actualBoundingBoxAscent); bot = Math.max(bot, y + m.actualBoundingBoxDescent);
+  });
+  g.restore();
+  const underY = bot + size * 0.1;
+  if (M.under) bot = underY + (M.under - 1) * size * 0.13 + size * 0.05;
+  const y0 = -(top + bot) / 2, th = (bot - top) / 2;
+  const lean = Math.abs(M.skew) * th;
+  const cx = ((xl + xr) / 2) * M.stretch, tw = ((xr - xl) / 2) * M.stretch + lean;
+  // a kid's loop hugs the words: the same small margin above, below and at the ends
+  let a = 0, R: number, rx: number, ry: number;
+  if (ringOn) {
+    const m = Math.max(size * 0.2, th * 0.45); // at least 0.41 of the half height, or the corners poke out
+    R = th + m; a = Math.max(0, tw + m - R);
+    if (a === 0) R = Math.max(R, Math.hypot(tw, th) + m * 0.4); // a word or a mark: a small circle round it
+    rx = a + R; ry = R;
+  } else { R = th; rx = tw + size * 0.08; ry = th + size * 0.08; }
+  return { size, rows, lineH, x0: -cx / M.stretch, y0: y0, tw, th, underY: underY + y0, a, R, rx, ry };
+}
+
+/** The loop round a note: a stadium, gone round a little over once, wobbling like a hand; a shout's is a spiky burst. */
+function loopPts(L: NoteLay, spiky: boolean, r: () => number, size: number): Pt[] {
+  const { a, R } = L, P = 4 * a + 2 * Math.PI * R;
+  const N = Math.max(28, Math.min(72, Math.round(P / (size * 0.3)))) & ~1;
+  const u0 = r() * P, ph = [r() * 6.28, r() * 6.28];
+  const pts: Pt[] = [];
+  for (let i = 0; i <= N; i++) {
+    const u = (u0 + (i / N) * P * 1.04) % P;
+    let x: number, y: number, nx: number, ny: number;
+    if (u < 2 * a) { x = -a + u; y = -R; nx = 0; ny = -1; }
+    else if (u < 2 * a + Math.PI * R) { const t = -Math.PI / 2 + (u - 2 * a) / R; nx = Math.cos(t); ny = Math.sin(t); x = a + R * nx; y = R * ny; }
+    else if (u < 4 * a + Math.PI * R) { x = a - (u - 2 * a - Math.PI * R); y = R; nx = 0; ny = 1; }
+    else { const t = Math.PI / 2 + (u - 4 * a - Math.PI * R) / R; nx = Math.cos(t); ny = Math.sin(t); x = -a + R * nx; y = R * ny; }
+    const phi = (u / P) * Math.PI * 2;
+    let k = R * (Math.sin(phi * 2 + ph[0]) * 0.05 + Math.sin(phi * 5 + ph[1]) * 0.025) + (i / N) * R * 0.07; // the second pass drifts out a touch
+    if (spiky) k += (i % 2 ? 0.26 : -0.03) * R + (r() - 0.5) * 0.06 * R; // a burst: every other point flung out
+    pts.push({ x: x + nx * k, y: y + ny * k });
+  }
+  return pts;
+}
+
+/** How far from the note's middle a ray, direction (dx, dy) in the note's frame, leaves its loop. */
+function loopHit(L: NoteLay, dx: number, dy: number) {
+  dx = Math.abs(dx); dy = Math.abs(dy);
+  if (L.R !== L.ry) return Math.min(L.rx / Math.max(1e-6, dx), L.ry / Math.max(1e-6, dy)); // no loop: the words' box
+  if (dy > 1e-6) { const t = L.R / dy; if (t * dx <= L.a) return t; } // out through a straight side
+  const dc = dx * L.a; // else through a round end, centred (a, 0)
+  return dc + Math.sqrt(Math.max(0, dc * dc - L.a * L.a + L.R * L.R));
+}
+
+function drawNote(g: Ctx, f: Frame, b: Note, box: Box) {
+  if (b.anchor === "base") return drawBaseNote(g, f, b, box);
+  const pen = INK.pens[b.owner], M = MOODS[b.mood];
+  const heat = f.heat ?? 0;
+  const size0 = Math.max(30, Math.min(70, 25 / f.view.z)) * M.size * (b.mood === "shout" ? 1 + SHOUT_GROW * heat : 1); // page units: about 25 screen px
+  const ringOn = NOTE.ring && M.ring > 0;
+  // the sizes it may be written at: full, then smaller where the paper's full, never below what reads on a phone from above
+  const scales = b.mood === "tiny" ? [1] : NOTE.fit.filter((k, i) => i === 0 || size0 * k * f.view.z >= NOTE.minPx);
+  const lays = scales.map((k) => layNote(g, f, b.text, M, size0 * k, ringOn));
+  // a burst's spikes reach past the ring; a shout is yelled upright unless the paper's really full.
+  // An exchange's two lines each sit on their own man's far side from the other (noteSpot).
+  const grow = M.spiky ? 1.26 : 1;
+  const spot = noteSpot(f, b, lays.map((l) => ({ hw: l.rx * grow, hh: l.ry * grow, size: l.size })), M.spiky ? 1.7 : 1);
+  const lay = lays[Math.min(spot.k, lays.length - 1)], size = lay.size, rows = lay.rows, rx = lay.rx, ry = lay.ry;
+  const R = RULES.soldierRadius;
+  const rot = f.view.rot, c = Math.cos(rot), sn = Math.sin(rot);
+  const ang = spot.ang, ca = Math.cos(ang), sa = Math.sin(ang);
+  // local (screen-upright, at the man) <-> page
+  const toPage = (lx: number, ly: number): Pt => ({ x: b.at.x + lx * c + ly * sn, y: b.at.y - lx * sn + ly * c });
+  const L = { x: spot.dx * c - spot.dy * sn, y: spot.dx * sn + spot.dy * c };
+  // the tail: from the loop's edge nearest him to just short of him, two strokes closing on him
+  const d = Math.hypot(L.x, L.y) || 1, u = { x: L.x / d, y: L.y / d };
+  const ur = { x: u.x * ca + u.y * sa, y: -u.x * sa + u.y * ca }; // toward him, in the loop's frame
+  const t = loopHit(lay, ur.x, ur.y);
+  const start = { x: L.x - u.x * (t + size * 0.1), y: L.y - u.y * (t + size * 0.1) };
+  const who = R + Math.max(4, size * 0.12); // the loose ring round his dot: who's talking
+  const tip = { x: u.x * (who + 3), y: u.y * (who + 3) };
+  const len = Math.hypot(start.x - tip.x, start.y - tip.y);
+  const perp = { x: -u.y, y: u.x }, half = Math.min(size * 0.36, len * 0.5);
+  // written the way a hand would: the words, the ring round them, then the tail, then a ring round him
+  const words = Math.min(1, b.p / (ringOn ? 0.55 : 0.7)), ring = Math.max(0, (b.p - 0.48) / 0.34), tail = Math.max(0, (b.p - (ringOn ? 0.76 : 0.66)) / 0.16), circle = Math.max(0, (b.p - 0.88) / 0.12);
+  const lw = Math.max(2.2, size * 0.065);
+  const r = rng(b.seed + 3);
+  const tilt = (r() - 0.5) * 2 * M.tilt;
+  g.save();
+  g.translate(b.at.x, b.at.y);
+  g.rotate(-rot);
+  g.save();
+  g.translate(L.x, L.y);
+  g.rotate(ang);
+  if (ringOn) pencilStroke(g, loopPts(lay, M.spiky, r, size), pen, b.seed + 5, lw * (M.spiky ? 1.1 : 0.9), ring, NOTE.alpha * M.ring, NOTE.grain);
+  g.save();
+  g.transform(M.stretch, 0, M.skew, 1, 0, 0); // a shout's letters stretched and leaning
+  rows.forEach((row, i) => {
+    // row by row: the first written, then the next
+    const up = Math.max(0, Math.min(1, words * rows.length - i));
+    handText(g, row, lay.x0, lay.y0 + i * lay.lineH, size, pen, { upTo: up, alpha: NOTE.alpha * M.alpha, weight: M.weight, rot: tilt + (i ? (r() - 0.5) * 0.02 : 0), align: "center", grain: NOTE.grain });
+  });
+  g.restore();
+  for (let i = 0; i < M.under; i++) {
+    // underlined, twice, in a hurry: each line its own quick stroke, a little off
+    const y = lay.underY + i * size * 0.13, up = Math.max(0, (words - 0.7 - i * 0.15) / 0.3), uw = lay.tw * 0.95;
+    const j = r() * 6.28;
+    pencilStroke(g, Array.from({ length: 6 }, (_, k) => ({ x: -uw + (k / 5) * uw * 2 + (r() - 0.5) * size * 0.05, y: y + Math.sin(k + j) * size * 0.03 })), pen, b.seed + 21 + i, lw * 1.1, up, NOTE.alpha * M.alpha, NOTE.grain);
+  }
+  if (b.e > 0) rubOut(g, -rx * grow, -ry * grow, rx * grow, ry * grow, b.seed + 11, b.e, size, pen);
+  g.restore();
+  if (len > size * 0.2 && tail > 0) {
+    const a = { x: start.x + perp.x * half, y: start.y + perp.y * half }, k = { x: start.x - perp.x * half, y: start.y - perp.y * half };
+    pencilStroke(g, bowed(a, tip, 0.16, 8), pen, b.seed + 7, lw, Math.min(1, tail / 0.55), NOTE.alpha * Math.max(0.7, M.alpha), NOTE.grain);
+    pencilStroke(g, bowed(tip, k, 0.16, 8), pen, b.seed + 9, lw * 0.9, Math.max(0, (tail - 0.5) / 0.5), NOTE.alpha * Math.max(0.7, M.alpha), NOTE.grain);
+  }
+  // who's talking: a loose pencil ring round his dot, plain from bird's-eye
+  if (circle > 0) {
+    const a0 = Math.atan2(u.y, u.x) + 0.4, N = 22, pts: Pt[] = [];
+    const ph = r() * 6.28;
+    for (let i = 0; i <= N; i++) { const a = a0 + (i / N) * Math.PI * 2.1, k = 1 + Math.sin(a * 3 + ph) * 0.06; pts.push({ x: Math.cos(a) * who * k, y: Math.sin(a) * who * k }); }
+    pencilStroke(g, pts, pen, b.seed + 15, lw * (b.mood === "tiny" ? 1.6 : 1), circle, NOTE.alpha * 0.85, NOTE.grain);
+  }
+  if (b.e > 0) {
+    // the tail and his ring under their own rubs
+    const tx0 = Math.min(start.x, tip.x) - half, ty0 = Math.min(start.y, tip.y) - half, tx1 = Math.max(start.x, tip.x) + half, ty1 = Math.max(start.y, tip.y) + half;
+    rubOut(g, tx0, ty0, tx1, ty1, b.seed + 13, Math.min(1, b.e * 1.15), size * 0.7, pen, 1);
+    rubOut(g, -who - lw * 2, -who - lw * 2, who + lw * 2, who + lw * 2, b.seed + 17, Math.min(1, b.e * 1.3), Math.max(size * 0.5, who), pen, 0);
+  }
+  g.restore();
+  const m = toPage(L.x, L.y);
+  box.add(m.x, m.y, Math.max(rx, ry) * grow * 1.2 + size * 1.4);
+  box.add(b.at.x, b.at.y, who + size * 0.8);
+}
+
 // A pencilled ring that closes while you hold the phone still, and gets its
 // cross hairs once it has: then a flick of the wrist fires.
 function drawSight(g: Ctx, x: number, y: number, armed: number, px: number) {
@@ -420,8 +1077,8 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   } else {
     // under the soldier, toward you: the way your thumb pulls
     pencilArrow(g, { x: 6, y: 34 }, { x: 14, y: 128 }, 0.12, 77, 2.4, Math.min(1, p * 1.6), 0.9);
-    handText(g, "pull back from anywhere,", 0, 176, 32, pencil, { upTo: p * 2 - 0.5, weight: 400, rot: -0.03, align: "center" });
-    handText(g, "then let go", 0, 210, 32, pencil, { upTo: p * 2 - 1, weight: 400, rot: -0.03, align: "center" });
+    handText(g, "slide sideways to turn,", 0, 176, 32, pencil, { upTo: p * 2 - 0.5, weight: 400, rot: -0.03, align: "center" });
+    handText(g, "pull down, then let go", 0, 210, 32, pencil, { upTo: p * 2 - 1, weight: 400, rot: -0.03, align: "center" });
   }
   g.restore();
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { act, alive, newGame, placeBase } from "./legacy";
-import { dotSpots, yellowing } from "./page";
+import { dotSpots, wentTo, yellowing } from "./page";
 
 function setup() {
   const s = newGame(42);
@@ -49,4 +49,30 @@ describe("yellowing", () => {
     expect(g).toBeGreaterThan(b);
     expect(b).toBeGreaterThan(0.7);
   });
+});
+
+describe("wentTo: where the man who left an old spot went", () => {
+  it("points from the old spot to where he stands, and to his next old spot if he moved again", () => {
+    const s = setup();
+    const me = alive(s, 0)[0];
+    act(s, { soldierId: me.id, kind: "move", angle: -Math.PI / 2, length: 150, bend: 0 });
+    const i = s.marks.findIndex((m) => m.t === "cross" && m.kind === "moved");
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(wentTo(s, i)).toEqual({ x: s.soldiers[me.id].x, y: s.soldiers[me.id].y });
+    expect(wentTo(s, 0 === i ? i + 1 : 0)).toBeUndefined(); // not a moved mark
+  });
+});
+
+
+it("keeps a legacy move arrow pointing at the first landing after later moves", () => {
+  const s = setup();
+  const me = alive(s, 0)[0];
+  act(s, { soldierId: me.id, kind: "move", angle: -Math.PI / 2, length: 150, bend: 0 });
+  const i = s.marks.findIndex((m) => m.t === "cross" && m.kind === "moved");
+  const firstLanding = { x: me.x, y: me.y };
+  const foe = alive(s, 1)[0];
+  act(s, { soldierId: foe.id, kind: "shoot", angle: 0, length: 0, bend: 0 });
+  act(s, { soldierId: me.id, kind: "move", angle: 0, length: 150, bend: 0 });
+  expect({ x: me.x, y: me.y }).not.toEqual(firstLanding);
+  expect(wentTo(s, i)).toEqual(firstLanding);
 });

@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { botAction, botArrange, botBase } from "./bot";
 import {
-  act, alive, canArrange, canFlick, canPlaceBase, canSend, columnSpots, garrison, hand, illegal, isRing, maxReach, newGame, pathLen, powerFor, preview, reachOf, replay, wildOf, wildOfLength,
+  act, alive, canArrange, canFlick, canPlaceBase, canSend, columnSpots, garrison, hand, illegal, isRing, maxReach, newGame, pathLen, powerFor, preview, reachOf, replay, wildOf, wildOfLength, wallCost, wallStrength,
   type Action, type Flick, type GameState, type Player,
 } from "./game";
 import { CORE, RULES, SIZES, type CoreRules, type Size } from "./rules";
@@ -36,7 +36,10 @@ function park(s: GameState, ids: number[]) {
   });
 }
 const flick = (soldier: number, kind: Flick["kind"], angle: number, length: number, wob = 1): Action => ({ t: "flick", soldier, kind, angle, length, bend: 0, wob });
-const still = { lungeWallShake: 0, lungeKillShake: 0 };
+// flat walls and no shake: a lunger runs dead straight
+const still = { lungeWallShake: 0, lungeKillShake: 0, garrison: null };
+// the flat walls of games begun before garrisoned walls
+const FLAT = { garrison: null };
 
 // Blue bases along the bottom, red along the top; red base 1 sits at (300, 600).
 const PAGE: [number, number][] = [[300, 1300], [300, 600], [700, 1300], [700, 300]];
@@ -111,8 +114,8 @@ describe("snipe", () => {
     expect(s.soldiers[me.id]).toMatchObject({ x: 150, y: 1000, alive: true });
   });
 
-  it("power loss: a wall costs 10% of what's left, a soldier 5%, in order along the line", () => {
-    const s = game(PAGE);
+  it("power loss on flat walls (games begun before garrisoned walls): a wall costs 10% of what's left, a soldier 5%, in order along the line", () => {
+    const s = game(PAGE, 3, FLAT);
     const me = of(s, 0)[0], [inside, beyond] = of(s, 1);
     park(s, s.soldiers.filter((x) => ![me.id, inside.id, beyond.id].includes(x.id)).map((x) => x.id));
     // from the open, straight up through red base 1 (walls at d = 338 and 462), a man at its centre (d = 400)
@@ -125,9 +128,10 @@ describe("snipe", () => {
     expect(o.killed).toEqual([inside.id]);
     expect(pathLen(o.path)).toBeCloseTo(end, 3);
     expect(o.events.map((e) => e.kind)).toEqual(["wall", "kill", "wall"]);
+    expect(o.events.filter((e) => e.kind === "wall").map((e) => e.cost)).toEqual([0.1, 0.1]);
     // at full strength the line would have reached the man beyond (d = 650); tapered, it falls short
     expect(o.killed).not.toContain(beyond.id);
-    const plain = preview({ ...s, rules: { ...s.rules, snipeWallLoss: 0, snipeKillLoss: 0 } }, { soldier: me.id, kind: "snipe", angle: UP, length: 700, bend: 0, wob: 0 });
+    const plain = preview({ ...s, rules: { ...s.rules, snipeWallLoss: 0, snipeKillLoss: 0, garrison: null } }, { soldier: me.id, kind: "snipe", angle: UP, length: 700, bend: 0, wob: 0 });
     expect(plain.killed).toContain(beyond.id);
   });
 
@@ -161,6 +165,109 @@ describe("snipe", () => {
     expect(o.killed).toEqual([reds[4].id]);
     expect(o).toMatchObject({ earned: false, again: false, handover: true });
     expect(s.current).toBe(1);
+  });
+});
+
+describe("garrisoned walls", () => {
+  const G = { snipeLoss: [0.1, 0.6] as [number, number], lungeShake: [0, 0.4] as [number, number], curve: 1 };
+  const snipeUp = (id: number, length = 700): Flick => ({ soldier: id, kind: "snipe", angle: UP, length, bend: 0, wob: 0 });
+  /** Blue's sniper below red base 1 (300, 600), its three men inside off the line; everyone else parked. */
+  function setup(rules: Partial<CoreRules> = { garrison: G }) {
+    const s = game(PAGE, 3, rules);
+    const me = of(s, 0)[0], reds = of(s, 1);
+    park(s, s.soldiers.filter((x) => x.id !== me.id && !reds.some((r) => r.id === x.id)).map((x) => x.id));
+    put(s, me.id, 300, 1000);
+    put(s, reds[0].id, 275, 580); put(s, reds[1].id, 325, 600); put(s, reds[2].id, 280, 625);
+    return { s, me, reds, base: s.bases[1] };
+  }
+  const walls = (o: { events: { kind: string; cost?: number }[] }) => o.events.filter((e) => e.kind === "wall").map((e) => e.cost);
+
+  it("a full base's wall costs a snipe the most: in and out at full price", () => {
+    const { s, me } = setup();
+    const o = preview(s, snipeUp(me.id));
+    expect(walls(o)).toEqual([0.6, 0.6]);
+    let end = 338 + (700 - 338) * 0.4;
+    end = 462 + (end - 462) * 0.4;
+    expect(pathLen(o.path)).toBeCloseTo(end, 3);
+  });
+
+  it("shooting a base down makes its wall weaker, down to the floor for an empty ring", () => {
+    const { s, me, reds, base } = setup();
+    expect(wallCost(s, base, "snipe")).toBeCloseTo(0.6, 9);
+    reds[0].alive = false;
+    expect(wallStrength(s, base)).toBeCloseTo(2 / 3, 9);
+    expect(walls(preview(s, snipeUp(me.id)))[0]).toBeCloseTo(0.1 + 0.5 * (2 / 3), 9);
+    reds[1].alive = false; reds[2].alive = false;
+    expect(walls(preview(s, snipeUp(me.id)))).toEqual([0.1, 0.1]);
+    expect(wallCost(s, base, "lunge")).toBe(0);
+  });
+
+  it("men just outside the wall, or out on the road, don't hold it", () => {
+    const { s, me, reds, base } = setup();
+    put(s, reds[0].id, 300 + 70, 600); // outside the wall (62), within positioning reach
+    expect(wallStrength(s, base)).toBeCloseTo(2 / 3, 9);
+    expect(walls(preview(s, snipeUp(me.id)))[0]).toBeCloseTo(0.1 + 0.5 * (2 / 3), 9);
+    put(s, reds[0].id, 275, 580); // geometrically inside, but travelling on a road
+    reds[0].convoy = 0;
+    s.convoys.push({ id: 0, owner: 1, from: base.id, to: 3, ids: [reds[0].id], state: "road", road: [base, s.bases[3]], turn: s.turn });
+    expect(wallStrength(s, base)).toBeCloseTo(2 / 3, 9);
+    s.convoys[0].state = "ordered"; // waiting at home still mans the wall
+    expect(wallStrength(s, base)).toBe(1);
+  });
+
+  it("the men a line crosses out on its way through no longer hold the far wall", () => {
+    const { s, me, reds } = setup();
+    put(s, reds[0].id, 300, 600); // on the line, at the centre
+    const o = preview(s, snipeUp(me.id));
+    expect(o.killed).toEqual([reds[0].id]);
+    const [inn, out] = walls(o);
+    expect(inn).toBeCloseTo(0.6, 9);
+    expect(out).toBeCloseTo(0.1 + 0.5 * (2 / 3), 9);
+  });
+
+  it("a garrison bigger than a base starts with is no tougher than full", () => {
+    const { s, base } = setup();
+    const extra = of(s, 3)[0];
+    extra.owner = 1; put(s, extra.id, 300, 640);
+    expect(wallStrength(s, base)).toBe(1);
+  });
+
+  it("the curve shapes it: 2 makes a thinned base weak sooner, 0.5 keeps it tough longer", () => {
+    for (const [curve, f] of [[2, 1 / 9], [0.5, Math.sqrt(1 / 3)]]) {
+      const { s, reds, base } = setup({ garrison: { ...G, curve } });
+      reds[0].alive = false; reds[1].alive = false;
+      expect(wallStrength(s, base)).toBeCloseTo(f, 9);
+      expect(wallCost(s, base, "snipe")).toBeCloseTo(0.1 + 0.5 * f, 9);
+    }
+  });
+
+  it("your own other bases' walls scale the same; the wall at your back is still free", () => {
+    const s = game(PAGE, 3, { garrison: G });
+    const [me, ...mates] = of(s, 0);
+    park(s, s.soldiers.filter((x) => x.owner === 1 || of(s, 2).some((m) => m.id === x.id)).map((x) => x.id));
+    // from the open below blue base 0 (300, 1300), up through it: its two men inside, off the line, hold it
+    put(s, me.id, 300, 1450); put(s, mates[0].id, 275, 1290); put(s, mates[1].id, 325, 1310);
+    const through = walls(preview(s, snipeUp(me.id, 400)));
+    expect(through[0]).toBeCloseTo(0.1 + 0.5 * (2 / 3), 9);
+    expect(through[1]).toBeCloseTo(0.1 + 0.5 * (2 / 3), 9);
+    // standing inside it: leaving is free, and he doesn't count himself
+    put(s, me.id, 300, 1300);
+    const o = preview(s, snipeUp(me.id, 400));
+    expect(o.events).toEqual([expect.objectContaining({ kind: "wall", free: true })]);
+    expect(pathLen(o.path)).toBeCloseTo(400, 3);
+    expect(wallStrength(s, s.bases[0], undefined, me.id)).toBeCloseTo(2 / 3, 9);
+  });
+
+  it("a full base shakes a lunger hard, an empty ring barely: the jolt's size follows the garrison", () => {
+    const { s, me, reds } = setup({ garrison: G, lungeKillShake: 0 });
+    for (const r of reds) put(s, r.id, r.x < 300 ? 262 : 338, r.y); // off the line
+    const lunge = (wob: number): Flick => ({ soldier: me.id, kind: "lunge", angle: UP, length: 700, bend: 0, wob });
+    const jolts = (wob: number) => preview(s, lunge(wob)).events.filter((e) => e.kind === "wall").map((e) => Math.abs(e.jolt ?? 0));
+    const full = jolts(99);
+    expect(walls(preview(s, lunge(99)))[0]).toBeCloseTo(0.4, 9);
+    for (const r of reds) r.alive = false;
+    expect(full[0]).toBeGreaterThan(0);
+    expect(jolts(99).every((j) => j === 0)).toBe(true);
   });
 });
 

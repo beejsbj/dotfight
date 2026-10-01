@@ -5,38 +5,46 @@ import "@fontsource/special-elite/400.css";
 import "./style.css";
 
 import { botArrange, botBase, LEVELS, type Level } from "./bot";
-import { Camera } from "./camera";
+import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
-  act, canArrange, canSend, garrison, illegal, newGame, pathLen, sendMax,
-  type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
+  act, canArrange, canSend, garrison, illegal, inLastStand, newGame, other, pathLen, sendMax,
+  type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
-import { haptic, haptics, Ratchet } from "./haptics";
-import { inkTime, type Snag } from "./inkclock";
+import { DETENTS, Dial, haptic, haptics, Ratchet } from "./haptics";
+import { inkTime, wallTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
-import { drawPaper, drawYellow, PageLayer, SETTLED, type Ink } from "./page";
-import { gunPull, tip, type Pose } from "./motion";
+import { drawPaper, drawYellow, CLARITY, PageLayer, SETTLED, type Ink } from "./page";
+import { LIFT_MS, SETTLE_MS, leaning, lift, PEN, settle, shiver, type PenPose } from "./pen";
+import { gunPull, tip, type Pose as Held } from "./motion";
 import * as motion from "./motion-input";
-import { leaning, PEN, type PenPose } from "./pen";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
-import { CUSTOM, RULES, SIZES, type Size } from "./rules";
-import { boldAt } from "./boil";
-import { boil, boilSeen, boilTick, forgetDrawn, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { CUSTOM, FEEL, RULES, SIZES, type Size } from "./rules";
+import { boldAt, lifeOf } from "./boil";
+import { beforeMarch, comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
+import * as voice from "./voice";
+import { ANCHOR, BUBBLE, Bubbles, botchOf, botchVoices, bubbleAt, heatOf, replyAt, strayKind, streakVoices, type BotchKind, type BubbleKind, type Context, type StreakKind, type Mood } from "./bubble";
+import { feel, setFeel } from "./feel";
+import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
+import { boil, boilSeen, boilTick, field, standRays, streak as streakLayer, forgetDrawn, life, NOTE, noteSpotNow, noteSpotsNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
 import { keepIcon, paperIcon, tearIcon } from "./icons";
 import { orderGames, type GameLine } from "./games";
 import { forgetRoom, listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
-import { apply as roomApply, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, READS, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
+import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
-import { Timeline, reachFraction } from "./timeline";
+import { Timeline, reachFraction, walkerAt } from "./timeline";
 import * as turn from "./turn";
+
+setFeel((ev) => haptic(ev));
 
 // --- state ------------------------------------------------------------------
 
@@ -50,9 +58,10 @@ let mode: Mode = { kind: "pnp" };
 let kind: Kind = "snipe";
 let selected: number | undefined;
 let aim: Pull | null = null;
+let aimFrom = 0; // the aim's angle when the thumb went down: straight up the screen
 let aimAngle = 0; // world angle of the current pull
 let byThumb = { angle: 0, dist: 0 }; // the pull as the thumb has it, before the phone's nudge
-let nudgeFrom: Pose | null = null; // how the phone was held when the pull began
+let nudgeFrom: Held | null = null; // how the phone was held when the pull began
 let penSide = 0; // the pen's sideways lean from the nudge
 let gunFwd = 0; // pen falcon: straight ahead on the page when the phone was raised
 let gunTap = false; // this touch put a raised phone down: the tap does nothing else
@@ -102,12 +111,22 @@ interface Resolve {
 }
 let res: Resolve | null = null;
 let penDrop = -1e9; // when the pen was set down on the selected soldier
+let penLift: { t0: number; x: number; y: number; owner: Player } | null = null; // and when it was picked up off him
+/** The unit cam (unitcam.ts): down at his level for a beat. `back`: where the camera was. */
+let unit: { id: number; t0: number; back: Pose; skip?: number; greeted?: boolean; rising?: boolean } | null = null;
+/**
+ * A volley (life.planVolley): a camp turning on an intruder. `t0`: wall ms he
+ * landed. `stamp`: draw his cross here, when the rules haven't marked him dead.
+ */
+let volley: { plan: VolleyPlan; t0: number; stamp: boolean; ended?: boolean } | null = null;
+/** The last pull on a man that wasn't let go (he looks down it in the unit cam). */
+let lastPull: { id: number; angle: number } | null = null;
 
 // Convoys between turns: the engine moves them the moment the pen changes
 // hands; the page holds their new dots back and shows the march as a quick
 // time-lapse before the next go (see holdLapse / runLapse).
-interface Walk { id: number; from: Pt; to: Pt }
-let lapseDue: { walkers: Walk[]; marks: number[]; out: number; home: number } | null = null;
+interface Walk { id: number; from: Pt; to: Pt; departing?: boolean; convoy?: number }
+let lapseDue: { walkers: Walk[]; marks: number[]; out: number; home: number; seen?: AnyState } | null = null;
 let lapse: { walkers: Walk[]; t0: number; dur: number } | null = null;
 
 // A send being drawn (pick a camp, drag to another, choose how many), and
@@ -118,7 +137,8 @@ let arrowTo: Pt | null = null; // the pencil end of a send being drawn
 
 const $ = <T extends HTMLElement>(q: string) => document.querySelector(q) as T;
 const els: Els = {
-  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), live: $<HTMLCanvasElement>("#live"),
+  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), fieldHost: $("#field-host"), streakHost: $("#streak-host"), raysHost: $("#rays-host"), live: $<HTMLCanvasElement>("#live"), talk: $<HTMLCanvasElement>("#talk"),
+
   light: $<HTMLCanvasElement>("#light"), haze: $<HTMLCanvasElement>("#haze"),
 };
 const over = $<HTMLCanvasElement>("#over");
@@ -161,13 +181,14 @@ function resize() {
   const bottom = br.height ? H - br.top : 0;
   cam.resize(W, H, top, bottom);
   const cw = W + cam.ox * 2, ch = H + cam.oy + cam.ob;
-  const live = els.live;
-  live.style.left = `${-cam.ox}px`;
-  live.style.top = `${-cam.oy}px`;
-  live.style.width = `${cw}px`;
-  live.style.height = `${ch}px`;
   const [pw, ph] = [Math.round(cw * sdpr), Math.round(ch * sdpr)];
-  if (live.width !== pw || live.height !== ph) { live.width = pw; live.height = ph; }
+  for (const live of [els.live, els.talk]) {
+    live.style.left = `${-cam.ox}px`;
+    live.style.top = `${-cam.oy}px`;
+    live.style.width = `${cw}px`;
+    live.style.height = `${ch}px`;
+    if (live.width !== pw || live.height !== ph) { live.width = pw; live.height = ph; }
+  }
   const [ow, oh] = [Math.round(W * dpr), Math.round(H * dpr)];
   if (over.width !== ow || over.height !== oh) { over.width = ow; over.height = oh; }
   // light and fog are gradients: a quarter of a css pixel is plenty
@@ -185,6 +206,8 @@ new ResizeObserver(() => resize()).observe($("#bottom"));
 new ResizeObserver(() => resize()).observe($("#top"));
 for (const ev of ["touchend", "click", "keydown"]) window.addEventListener(ev, sfx.unlock, { passive: true });
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** The pen's and a moving man's own motion (LIFE.pen, the ride's smear): not with reduced motion. */
+const lively = () => !reduced && !slow && !boil.tooDear;
 function applyTilt() { cam.tiltScale = settings.tilt && !reduced ? 1 : 0; }
 applyTilt();
 
@@ -267,6 +290,7 @@ function acts() {
       html = `<span>send</span>${Array.from({ length: max }, (_, i) => `<button data-act="n" data-n="${i + 1}">${i + 1}</button>`).join("")}<button data-act="cancel" class="x">cancel</button>`;
     } else if (sending) html = `<button data-act="cancel" class="x">cancel the send</button>`;
     else {
+      if (selected !== undefined && !c0.chain) html += `<button data-act="down" class="x">put down</button>`;
       if (c0.chain) html += `<button data-act="stop" class="go">stop here</button>`;
       if (!c0.sent && canSendAny(c0)) html += `<button data-act="send">send men <small>free</small></button>`;
     }
@@ -277,6 +301,48 @@ function acts() {
 /** Is there any send the current player could make? */
 function canSendAny(c0: GameState) {
   return c0.bases.some((a) => a.owner === c0.current && sendMax(c0, a.id) > 0 && c0.bases.some((b) => b !== a && !canSend(c0, a.id, b.id, 1)));
+}
+
+// A pencilled mark for the whole pull: a dot where the thumb went down, and the
+// dead zone drawn faintly as a ring at that height, riding under the thumb (the
+// page turns as you slide sideways; the pull is only the way down). With no
+// downward pull left after a real pull, the ring firms up (and ticks): let go
+// and the aim is dropped, nothing fired. One small fixed DOM element in screen
+// space, so no page or canvas layer is touched.
+// Under the ring hangs the pull's rule: a faint pencil line down to full power
+// with a notch at each detent (the ones the ratchet clicks), drawn over as far
+// as the thumb has pulled. The guide on the page is under the pen; this is
+// where the thumb is, so how hard you're pulling, of how hard you can, reads
+// at a glance.
+let ringOn = false; // the thumb is inside the ring
+let markOn = false;
+let thumbX = 0; // where the thumb is across the screen
+const ringEl = document.createElement("div");
+ringEl.id = "cancel-ring";
+ringEl.hidden = true;
+{
+  const r = FEEL.minPullPx, span = FEEL.maxPullPx - r;
+  ringEl.innerHTML = `<i></i><b class="rule" style="height:${span}px"></b><b class="drawn"></b>` +
+    DETENTS.slice(1, -1).map((d) => `<b class="tick" style="top:${r + r + d * span}px"></b>`).join("") +
+    `<b class="stop" style="top:${r + FEEL.maxPullPx}px"></b>`;
+}
+const drawnEl = () => ringEl.querySelector<HTMLElement>(".drawn")!;
+document.body.append(ringEl);
+function syncRing() {
+  const shown = !!aim && g.t === "aim";
+  if (shown && g.t === "aim") {
+    const r = FEEL.minPullPx;
+    ringEl.style.transform = `translate(${thumbX - r}px, ${g.sy - r}px)`;
+    ringEl.style.width = ringEl.style.height = `${r * 2}px`;
+    (ringEl.firstElementChild as HTMLElement).style.transform = `translate(${g.sx - thumbX}px, 0)`; // the dot stays where the thumb began
+    drawnEl().style.height = `${Math.max(0, Math.min(FEEL.maxPullPx, byThumb.dist) - r)}px`;
+  }
+  if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
+  const on = shown && !!aim && aim.charged && !pull(aim).live;
+  if (on === ringOn) return;
+  ringOn = on;
+  ringEl.classList.toggle("in", on);
+  if (on) { haptic("brink"); learn("cancel"); }
 }
 
 function status(msg?: string) {
@@ -293,13 +359,15 @@ function status(msg?: string) {
     else if (res || lapse) t = "";
     else if (isBot(s.current)) t = `${who} is lining up…`;
     else if (sending) t = sending.to !== undefined ? "how many go?" : sending.from !== undefined ? "…to another of your camps" : "drag from one of your camps to another";
-    else if (aim) t = pull(aim).live ? `let go to ${turn.verb(s, kind)}` : "pull back further…";
-    else if (c0?.chain) t = "he lunges again, or stop";
+    else if (aim) t = pull(aim).live ? (taught("cancel") ? `let go to ${turn.verb(s, kind)}` : `let go to ${turn.verb(s, kind)}, or slide back to the start to cancel`) : aim.charged ? "let go to cancel" : "pull back further…";
+    else if (c0?.chain) t = `one more for ${who}: lunge on, or stop`;
+    else if (unit) t = "";
     else if (motion.gun) t = motion.gun.armed < 1 ? "point the phone, hold it still…" : "flick your wrist to fire";
-    else if (selected !== undefined) t = motion.live("gun") ? "pull back, or tap him and raise the phone" : `pull back from anywhere, let go`;
+    else if (selected !== undefined) t = motion.live("gun") ? "pull back, or tap him and raise the phone" : LIFE.unitCam && !taught("unitcam") && taught("aim") ? "slide to turn, pull down, or tap him again" : `slide to turn the page, pull down, let go`;
     else if (c0 && c0.left > 1) t = `${who}: ${c0.left} flicks this turn`;
     else t = lastNote ? `${lastNote}` : `${who}: pick up a soldier`;
   }
+  syncRing();
   $("#status").textContent = t;
   $("#status").classList.toggle("tap", t === RESEND);
 }
@@ -334,6 +402,23 @@ function reset() {
   fx.clear();
   inkTL.clear();
   sfx.creak(0);
+  life.clear();
+  voice.reset();
+  bubbles.reset();
+  bubbleKey = "";
+  streak = { who: -1, turn: -1, kind: "", n: 0, last: undefined };
+  botchBack = null;
+  botchLast = undefined;
+  lastMoveWall = wall;
+  chosenAt = { id: -1, t0: wall };
+  dreadWas.clear();
+  volley = null;
+  unit = null;
+  penLift = null;
+  lastPull = null;
+  momentQ.length = 0;
+  earnedBy = null;
+  bubbles.reset();
   // a different page is about to be on the desk: draw it even if nothing moves
   dirty = true;
 }
@@ -420,6 +505,7 @@ function next() {
 // back, and lets go. You watch from above, the way you'd lean over a friend's.
 function showFlick(f: Flick) {
   selected = f.soldier;
+  pickUp(f.soldier);
   kind = f.kind;
   sfx.pick();
   penDrop = T;
@@ -483,10 +569,12 @@ function botSends(a: Extract<Action, { t: "send" }>) {
  */
 function perform(a: Action, then: () => void) {
   const c0 = core();
+  lastMoveWall = wall;
   if (!c0) return then();
   const before = c0.soldiers.map((x) => ({ x: x.x, y: x.y }));
   const first = c0.marks.length;
   const o = act(c0, a);
+  if (a.t === "stop") streak = { who: -1, turn: -1, kind: "", n: 0, last: undefined };
   save();
   if (a.t === "send") { sfx.scratch(0.4, 0.3, 1800); cue("send", a.n); }
   holdLapse(o, before, first);
@@ -508,7 +596,7 @@ function holdLapse(o: Outcome, before: Pt[], first: number) {
     for (const id of c.ids) {
       const x = c0.soldiers[id], b = before[id];
       if (!x.alive || (b.x === x.x && b.y === x.y)) continue;
-      walkers.push({ id, from: b, to: { x: x.x, y: x.y } });
+      walkers.push({ id, from: b, to: { x: x.x, y: x.y }, departing: o.walked.includes(c.id), convoy: c.id });
       if (o.walked.includes(c.id)) out++; else home++;
     }
   }
@@ -541,14 +629,32 @@ function runLapse(then: () => void) {
   if (screen === "game") {
     if (due.out) cue("walk-out", due.out);
     if (due.home) cue("arrive", due.home);
+    // one of the marchers, setting off; or, once they're there, one arriving
+    const group = due.walkers.filter((w) => w.departing === !!due.out);
+    const w = group[Math.floor(seeded(s.seed, s.turn, 71) * group.length)];
+    if (w && due.out) speak("send", w.id);
+    else if (w && due.home) speak("arrive", w.id, wall + dur / speed);
   }
   busy = true;
   hud();
   after(dur + 80, () => { lapse = null; dirty = true; then(); });
 }
 
+// The soldier sits low on the screen when you aim, so the page ahead of the shot is what you see.
+const AIM_FY = 0.74;
+// Aiming turns the page under your thumb: sliding sideways swings the aim by
+// turnK() rad per px: the width of the phone (less the free zones) is a full turn (from the
+// middle of the screen you can reach straight back toward your own side). The
+// first TURN_DEAD px are free, so a straight pull stays straight.
+const TURN_DEAD = 8;
+const turnK = () => (Math.PI * 2) / Math.max(200, cam.W - TURN_DEAD * 2);
+/** Straight up the screen for this player, as a world angle. */
+const forwardAngle = () => -(Math.PI / 2 + rotFor(s.current));
+/** Nothing is being aimed: the page goes back to facing its player. */
+function faceForward() { cam.face(rotFor(s.current), reduced); }
+
 // Lean in low to the pen to aim. Everything else is watched from above.
-function sitOn(p: Pt, fy = 0.66) {
+function sitOn(p: Pt, fy = AIM_FY) {
   if (cam.tiltScale > 0) cam.sit(p, 2.1, 0.55, fy);
   else cam.sit(p, 2, 0, 0.55);
 }
@@ -597,6 +703,7 @@ const penLean = (power: number) => 0.06 + power * 0.5;
 // `power` is how hard the pen was pulled back; `lean` how far it was leaning when it went.
 function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?: boolean; quick?: number } = {}) {
   const who = s.current;
+  lastMoveWall = wall;
   const first = s.marks.length; // the flick appends its stroke, then its crosses
   const before = s.soldiers.map((x) => ({ x: x.x, y: x.y }));
   const o = turn.flick(s, f);
@@ -604,6 +711,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   selected = undefined;
   aim = null;
   busy = true;
+  acts();
   sfx.creak(0);
   // convoys marching as the pen changes hands wait for the ink to land
   holdLapse(o, before, first);
@@ -618,6 +726,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   const kills: Resolve["kills"] = [];
   const snags: Snag[] = [];
   const moments: Resolve["moments"] = [];
+  const stands: { i: number; owner: Player }[] = [];
   const live = opts.cam ?? true; // replays are watched, not felt
   let lastKill = -1;
   for (let i = first + 1; i < s.marks.length; i++) if (s.marks[i].t === "cross" && (s.marks[i] as { kind: string }).kind === "kill") lastKill = i;
@@ -627,9 +736,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     if (held.has(i)) continue;
     if (m.t === "stand") {
       // their comrades are gone: the last few are ringed once the crosses are down
-      const at = dur + 380 * quick;
-      inkTL.add(`m${i}`, 0, at, 500 * quick);
-      moments.push({ at, fn: () => { sfx.scratch(0.5, 0.35, 1600); if (live) cue("last-stand", m.owner); } });
+      stands.push({ i, owner: m.owner });
       continue;
     }
     if (m.t !== "cross") continue;
@@ -646,18 +753,33 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     }
   }
   snags.sort((a, b) => a.at - b.at);
+  const seen = pendingState();
+  let volleyHold = 0;
   if (o.crashed !== undefined) {
-    // he lands among their men, and they shoot him where he stands
-    const base = o.crashed;
-    moments.push({ at: dur + 20 * quick, fn: () => { sfx.snag(true); sfx.cross(0.03, 1.1); if (live) { cam.shake(7); cue("lunge-death", base); } } });
+    // he lands among their men, and they shoot him where he stands: every man
+    // home turns on him and jabs (life.planVolley), and his cross, the snag and
+    // the thud land on the last jab
+    const base = o.crashed, end = o.path[o.path.length - 1];
+    const plan = startVolley(base, { id: f.soldier, x: end.x, y: end.y }, wall + wallTime(dur, snags) / speed, false, seen);
+    if (plan) {
+      volleyHold = plan.cross * speed;
+      s.marks.forEach((m, i) => { if (i >= first && m.t === "cross" && m.kind === "lost") inkTL.add(`m${i}`, 0, dur + volleyHold, VOLLEY.crossMs * speed); });
+    }
+    moments.push({ at: dur + 20 * quick + volleyHold, fn: () => { if (live) { sfx.snag(true); sfx.cross(0.03, 1.1); cam.shake(7); cue("lunge-death", base); } } });
   }
-  if (o.earned && live) moments.push({ at: dur, fn: () => cue("earned", core()?.left ?? 0) });
+  feelFlick(o, f, dur, snags, n, seen, volleyHold);
+  for (const { i, owner } of stands) {
+    const at = dur + Math.max(380 * quick, volleyHold ? volleyHold + VOLLEY.crossMs * speed : 0);
+    inkTL.add(`m${i}`, 0, at, 500 * quick);
+    moments.push({ at, fn: () => { sfx.scratch(0.5, 0.35, 1600); if (live) cue("last-stand", owner); } });
+  }
+  if (o.earned && live) moments.push({ at: dur, fn: () => { earnedBy = { id: f.soldier, kind: f.kind }; cue("earned", core()?.left ?? 0); } });
   const pen = opts.pen ?? true;
   const penTail = pen ? 900 * quick : 0;
   res = {
     f, o, owner: who, power, t0: T, dur, snags, kills, first, moments,
     mover: f.kind === "lunge" ? f.soldier : undefined,
-    end: Math.max(dur + penTail, dur + 330 * quick) + 60,
+    end: Math.max(dur + penTail, dur + 330 * quick, volleyHold ? dur + volleyHold + VOLLEY.crossMs * speed + 300 : 0) + 60,
     pen, cam: opts.cam ?? true, startLean: lean, startAngle: f.angle,
     done: () => {
       lastNote = noteFor(who, f, o);
@@ -667,12 +789,380 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
       runLapse(() => handOver());
     },
   };
-  // straight back up to a bird's-eye view to watch the ink land
-  if (opts.cam ?? true) cam.overview();
+  // straight back up to a bird's-eye view to watch the ink land. The page stays
+  // turned the way it was aimed, so the ink runs straight up the screen (slid
+  // across if that would leave the soldier off the side); once the ink has
+  // landed and the pen has fallen, it turns back to face whoever flicked (the
+  // state has already moved on to the next player) and settles centred, so the
+  // turn is done about as the pen is lifted.
+  if (live) {
+    const home = rotFor(who);
+    cam.overview(undefined, before[f.soldier]);
+    moments.push({ at: dur + 350 * quick, fn: () => { cam.face(home, reduced); cam.overview(); } });
+  }
   sfx.slip(power);
   sfx.stroke(dur / 1000 / speed + 0.05, f.kind === "snipe" ? 0.6 : 0.45);
   hud();
 }
+
+// --- the living feel it (life.ts, voice.ts) --------------------------------------
+
+const heard = () => screen === "game"; // replays are watched in silence
+
+// Comic bubbles (bubble.ts): rare, one at a time, seeded by the page and the man.
+const bubbles = new Bubbles();
+let bubbleKey = "";
+let devHour: number | undefined; // dev: pin the hour of the day the men remark on
+let devHeat: number | undefined; // dev: pin how hot the war is (captures of early and late lines)
+let lastMoveWall = 0; // wall ms of the last move: a long wait brings yawns and crickets
+/** What a line is said in the light of: the sides' pen names on this paper, the paper, the hour, how hot the war is. */
+function noteContext(owner: Player): Context {
+  const c0 = core();
+  const dead = s.soldiers.filter((x) => !x.alive).length;
+  const standing = !!c0 && (inLastStand(c0, 0) || inLastStand(c0, 1));
+  return { me: theme.ink.names[owner], them: theme.ink.names[other(owner)], paper: theme.id, hour: devHour ?? new Date().getHours(), heat: devHeat ?? heatOf(s.turn, dead, s.soldiers.length, standing) };
+}
+/** The camp a man speaks from: his home base, else his side's nearest. */
+function campOf(id: number) {
+  const x = pendingState().soldiers[id];
+  if (!x) return undefined;
+  const home = "home" in x ? x.home : undefined;
+  if (home !== undefined && s.bases[home]) return home;
+  const own = s.bases.filter((b) => b.owner === x.owner).sort((a, b) => Math.hypot(a.x - x.x, a.y - x.y) - Math.hypot(b.x - x.x, b.y - x.y));
+  return own[0]?.id;
+}
+/** One departure snapshot per pending march; the reducer remains at the destination. */
+function pendingState(): AnyState {
+  if (!lapseDue) return s;
+  return lapseDue.seen ??= beforeMarch(s, lapseDue.walkers);
+}
+
+/** A moving soldier's displayed position, rather than the reducer's destination. */
+function displayedAt(id: number): Pt {
+  if (res?.mover === id) {
+    const it = inkTime(T - res.t0, res.snags);
+    if (it < res.dur) return resolveHead(res, it);
+  }
+  const pending = lapseDue?.walkers.find((w) => w.id === id);
+  if (pending) return pending.from;
+  const w = lapse?.walkers.find((w) => w.id === id);
+  if (!w || !lapse) return s.soldiers[id];
+  const p = Math.min(1, Math.max(0.001, (T - lapse.t0) / lapse.dur));
+  return walkerAt(w.from, w.to, p);
+}
+
+/** Future offers wait for the display camera; immediate offers need a visible anchor. */
+function noteOnScreen(p: Pt, t0 = wall) {
+  if (t0 > wall) return true;
+  const q = cam.toScreen(p.x, p.y);
+  return q.x >= 20 && q.x <= W - 20 && q.y >= 60 && q.y <= H - 120;
+}
+
+/** Offer a line from a man or camp; `mate` is a nearby comrade who replies. */
+function speak(kind: BubbleKind, id: number, t0 = wall, seed?: number, mate?: number) {
+  if (!heard() || slow || boil.tooDear || !LIFE.bubbles) return;
+  const base = ANCHOR[kind] === "base";
+  const at = base ? s.bases[id] : s.soldiers[id];
+  if (!at || (!base && !(at as Soldier).alive)) return;
+  const pos = base ? at : displayedAt(id);
+  if (!noteOnScreen(pos, t0)) return; // off screen, or under the HUD when offered now
+  const b = bubbles.offer(kind, id, t0, seed ?? Math.floor(seeded(s.seed, s.turn, id, kind.length) * 2 ** 31), noteContext(at.owner), mate);
+  if (b) {
+    if (kind === "send") b.at = { x: pos.x, y: pos.y };
+    dirty = true;
+  }
+}
+
+/**
+ * A streak on the page: chained lunges (the engine's `chain.link`), or snipes
+ * that keep earning, in one turn. Counted here, for presentation only.
+ */
+let streak = { who: -1, turn: -1, kind: "", n: 0, last: undefined as StreakKind | undefined };
+/** How long the streak is after this flick (0: it didn't earn, and any streak is over; `ended`: how long the one it ended was). */
+function countStreak(o: Outcome, f: Flick, who: Player) {
+  if (!o.earned) { const ended = streak.n; streak.n = 0; streak.last = undefined; return { n: 0, ended }; }
+  const c0 = core();
+  if (streak.who === who && streak.turn === s.turn && streak.kind === f.kind) streak.n++;
+  else streak = { who, turn: s.turn, kind: f.kind, n: 1, last: undefined };
+  // a lunge chain's count is the engine's own
+  if (f.kind === "lunge" && c0?.chain?.soldier === f.soldier) streak.n = c0.chain.link;
+  return { n: streak.n, ended: 0 };
+}
+/**
+ * The page reacts to a streak `n` links long (from 2), at wall `t0`: the
+ * streaker, the enemy man nearest him, his home camp, or the camp nearest him
+ * he's tearing through; picked by a seeded roll, not the one who spoke last,
+ * and only someone on screen when displayed. It rubs out whatever's there.
+ */
+function speakStreak(n: number, id: number, t0: number, seed: number, only?: StreakKind) {
+  if (!heard() || slow || boil.tooDear || n < 2) return null;
+  const seen = pendingState();
+  const me = seen.soldiers[id];
+  if (!me) return null;
+  const foe = other(me.owner);
+  const d = (p: Pt) => Math.hypot(p.x - me.x, p.y - me.y);
+  const onScreen = (p: Pt) => noteOnScreen(p, t0);
+  const who = (k: StreakKind): number | undefined => {
+    if (k === "streakMe") return me.alive ? id : undefined;
+    if (k === "streakFoe") return turn.aliveOf(seen, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+    if (k === "streakCamp") return campOf(id);
+    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+  };
+  for (const k of only ? [only] : streakVoices(n, seeded(seed, n, 71), streak.last)) {
+    const at = who(k);
+    if (at === undefined) continue;
+    const p = ANCHOR[k] === "base" ? seen.bases[at] : seen.soldiers[at];
+    if (!p || !onScreen(p)) continue;
+    const owner = k === "streakMe" || k === "streakCamp" ? me.owner : foe;
+    const b = bubbles.urgent(k, at, t0, Math.floor(seeded(seed, n, 73) * 2 ** 31), { ...noteContext(owner), streak: n });
+    if (b) { streak.last = k; dirty = true; return b; }
+  }
+  return null;
+}
+
+/**
+ * A botch on the page: the shooter's miss, graded (bubble.ts botchOf) and
+ * remarked on by the flicker, his own camp, or the enemy man or camp nearest
+ * where the ink ended; not the voice that remarked last, only someone on
+ * screen when displayed, and only if nothing's up (a streak's line comes first). A
+ * spectacular one is remembered for a sly callback on the other side's go.
+ */
+let botchLast: BotchKind | undefined;
+let botchBack: { who: Player; turn: number; queued?: NonNullable<ReturnType<Bubbles["urgent"]>> } | null = null;
+function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number, only?: BotchKind) {
+  if (!heard() || slow || boil.tooDear || grade < 1) return null;
+  const seen = pendingState();
+  const me = seen.soldiers[id];
+  if (!me) return null;
+  if (!only && seeded(seed, 17) >= BUBBLE.botch.chance[Math.min(2, grade)]) return null;
+  const foe = other(me.owner);
+  const d = (p: Pt) => Math.hypot(p.x - end.x, p.y - end.y);
+  const onScreen = (p: Pt) => noteOnScreen(p, t0);
+  const who = (k: BotchKind): number | undefined => {
+    if (k === "botchMe") return me.alive ? id : undefined;
+    if (k === "botchCamp") return campOf(id);
+    if (k === "botchFoe") return turn.aliveOf(seen, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+  };
+  for (const k of only ? [only] : botchVoices(grade, seeded(seed, grade, 79), botchLast)) {
+    const at = who(k);
+    if (at === undefined) continue;
+    const p = ANCHOR[k] === "base" ? seen.bases[at] : seen.soldiers[at];
+    if (!p || !onScreen(p)) continue;
+    const owner = k === "botchMe" || k === "botchCamp" ? me.owner : foe;
+    // a spectacular one rubs out whatever's up ("Charge!" and then this), unless it's a streak's line;
+    // a mild one waits its turn like any other note
+    const up = bubbles.next ?? bubbles.cur, streaking = !!up && up.kind.startsWith("streak");
+    const ls = Math.floor(seeded(seed, grade, 83) * 2 ** 31), c = { ...noteContext(owner), botch: grade };
+    const b = grade >= 2 && !streaking ? bubbles.urgent(k, at, t0, ls, c) : bubbles.offer(k, at, t0, ls, c, undefined, BUBBLE.botch.gapMs);
+    if (b) { botchLast = k; dirty = true; return b; }
+    return null; // something's up (a streak's line, a phew): it keeps the page
+  }
+  return null;
+}
+
+/**
+ * A moment the field must announce: written whatever the chance, after any other
+ * moment showing (bubble.ts Bubbles.moment). It waits for the camera to settle
+ * first (a note's gap is chosen once, so one picked while the camera swings out
+ * to bird's-eye would sit where the screen no longer is), for at most 1.5s.
+ */
+const momentQ: { kind: BubbleKind; id: number; text: string; mood: Mood; since: number; salt: number }[] = [];
+/** `salt` tells apart the same line said twice in one turn (a lunge chain's "One more!"), so each gets its own placement. */
+function announce(kind: BubbleKind, id: number, text: string, delay = 120, mood: Mood = "shout", salt = 0) {
+  if (!heard() || slow || boil.tooDear || !s.soldiers[id]?.alive) return;
+  momentQ.push({ kind, id, text, mood, since: wall + delay, salt });
+  dirty = true;
+}
+function flushMoments() {
+  // Keep later announcements outside Bubbles until they can actually start.
+  // Their camera wait begins after the previous mandatory note finishes.
+  bubbles.showing(wall);
+  if (bubbles.cur?.important) {
+    if (momentQ.length) momentQ[0].since = Math.max(momentQ[0].since, wall + 150);
+    return;
+  }
+  while (momentQ.length && wall >= momentQ[0].since && (cam.settled || wall - momentQ[0].since > 1500)) {
+    const m = momentQ.shift()!;
+    if (!heard() || slow || boil.tooDear) continue;
+    const speaker = s.soldiers[m.id];
+    if (!speaker) continue;
+    if (!speaker.alive && m.kind === "stand") m.id = turn.aliveOf(s, speaker.owner)[0]?.id ?? m.id;
+    if (bubbles.moment(m.kind, m.id, wall, Math.floor(seeded(s.seed, s.turn, m.id, m.kind.length, m.text.length, m.salt) * 2 ** 31), m.text, m.mood)) { dirty = true; return; }
+  }
+}
+
+/** A soldier picked up: he perks up and says so; a campmate mutters. */
+function pickUp(id: number) {
+  const x = s.soldiers[id];
+  if (LIFE.chosen) life.add(id, { kind: "perk", t0: wall, amp: 1 });
+  if (!heard()) return;
+  // one voice at most, and not every time: him, now and then; or, rarely, a campmate's mutter
+  speak("ready", id);
+  const roll = seeded(id, s.turn, 61);
+  if (roll < 0.5) voice.say("hup", id, x.owner, 0.03);
+  else if (roll < 0.62) {
+    const mate = comrades(s, x.owner, x, RULES.baseRadius * 1.6, id)[0];
+    if (mate) voice.say("murmur", mate.id, x.owner, 0.2, 0.8);
+  }
+}
+
+/** Tap your man again while leaning in: the camera drops to his eye level, looking where he looks. */
+function startUnitCam(id: number) {
+  if (!LIFE.unitCam || unit || aim || res) return;
+  const me = s.soldiers[id];
+  learn("unitcam");
+  const face = facing(s, id, lastPull?.id === id ? lastPull.angle : undefined);
+  unit = { id, t0: T, back: { ...cam.tgt } };
+  const rot = rotFacing(face, cam.cur.rot);
+  if (cam.tiltScale > 0 && lively()) cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.m, tilt: UNIT_CAM.tilt, fy: UNIT_CAM.fy, rot };
+  else cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.flatM, tilt: 0, fy: 0.55, rot };
+  if (!lively()) cam.snap(); // no swoop: just his view
+  if (LIFE.chosen) life.add(id, { kind: "perk", t0: wall, amp: 1 });
+  if (heard()) voice.say("look", id, me.owner, 0.05);
+  speak("ready", id);
+  feel("unitcam");
+  status("");
+  dirty = true;
+}
+
+/** Per frame while the unit cam runs: greet at the bottom, stand back up when it's time. */
+function stepUnitCam() {
+  const u = unit!;
+  const p = phaseAt(T - u.t0, u.skip);
+  if (p.phase === "hold" && !u.greeted) {
+    u.greeted = true;
+    const me = s.soldiers[u.id];
+    if (LIFE.chosen) life.add(u.id, { kind: "hop", t0: wall, amp: 0.8 });
+    if (heard() && seeded(u.id, s.turn, 63) < 0.35) voice.say("hup", u.id, me.owner, 0.08);
+  }
+  if ((p.phase === "rise" || p.phase === "done") && !u.rising) {
+    u.rising = true;
+    // back to where you were; or, if the touch that cut it short picked another man or stood you up, there
+    if (selected === u.id) cam.tgt = { ...u.back };
+    else if (selected === undefined) cam.overview(u.back.rot);
+    else cam.tgt = { ...cam.tgt, rot: u.back.rot };
+    if (!lively()) cam.snap();
+    penDrop = T; // the pen comes back down onto him
+    dirty = true; // includes the reduced/slow camera snap and the pen returning
+    status();
+  }
+  if (p.phase === "done") { unit = null; dirty = true; }
+}
+/** Any touch cuts the unit cam short. */
+function skipUnitCam() { if (unit && !unit.rising) unit.skip = T - unit.t0; }
+
+/**
+ * A flick just fired: plan how the page feels it (life.planFlick), on the wall
+ * clock the boil draws by. Ink time is snagged on each kill; `when` turns a
+ * place on the line into the wall ms at which the ink's head gets there.
+ */
+function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number, seen: AnyState, volleyHold: number) {
+  const when = (i: number) => wallTime(reachFraction(Math.min(n, Math.round(i)), n) * dur, snags) / speed;
+  const arrive = wallTime(dur, snags) / speed;
+  const plan = planFlick(seen, o, f.soldier, f.kind === "snipe" ? "shoot" : "move", when, arrive, arrive + volleyHold / speed);
+  const on = (k: string) => (k === "recoil" || k === "flinch" || k === "gasp" ? LIFE.line : k === "land" ? LIFE.chosen : LIFE.crowd);
+  for (const { id, r } of plan.acts) if (on(r.kind)) life.add(id, { ...r, t0: wall + r.t0 });
+  if (LIFE.camps) for (const h of plan.hush) life.hold(h.base, wall + h.at, wall + h.at + h.ms);
+  const st = countStreak(o, f, s.soldiers[f.soldier].owner); // counted even unheard, so it's right when the sound comes back
+  if (!heard()) return;
+  // under your thumb: your camp cheering your kill; the bot's ink going right past one of yours
+  const shooter = s.soldiers[f.soldier].owner;
+  const cheer = plan.acts.find((a) => a.r.kind === "cheer");
+  if (cheer && !away(shooter)) after(cheer.r.t0 * speed, () => feel("cheer"));
+  const close = plan.cues.find((c) => c.say === "eep" && !away(s.soldiers[c.id].owner));
+  if (close && away(shooter)) after(close.at * speed, () => feel("flinch"));
+  // a botch: graded from the flick as it ran; a spectacular one takes the page from the target's "phew"
+  const bo = st.n === 0 && st.ended < 3 ? botchOf({
+    kind: f.kind, from: o.path[0], aim: f.angle, path: o.path, killed: o.killed.length, lost: o.lost, crashed: o.crashed !== undefined,
+    offPage: o.events.some((e) => e.kind === "edge") || (o.lost && o.crashed === undefined),
+    foes: turn.aliveOf(seen, other(shooter)), own: seen.bases.filter((b) => b.owner === shooter),
+  }) : null;
+  const phew = plan.cues.find((c) => c.say === "phew");
+  if (phew && (bo?.grade ?? 0) < 2) speak("phew", phew.id, wall + phew.at);
+  // in writing: a lunger yells as he goes, a big snipe fires with a shout; a kill
+  // (or the last one: the war is won) is claimed; a campmate mourns the fallen
+  const camp = campOf(f.soldier);
+  // a streak: the page reacts once the kill that keeps it going lands, bigger with every link; when a long one ends, the camp it tore through breathes out
+  const seed = s.seed * 31 + s.turn * 977 + f.soldier;
+  if (f.kind === "lunge" && camp !== undefined) speak("lunge", camp);
+  else if (pathLen(o.path) > 480 && camp !== undefined) speak("snipe", camp);
+  if (st.n >= 2) speakStreak(st.n, f.soldier, wall + arrive + 180, seed);
+  else if (cheer && !o.lost) { if (s.phase === "over") { if (camp !== undefined) speak("win", camp, wall + cheer.r.t0 + 120); } else speak("kill", f.soldier, wall + cheer.r.t0 + 120); }
+  if (bo?.grade) {
+    const end = o.path[o.path.length - 1];
+    speakBotch(bo.grade, f.soldier, end, wall + arrive + 260, seed + 5);
+    if (bo.grade >= 2) botchBack = { who: shooter, turn: o.handover ? s.turn - 1 : s.turn }; // the turn he flicked in (a miss hands the pen over)
+  }
+  if (st.ended >= 3 && s.phase !== "over") {
+    const foe = other(shooter), me = s.soldiers[f.soldier];
+    const near = s.bases.filter((b) => b.owner === foe).sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0];
+    if (near) speak("streakEnd", near.id, wall + arrive + 400);
+  }
+  const oh = plan.cues.find((c) => c.say === "oh");
+  if (oh) speak("mourn", oh.id, wall + oh.at + 240);
+  // a flick is one moment: one voice, now and then two, never the crowd
+  for (const c of voice.curate(plan.cues, f.soldier * 131 + s.turn)) {
+    const x = s.soldiers[c.id];
+    voice.say(c.say, c.id, x.owner, c.at / 1000, c.gain, c.len);
+  }
+}
+
+/**
+ * A camp turns on an intruder: every living defender jabs a quick line at him
+ * in a ripple round the ring, and he's crossed out. `at`: wall ms he lands.
+ * `stamp`: the rules haven't crossed him out, so draw it (the dev hook; with
+ * the lunge rule the engine's own cross is held back to land on the last jab).
+ * Returns the plan, or null for an empty ring or disabled optional motion.
+ */
+function startVolley(base: number, target: { id: number; x: number; y: number }, at = wall, stamp = true, seen: AnyState = s) {
+  if (!LIFE.crowd || !lively()) return null;
+  const plan = planVolley(seen, base, target);
+  if (!plan) return null;
+  volley = { plan, t0: at, stamp };
+  for (const { id, r } of plan.acts) life.add(id, { ...r, t0: at + r.t0 });
+  if (stamp) life.still(target.id, at + plan.cross);
+  if (LIFE.camps) life.hold(base, at + plan.cross, at + plan.cross + 500);
+  if (heard()) {
+    const lead = Math.max(0, at - wall);
+    for (const c of voice.curate(plan.cues, target.id * 17 + base)) voice.say(c.say as voice.Say, c.id, s.soldiers[c.id].owner, (lead + c.at) / 1000, c.gain);
+    after(lead * speed, () => { if (heard() && !away(s.soldiers[target.id].owner)) feel("volley"); });
+    if (stamp) after((lead + plan.cross) * speed, () => { sfx.snag(false); sfx.cross(0.02, 1); });
+    speak("deny", base, at + plan.cross + 260);
+  }
+  dirty = true;
+  return plan;
+}
+
+// A side down to its last few (the core rules' last stand, cues.ts): one of them
+// says so, once. The haptic for it is routed with the other cues.
+onCue((c, p) => {
+  if (c !== "last-stand" || p === undefined || !heard()) return;
+  const few = turn.aliveOf(s, p as Player);
+  if (few[0]) voice.say("uhoh", few[0].id, p as Player, 0.15, 0.8);
+  if (few.length) {
+    // beside the survivors: the one nearest their centre speaks
+    const cx = few.reduce((a, x) => a + x.x, 0) / few.length, cy = few.reduce((a, x) => a + x.y, 0) / few.length;
+    const mid = few.reduce((b, x) => (Math.hypot(x.x - cx, x.y - cy) < Math.hypot(b.x - cx, b.y - cy) ? x : b));
+    announce("stand", mid.id, "LAST STAND!", 250);
+  }
+});
+
+// Two with one, and a lunge chain: the earning flick's soldier writes it on the
+// field. What stays (the "+1" beside the shooter, the chain's ring) is drawn from
+// state, not from here.
+let earnedBy: { id: number; kind: Kind } | null = null;
+onCue((c) => {
+  if (c !== "earned" || !earnedBy) return;
+  const who = earnedBy, c0 = core();
+  // the same note for both ways of earning another go: a snipe that took two, a lunge that killed
+  const salt = (c0?.chain?.link ?? 0) * 8 + (c0?.left ?? 0);
+  if (who.kind === "snipe") announce("more", who.id, "One more!", 120, "say", salt);
+  else if (c0?.chain) announce("more", c0.chain.soldier, "One more!", 120, "say", salt);
+
+});
 
 // What the status line says after a flick.
 function noteFor(who: Player, f: Flick, o: Outcome) {
@@ -682,8 +1172,8 @@ function noteFor(who: Player, f: Flick, o: Outcome) {
   if (o.crashed !== undefined) return k ? `${name(who)}'s lunger took ${k}, landed among them, and was shot` : `${name(who)}'s lunger landed among them and was shot`;
   if (o.lost) return `${name(who)} flicked a soldier off the page`;
   const stood = o.stood.length ? ` · ${o.stood.map((p) => name(p)).join(" and ")}: the last ${c0?.rules.lastStandAt ?? 4}, two flicks a turn` : "";
-  if (o.earned && f.kind === "snipe") return `two with one: ${name(who)} flicks again${stood}`;
-  if (o.earned) return `${name(who)}'s lunger took ${k}: lunge again or stop${stood}`;
+  if (o.earned && f.kind === "snipe") return `one more for ${name(who)}${stood}`;
+  if (o.earned) return `${name(who)}'s lunger took ${k}: one more, lunge on or stop${stood}`;
   if (k) return `${name(who)}'s ${v === "shoot" ? "shot" : v === "move" ? "run" : v} crossed out ${k}${stood}`;
   return (f.kind === "lunge" ? `${name(who)} ${v === "move" ? "moved" : "lunged"}` : `${name(who)} missed`) + stood;
 }
@@ -692,6 +1182,12 @@ function nearestIndex(pts: Pt[], p: Pt) {
   let bi = 0, bd = Infinity;
   pts.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; bi = i; } });
   return bi;
+}
+
+/** The same eased, snag-aware ink head positions the rider, pen and live notes. */
+function resolveHead(r: Resolve, it: number) {
+  const p = Math.min(1, Math.max(0, it / r.dur));
+  return headAt(r.o.path, 1 - Math.pow(1 - p, 2));
 }
 
 // where the head of a line is at progress p, and which way it is going
@@ -732,7 +1228,7 @@ function resolvePen(r: Resolve, it: number): PenPose | undefined {
   if (!r.pen) return undefined;
   const p = Math.min(1, it / r.dur);
   const e = 1 - Math.pow(1 - p, 2);
-  const h = headAt(r.o.path, e);
+  const h = resolveHead(r, it);
   const ink = inkLeft(r.owner);
   if (it < r.dur) {
     // already tipped toward the shot, it pitches further forward as it skids
@@ -996,6 +1492,7 @@ function showSettings() {
     ${row("handoff", settings.handoff, "pause between turns", "pass & play: tap before the next go")}
     ${row("sound", !sfx.muted, "sound", "pen, paper, lamp")}
     ${haptics.supported ? row("haptics", haptics.enabled, "haptics", "the pen felt under your thumb") : ""}
+    ${row("voices", voice.level > 0, `voices: ${voice.levelName()}`, "the soldiers' little voices")}
     ${motion.settingsHtml(row)}
     <h3>Paper</h3>
     ${row("surprise", !chosen, "a surprise each time", chosen ? `always the ${themeOf(chosen).name.toLowerCase()}` : "a different book every time you open it")}
@@ -1030,6 +1527,12 @@ function showSettings() {
       sfx.rustle();
     } else if (k === "sound") sfx.setMuted(!sfx.muted);
     else if (k === "haptics") { haptics.setEnabled(!haptics.enabled); haptic("tap"); }
+    else if (k === "voices") {
+      // on, soft, off
+      voice.setLevel(voice.level >= 1 ? 0.5 : voice.level > 0 ? 0 : 1);
+      const mine = turn.aliveOf(s, s.current)[0] ?? s.soldiers[0];
+      if (mine) voice.say("hup", mine.id, mine.owner, 0.05);
+    }
     else if (k === "tilt" || k === "handoff") {
       settings[k] = !settings[k];
       localStorage.setItem(`pft:${k}`, settings[k] ? "1" : "0");
@@ -1508,7 +2011,7 @@ async function openRoom(code: string) {
   } catch (e) {
     return home(e instanceof RoomHttpError && e.status === 404 ? "that page has gone: links last 30 days after the last move" : "couldn't open that page: check your signal and open the link again");
   }
-  if (!READS.includes(v.engine)) return home("that page needs a newer copy of the game: reload");
+  if (!roomCanRead(v.engine)) return home("that page needs a newer copy of the game: reload");
   roomEntry?.abort();
   const entry = roomEntry = new AbortController();
   const host = v.names[0];
@@ -1617,7 +2120,7 @@ function signatureFor(st: AnyState, m: Mode) {
 // --- input ------------------------------------------------------------------
 
 type Gesture =
-  | { t: "aim"; id: number; sx: number; sy: number; tapOn?: number }
+  | { t: "aim"; id: number; sx: number; sy: number; tapOn?: number; again?: boolean }
   | { t: "pan"; id: number; lx: number; ly: number; sx: number; sy: number }
   | { t: "place"; id: number; off: number }
   | { t: "pinch"; d0: number; m0: number }
@@ -1651,19 +2154,35 @@ function ownBaseAt(w: Pt) {
 }
 
 function select(id: number) {
-  if (selected !== id) { sfx.pick(); haptic("pickup"); penDrop = T; }
+  if (selected !== id) { sfx.pick(); haptic("pickup"); penDrop = T; pickUp(id); }
   if (!taught("aim") && selected === undefined) fx.add("teach", T, 500, 1100, "linear");
   selected = id;
+  faceForward();
   sitOn(s.soldiers[id]);
   dirty = true;
+  acts();
   status();
 }
 
+/**
+ * Aiming only ever happens leaned in over the soldier in hand, under the fog:
+ * the camera is sitting on him (close, tilted unless "sit down to aim" is off).
+ * Anything that moves the camera off him (a pinch, the wheel) puts him down.
+ */
+function leanedIn(id: number | undefined) {
+  if (id === undefined) return false;
+  const p = s.soldiers[id], t = cam.tgt;
+  return t.m >= 1.9 && Math.hypot(t.x - p.x, t.y - p.y) < 2 && (cam.tiltScale === 0 || t.tilt > 0.3);
+}
+
 function standUp() {
+  if (selected !== undefined && LIFE.pen && lively() && screen === "game") { const me = s.soldiers[selected]; penLift = { t0: T, x: me.x, y: me.y, owner: me.owner }; }
   selected = undefined;
   motion.lower();
+  faceForward();
   cam.overview();
   dirty = true;
+  acts();
   status();
 }
 
@@ -1676,16 +2195,21 @@ const humanTurn = () => screen === "game" && !away(s.current) && !busy && $("#sh
 
 over.addEventListener("pointerdown", (e) => {
   sfx.unlock();
+  const cut = !!unit && !unit.rising;
+  skipUnitCam();
   // touching the screen puts a raised phone down (the touch then does what it always did)
   gunTap = !!motion.gun;
   if (motion.gun) lowerGun();
   over.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 2) {
-    // two fingers always mean the camera: stand up, then zoom
+    // two fingers always mean the camera: put the soldier down (no aim survives
+    // zoomed out, out of the fog), then zoom
     if (aim) sfx.creak(0);
     aim = null;
+    faceForward();
     ghost = undefined;
+    if (selected !== undefined) standUp();
     if (cam.cur.tilt > 0.02 || cam.tgt.tilt > 0) { cam.tgt = { ...cam.tgt, tilt: 0, fy: cam.fitFy }; cam.cur = { ...cam.cur, tilt: 0, fy: cam.fitFy }; }
     const { d } = pinchInfo();
     g = { t: "pinch", d0: d, m0: cam.cur.m };
@@ -1728,9 +2252,13 @@ over.addEventListener("pointerdown", (e) => {
   }
   if (humanTurn() && s.phase === "play" && !sending && w) {
     const near = nearestOwn(w);
+    // a soldier in hand but the camera off him (never should be): put him down, then treat this as a fresh touch
+    if (selected !== undefined && !leanedIn(selected)) standUp();
     if (near !== undefined || selected !== undefined) {
+      // a second tap on the man already in hand: the unit cam, on lift
+      const again = !cut && near !== undefined && near === selected;
       if (near !== undefined && near !== selected) select(near);
-      g = { t: "aim", id: e.pointerId, sx: e.clientX, sy: e.clientY, tapOn: near };
+      g = { t: "aim", id: e.pointerId, sx: e.clientX, sy: e.clientY, tapOn: near, again };
       return;
     }
   }
@@ -1783,8 +2311,13 @@ over.addEventListener("pointermove", (e) => {
   if (g.t === "aim" && g.id === e.pointerId && selected !== undefined) {
     if (!aim) {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
+      if (!leanedIn(selected)) { standUp(); g = { t: "none" }; return; }
+      if (leanOf() < 0.6) return; // still easing in from the page view: the aim waits until he's under the fog
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
+      aimFrom = forwardAngle();
+      speak("aim", selected);
       ratchet.reset();
+      dial.reset();
       acts();
       nudgeFrom = motion.held();
     }
@@ -1794,21 +2327,28 @@ over.addEventListener("pointermove", (e) => {
   }
 });
 
-// The pull, in page terms: the pen should point exactly opposite your thumb
-// on screen, even with the desk tilted. Power stays in screen px.
+// The thumb does two separate things: sliding sideways turns the page (the aim
+// angle is where it began plus TURN_K per px, nothing to do with how far the
+// camera has caught up), and pulling down sets the power. The camera follows
+// the angle, so the shot always points up the screen and the pull comes down.
 function updateAim(x: number, y: number) {
   if (!aim || g.t !== "aim") return;
-  const dx = g.sx - x, dy = g.sy - y, dist = Math.hypot(dx, dy);
-  const me = s.soldiers[aim.soldierId];
-  byThumb = { angle: screenDirToWorld(cam.view(), me, dx, dy), dist };
+  const dx = x - g.sx, dy = y - g.sy;
+  thumbX = x;
+  const eff = Math.sign(dx) * Math.max(0, Math.abs(dx) - TURN_DEAD);
+  byThumb = { angle: aimFrom + eff * turnK(), dist: Math.max(0, dy) };
   steer();
   aim.kind = kind;
   const p = pull(aim);
   if (p.live && !aim.charged) { aim.charged = true; aim.t0 = T; }
   // a ratchet: detents as power builds, tightening toward full
   if (ratchet.step(p.power, p.live) !== null) haptic("notch", p.power);
+  // and a dial: the page clicks past every 30 degrees of turn, firmer passing straight ahead. Felt, never snapped to.
+  const k = dial.step(eff * turnK());
+  if (k !== null) { const home = Dial.home(k); haptic("dial", home ? 1 : 0); sfx.dial(home); }
 }
 const ratchet = new Ratchet();
+const dial = new Dial();
 
 // The thumb sets the aim; with the motion levels on, the phone's tilt trims it
 // and the hand's tremor sets the wobble. Either way it ends up in the pull, so
@@ -1821,6 +2361,8 @@ function steer() {
   aim.x = -Math.cos(aimAngle) * byThumb.dist;
   aim.y = -Math.sin(aimAngle) * byThumb.dist;
   aim.steady = motion.steady();
+  cam.aimUp(aimAngle);
+  if (reduced) cam.cur.rot = cam.tgt.rot; // no easing: the page is under your thumb
 }
 
 // Pen falcon: tap a soldier, raise the phone and point it; a flick of the wrist fires.
@@ -1845,7 +2387,7 @@ function stepGun() {
   if (e?.t === "fire") {
     const id = selected;
     motion.lower();
-    if (id === undefined || !humanTurn() || !turn.canFlick(s, id, kind)) return;
+    if (id === undefined || !humanTurn() || !turn.canFlick(s, id, kind) || !leanedIn(id)) return;
     learn("aim");
     const f = release(gunPull(id, kind, gunFwd + e.delta, e.power, T), T, (pw) => turn.lengthFor(s, kind, pw), turn.handFor(s, id, kind))!;
     haptic("flick", e.power);
@@ -1907,19 +2449,37 @@ function up(e: PointerEvent) {
     const tapped = Math.hypot(p.x - g.sx, p.y - g.sy) < TAP;
     if (aim && e.type === "pointerup") {
       updateAim(p.x, p.y);
+      if (aim.charged && !pull(aim).live) {
+        // thumb back at the start: a cancel, quietly. He stays picked up.
+        aim = null;
+        faceForward();
+        sfx.creak(0);
+        g = { t: "none" };
+        acts();
+        status();
+        dirty = true;
+        return;
+      }
       const f = release(aim, T, (pw) => turn.lengthFor(s, kind, pw), turn.handFor(s, aim.soldierId, kind));
       const pw = pull(aim).power;
       const lean = penLean(pw);
       aim = null;
       sfx.creak(0);
-      if (f && turn.canFlick(s, f.soldier, f.kind)) { learn("aim"); haptic("flick", pw); fire(f, pw, lean); }
-      else status("too soft: pull back further");
+      if (f && !leanedIn(f.soldier)) { standUp(); status(); }
+      else if (f && turn.canFlick(s, f.soldier, f.kind)) { learn("aim"); haptic("flick", pw); fire(f, pw, lean); }
+      else { status("too soft: pull back further"); if (selected !== undefined) lastPull = { id: selected, angle: aimAngle }; }
     } else if (tapped && gunTap) {
       // that tap put the raised phone down
     } else if (tapped && g.tapOn === undefined) {
       standUp(); // tap on empty paper puts the pen down
-    } else if (tapped) raiseGun();
+    } else if (tapped) {
+      // tap your pick again: raise the phone to aim by hand, or (no motion sensor) drop to his eye level
+      if (g.again && selected !== undefined && !motion.live("gun")) startUnitCam(selected);
+      else raiseGun();
+    }
     aim = null;
+    // a fired shot keeps the page turned its way until the ink lands (fire() turns it back); anything else faces forward now
+    if (!res && !unit) faceForward();
     sfx.creak(0);
     g = { t: "none" };
     acts();
@@ -1939,6 +2499,7 @@ over.addEventListener("pointercancel", up);
 over.addEventListener("contextmenu", (e) => e.preventDefault());
 over.addEventListener("wheel", (e) => {
   e.preventDefault();
+  if (selected !== undefined && !busy) { aim = null; sfx.creak(0); standUp(); }
   if (cam.cur.tilt > 0.02) { cam.tgt = { ...cam.tgt, tilt: 0, fy: cam.fitFy }; cam.cur = { ...cam.cur, tilt: 0, fy: cam.fitFy }; }
   cam.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.002));
   dirty = true;
@@ -1961,9 +2522,11 @@ $("#acts").onclick = (e) => {
   const b = (e.target as HTMLElement).closest("button");
   const c0 = core();
   if (!b || !c0 || !humanTurn()) return;
+  unit = null; // turn controls cancel the view before changing the player or camera
   sfx.tap();
   const a = b.dataset.act;
   if (a === "ready") return perform({ t: "ready" }, () => handOver());
+  if (a === "down") { learn("cancel"); standUp(); dirty = true; return; }
   if (a === "send") { sending = {}; selected = undefined; cam.overview(); }
   else if (a === "cancel") { sending = null; arrowTo = null; }
   else if (a === "n" && sending?.to !== undefined) {
@@ -1984,6 +2547,7 @@ $("#acts").onclick = (e) => {
 };
 $("#page-btn").onclick = () => {
   sfx.tap();
+  if (unit) { unit = null; }
   if (selected !== undefined && !busy) standUp();
   else cam.overview();
   dirty = true;
@@ -1999,7 +2563,7 @@ document.addEventListener("click", (e) => { if (e.isTrusted && (e.target as Elem
 window.addEventListener("keydown", (e) => {
   if (e.key === "l" || e.key === "m") $<HTMLButtonElement>('#kind [data-kind="lunge"]')?.click();
   if (e.key === "s") $<HTMLButtonElement>('#kind [data-kind="snipe"]')?.click();
-  if (e.key === "Escape") { aim = null; sfx.creak(0); if (!busy) standUp(); }
+  if (e.key === "Escape") { if (unit) { skipUnitCam(); return; } aim = null; faceForward(); sfx.creak(0); if (!busy) standUp(); }
 });
 
 // --- frame ------------------------------------------------------------------
@@ -2018,7 +2582,9 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   frameTimes.push(now - last);
   if (frameTimes.length > 240) frameTimes.shift();
-  const dt = Math.min(50, now - last) * speed;
+  let dt = Math.min(50, now - last) * speed;
+  // dev: time advanced by hand, for frame-exact captures (game and boil clocks together)
+  if (handClock) { dt = handClock.due; handClock.due = 0; }
   last = now;
   T += dt;
   // due callbacks (from this game only)
@@ -2038,8 +2604,10 @@ function frame(now: number) {
     }
   }
   if (res) { stepResolve(); active = true; }
+  if (unit) stepUnitCam();
+  if (volley && (LIFE.crowd && lively() || volley.stamp) && wall - volley.t0 < volley.plan.ends) active = true;
   const live = fx.end(T) > T || inkTL.end(0) > 0;
-  if (live || wasLive || aim || botAim || lampOn.moving || dawn.moving || T - penDrop < 260) active = true;
+  if (live || wasLive || aim || botAim || lampOn.moving || dawn.moving || T - penDrop < (LIFE.pen ? SETTLE_MS + 240 : 260) || (penLift && T - penLift.t0 < LIFT_MS)) active = true;
   wasLive = live;
   if (aim) {
     steer();
@@ -2050,8 +2618,66 @@ function frame(now: number) {
   }
   if (motion.gun) { stepGun(); active = true; }
   wall = boilClock ?? now;
+  if (volley && !volley.ended && wall - volley.t0 >= volley.plan.ends) {
+    volley.ended = true;
+    if (!volley.stamp) volley = null; // the actual rule cross is already on the page
+    dirty = true; // erase the final jab pixels once; dev stamps remain permanent
+  }
   const bo = boilOn();
   if (bo !== boilWas) { boilWas = bo; dirty = true; }
+  // A callback belongs to the next go; expire an unwritten queued line with it.
+  if (botchBack && (s.phase !== "play" || s.turn > botchBack.turn + 1)) {
+    const queued = botchBack.queued;
+    if (queued && bubbles.next === queued) bubbles.next = null;
+    if (queued && bubbles.cur === queued) bubbles.cur = null;
+    botchBack = null;
+  }
+  // a bubble redraws only while it's written on or fading (on twos), and to go
+  flushMoments();
+  const bb = heard() && !slow && !boil.tooDear ? bubbles.showing(wall) : null;
+  const bk = bb ? `${bubbleAt(bb, wall, reduced)?.key ?? ""}|${replyAt(bb, wall, reduced)?.key ?? ""}` : "";
+  if (bk !== bubbleKey) { bubbleKey = bk; dirty = true; }
+  if (bb && bb === botchBack?.queued) botchBack = null; // started: once is enough, even during a flick
+  // One seeded callback chance on Dawood-bot's go, independent of idle windows.
+  // The bot is busy even while thinking/aiming; this note must be allowed then.
+  const back = botchBack && botchBack.who !== s.current && s.turn === botchBack.turn + 1 ? botchBack : null;
+  if (back && isBot(s.current) && heard() && LIFE.bubbles && !slow && !boil.tooDear && !aim && !res) {
+    if (back.queued && bubbles.next !== back.queued && bubbles.cur !== back.queued) back.queued = undefined;
+    if (!back.queued && !bubbles.next && !bubbles.cur?.kind.startsWith("streak")) {
+      if (seeded(s.seed, back.turn, back.who, 13) >= BUBBLE.botch.backChance) botchBack = null;
+      else {
+        const mine = turn.aliveOf(s, s.current).filter((x) => noteOnScreen(displayedAt(x.id)));
+        const me = mine[Math.floor(seeded(s.seed, s.turn, 83) * mine.length)];
+        if (me) {
+          // offer() waits for the full show and normal gap. urgent() erases
+          // the previous note before writing this one, keeping one per page.
+          const b = bubbles.urgent("botchBack", me.id, wall, Math.floor(seeded(s.seed, s.turn, me.id, 9) * 2 ** 31), noteContext(me.owner));
+          if (b) { back.queued = b; dirty = true; }
+        }
+      }
+    }
+  }
+  // now and then, on your go with nothing happening, a stray thought
+  const waited = wall - lastMoveWall;
+  if (screen === "game" && LIFE.bubbles && !slow && !boil.tooDear && !away(s.current) && s.phase === "play" && !aim && !res && !busy && selected === undefined && bubbles.idleDue(wall, s.seed, waited, !!back)) {
+    const mine = turn.aliveOf(s, s.current), theirs = turn.aliveOf(s, other(s.current));
+    const lead = mine.length - theirs.length;
+    if (mine.length) {
+      const me = mine[Math.floor(seeded(s.seed, s.turn, Math.floor(wall / 1000)) * mine.length)];
+      const inBase = s.bases.some((b) => b.owner === me.owner && Math.hypot(b.x - me.x, b.y - me.y) < b.r);
+      const c0 = core();
+      let kind = strayKind(seeded(s.seed, s.turn, Math.floor(wall / 1000), 3), { lead, waited, inBase, heat: noteContext(me.owner).heat });
+      if (kind === "chant" && c0 && inLastStand(c0, me.owner)) kind = "chantLast";
+      if (back) kind = "botchBack";
+      // an exchange wants a comrade near enough to talk to, but not so near their two dots read as one from above
+      const near = comrades(s, me.owner, me, RULES.baseRadius * 2.5, me.id);
+      const far = (x: Soldier) => Math.abs(Math.hypot(x.x - me.x, x.y - me.y) - RULES.baseRadius * 1.3);
+      const mate = (near.filter((x) => Math.hypot(x.x - me.x, x.y - me.y) >= RULES.soldierRadius * 6).sort((a, b) => far(a) - far(b))[0] ?? near[0])?.id;
+      if (ANCHOR[kind] === "base") { const camp = campOf(me.id); if (camp !== undefined) speak(kind, camp); }
+      else speak(kind, me.id, wall, undefined, mate);
+      if (back && bubbles.cur?.kind === "botchBack") botchBack = null;
+    }
+  }
   if (active || dirty) {
     const t0 = performance.now();
     renderNow();
@@ -2069,6 +2695,8 @@ function frame(now: number) {
 }
 let wall = 0;
 let boilClock: number | undefined; // dev: pin the boil's wall time, to capture its frames in order
+let handClock: { due: number } | null = null; // dev: game time moves only when stepped
+let hidePen = false; // dev: captures of the man the pen stands on
 
 function currentFrame(): Frame {
   const v = cam.view();
@@ -2078,12 +2706,37 @@ function currentFrame(): Frame {
   const lf = fx.live(T), li = inkTL.live(it);
   if (lf.size || li.size) {
     const liveSet = new Set([...lf, ...li]);
+    // Their old dots are standing ink, free to boil; only the new marks wait.
+    // runLapse clears lapseDue and restores the existing animated dot keys.
+    for (const w of lapseDue?.walkers ?? []) liveSet.delete(`d${w.id}`);
     ink = { p: (k) => (inkTL.pending(k, it) ? inkTL.p(k, it) : fx.p(k, T)), live: liveSet };
   }
   const f: Frame = {
-    s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
+    s: pendingState(), pageSource: s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
     selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
+  const bb = heard() && !slow && !boil.tooDear ? bubbles.showing(wall) : null;
+  if (bb) {
+    const shown = lifeOf(f.s, ink).soldiers;
+    f.hud = { h: H, top: cam.top, bottom: cam.bottom };
+    f.heat = noteContext(s.current).heat;
+    const bs = bubbleAt(bb, wall, reduced);
+    if (bs) {
+      if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k && (bb.important || noteOnScreen(k))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
+      else {
+        let x = s.soldiers[bb.id];
+        if (bb.important && bb.kind === "stand" && x && !x.alive) {
+          const next = turn.aliveOf(s, x.owner)[0];
+          if (next) { bb.id = next.id; x = next; }
+        }
+        if (x && (shown.has(x.id) || bb.important) && (bb.important || noteOnScreen(bb.at ?? displayedAt(x.id)))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: bb.at ?? displayedAt(x.id), p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && { ...s.soldiers[bb.reply.id], ...displayedAt(bb.reply.id) } }; }
+
+
+    }
+    const rs = replyAt(bb, wall, reduced), rx = bb.reply && s.soldiers[bb.reply.id], rat = rx && displayedAt(rx.id);
+    if (rs && rx && shown.has(rx.id) && rat && noteOnScreen(rat)) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rat, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: { ...s.soldiers[bb.id], ...displayedAt(bb.id) }, answers: `${bb.seed}|${bb.text}` };
+  }
+
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
   if (ghost) {
@@ -2107,11 +2760,34 @@ function currentFrame(): Frame {
     // sends ordered this turn wait in pencil until the pen changes hands
     const orders = c0.convoys.filter((c) => c.state === "ordered");
     if (orders.length) f.orders = orders.map((c) => ({ a: c.road[0], b: c.road[1], at: c.ids.map((id) => c0.soldiers[id]) }));
+    // soldiers out on the road, where a lunger could catch them
+    const marching = new Set(lapse?.walkers.map((w) => w.id));
+    const pending = new Map(lapseDue?.walkers.map((w) => [w.id, w]));
+    const out = c0.convoys.flatMap((c) => {
+      const dir = Math.atan2(c.road[1].y - c.road[0].y, c.road[1].x - c.road[0].x);
+      return c.ids.filter((id) => {
+        const walk = pending.get(id), w = walk?.convoy === c.id ? walk : undefined;
+        // Departures still stand at home; arrivals still stand on the road.
+        const onRoad = w ? !w.departing : c.state === "road";
+        return onRoad && c0.soldiers[id].alive && !marching.has(id);
+      }).map((id) => ({ at: displayedAt(id), dir }));
+    });
+    if (out.length) f.road = out;
     if (sending?.from !== undefined && arrowTo) {
       const from = c0.bases[sending.from];
       const w = sending.to ?? ownBaseAt(arrowTo);
       f.sendArrow = { from, to: arrowTo, ok: w !== undefined && w !== sending.from && !canSend(c0, sending.from, w, 1) };
     }
+  }
+  if (c0 && (c0.phase === "play" || c0.phase === "over" || res) && (screen === "game" || screen === "replay" || screen === "view")) {
+    // a side in its last stand keeps its survivors marked; a lunger owed another lunge is ringed with his link count
+    const held = ([0, 1] as Player[]).filter((p) => c0.stand[p] > 0 && (!res || it >= res.dur || !res.o.stood.includes(p)));
+    if (held.length) {
+      const living = lifeOf(c0, ink).soldiers;
+      f.stand = c0.soldiers.filter((x) => living.has(x.id) && held.includes(x.owner)).map((x) => ({ ...displayedAt(x.id), id: x.id }));
+    }
+    const owed = c0.chain && c0.soldiers[c0.chain.soldier];
+    if ((!res || it >= res.dur) && owed?.alive) f.chain = { at: owed, link: c0.chain!.link };
   }
   if (lapse) {
     const p = Math.min(1, Math.max(0, (T - lapse.t0) / lapse.dur));
@@ -2134,10 +2810,11 @@ function currentFrame(): Frame {
   if (res) {
     const r = res;
     const p = Math.min(1, it / r.dur);
-    const h = headAt(r.o.path, 1 - Math.pow(1 - p, 2));
-    if (r.mover !== undefined && it < r.dur) f.mover = { id: r.mover, at: h };
+    const h = resolveHead(r, it);
+    // riding his ink: stretched out along it, most at the start when it's fastest
+    if (r.mover !== undefined && it < r.dur) f.mover = { id: r.mover, at: h, angle: h.angle, stretch: LIFE.chosen && lively() ? 1 + 0.6 * (1 - p) : 1 };
     f.pen = resolvePen(r, it);
-  } else if (selected !== undefined && screen === "game") {
+  } else if (selected !== undefined && screen === "game" && !(unit && !unit.rising)) {
     const me = s.soldiers[selected];
     const owner = me.owner;
     const ink = inkLeft(owner);
@@ -2145,7 +2822,9 @@ function currentFrame(): Frame {
       const pl = pull(aim);
       const ang = aimAngle + wobble(aim, T, turn.handFor(s, selected, kind));
       f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: aimError(pl.power, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pl.power), kind };
-      f.pen = tip(leaning(me.x, me.y, ang, pl.live ? penLean(pl.power) : 0.04, owner, ink), ang, penSide);
+      // at full pull it shivers under the finger (the pen only: the aim is the hand's)
+      const sh = LIFE.pen && lively() && pl.live ? shiver(T, pl.power) : 0;
+      f.pen = tip(leaning(me.x, me.y, ang + sh * 3, pl.live ? penLean(pl.power) + sh : 0.04, owner, ink), ang, penSide);
       // a lunger landing among their men is shot: those camps are hatched while you aim one
       if (kind === "lunge" && c0) f.danger = c0.bases.filter((b) => b.owner !== c0.current && garrison(c0, b).length).map((b) => ({ x: b.x, y: b.y, r: b.r }));
     } else if (botAim) {
@@ -2166,12 +2845,29 @@ function currentFrame(): Frame {
       f.aim = { soldierId: selected, angle: ang, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind, sight: motion.gun.armed, sightAt: at };
       f.pen = leaning(me.x, me.y, ang, 0.2 + 0.15 * motion.gun.armed, owner, ink);
     } else {
-      // set down on the dot: drops in, then stands
+      // set down on the dot: drops in, then rocks a few times finding its balance
       const k = Math.min(1, (T - penDrop) / 240);
-      f.pen = leaning(me.x, me.y, 0, 0.03, owner, ink);
+      const rock = LIFE.pen && lively() ? settle(T - penDrop - 240) : 0;
+      f.pen = leaning(me.x, me.y, (me.id * 2.39) % 6.283, 0.03 + rock, owner, ink);
       f.pen.h = 70 * (1 - k) * (1 - k);
       f.pen.alpha = k;
     }
+  }
+  if (volley) {
+    const v = volley, e = wall - v.t0;
+    if (LIFE.crowd && lively() && e < v.plan.ends) f.jabs = v.plan.jabs.map((j) => ({
+      pts: j.pts, owner: j.owner, seed: j.seed,
+      p: Math.max(0, Math.min(1, (e - j.at) / j.dur)),
+      alpha: Math.max(0, Math.min(1, 1 - (e - j.at - j.dur) / VOLLEY.fade)),
+    }));
+    if (v.stamp) f.stamp = { x: v.plan.target.x, y: v.plan.target.y, owner: s.bases[v.plan.base].owner, seed: v.plan.target.id * 131 + 5, p: Math.max(0, Math.min(1, (e - v.plan.cross) / VOLLEY.crossMs)) };
+  }
+  if (hidePen) f.pen = undefined; // dev: to see the man under it
+  // lifted off the man you put down: up and away, not gone in a blink
+  if (!f.pen && penLift && screen === "game") {
+    const l = lift(T - penLift.t0);
+    if (l) { f.pen = leaning(penLift.x, penLift.y, 0, 0.05, penLift.owner, inkLeft(penLift.owner)); f.pen.h = l.h; f.pen.alpha = l.alpha; }
+    else penLift = null;
   }
   return f;
 }
@@ -2198,8 +2894,35 @@ function differ(a: ImageData | null, b: ImageData | null, only?: (x: number, y: 
   return { bad, of: a.width * a.height, box: bad ? [x0, y0, x1, y1] : null };
 }
 
+// What the living see this frame (life.ts): whose go it is, who's in hand, where the pen points.
+let chosenAt = { id: -1, t0: 0 };
+function seeLife(f: Frame) {
+  // A struggling device has neither soldier poses nor dread notes to consume this work.
+  if (slow || boil.tooDear) { dreadWas.clear(); return; }
+  const sel = f.selected ?? (f.aim ? f.aim.soldierId : undefined);
+  if (sel !== chosenAt.id) chosenAt = { id: sel ?? -1, t0: wall };
+  const r = f.view.rot;
+  const ink = f.ink ?? SETTLED;
+  life.see({
+    s: f.s, up: Math.atan2(-Math.cos(r), -Math.sin(r)), zoom: cam.cur.m,
+    pendingStand: new Set([...ink.live].flatMap((k) => {
+      const m = k[0] === "m" ? s.marks[+k.slice(1)] : undefined;
+      return m?.t === "stand" && ink.p(k) <= 0 ? [m.owner] : [];
+    })),
+    eager: s.phase === "play" && !res && screen === "game" ? s.current : undefined,
+    chosen: sel !== undefined && !res ? { id: sel, t0: chosenAt.t0 } : undefined,
+    aim: f.aim && !res ? { angle: f.aim.angle, power: f.aim.power, reach: f.aim.reach, spread: f.aim.spread } : undefined,
+  }, wall);
+  // a pen newly pointed at a man: now and then, "!"
+  const dread = life.dreading.filter((id) => !dreadWas.has(id));
+  dreadWas = new Set(life.dreading);
+  if (dread.length) speak("dread", dread[0]);
+}
+let dreadWas = new Set<number>();
+
 function renderNow() {
   const f = currentFrame();
+  seeLife(f);
   const bg = farColour(f.lamp);
   if (document.body.style.backgroundColor !== bg) document.body.style.backgroundColor = bg;
   document.body.style.setProperty("--lamp", f.lamp.on.toFixed(3));
@@ -2227,6 +2950,9 @@ if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
     get selected() { return selected; }, get res() { return res; }, get lapse() { return lapse; }, haptics, get link() { return link; }, get mode() { return mode; }, get roomDrift() { return roomDrift; },
+    get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; },
+    /** A camp turns on an intruder (the lunge rule's execution, by hand): `pft.volley(baseId, soldierId)`. */
+    volley: (base: number, id: number) => { const x = s.soldiers[id]; return startVolley(base, { id, x: x.x, y: x.y }); }, set hidePen(v: boolean) { hidePen = v; dirty = true; },
     set speed(v: number) { speed = v; }, get speed() { return speed; },
     poke: () => { dirty = true; },
     /**
@@ -2234,12 +2960,27 @@ if (import.meta.env.DEV) {
      * frame: per layer, how many pixels differ by more than antialiasing, and where.
      */
     redrawCheck: () => {
-      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, rings: boil.parts[0].c, rest: boil.parts[1].c };
-      const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => [k, c.width && c.height && c.style.visibility !== "hidden" ? c.getContext("2d")!.getImageData(0, 0, c.width, c.height) : null]));
-      renderNow();
+      const f = currentFrame();
+      seeLife(f);
+      // Presentation observers run once; both sides draw the exact same frame.
+      const draw = () => { renderStage(els, f); renderOverlay(og, f, W, H, dpr); };
+      draw();
+      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, field: field.c, streak: streakLayer.c, rings: boil.parts[0].c, rest: boil.parts[1].c, ...Object.fromEntries([...standRays].map(([id, p]) => [`rays${id}`, p.c])) };
+
+      // Read a copy: repeated reads of the drawing context make Chrome switch
+      // raster backends, changing antialiasing between the two snapshots.
+      const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => {
+        if (!c.width || !c.height || c.style.visibility === "hidden") return [k, null];
+        const copy = document.createElement("canvas");
+        copy.width = c.width; copy.height = c.height;
+        const g = copy.getContext("2d", { willReadFrequently: true })!;
+        g.drawImage(c, 0, 0);
+        return [k, g.getImageData(0, 0, c.width, c.height)];
+      }));
+      draw();
       const a = grab();
       forgetDrawn();
-      renderNow(); renderNow(); // the boil draws one of its two canvases a render
+      draw(); draw(); // the boil draws one of its two canvases a render
       const b = grab();
       // the boil leaves what's off screen at its last look until it comes into view: compare what's on it
       const on = boilSeen(), S = pageState.S;
@@ -2251,7 +2992,7 @@ if (import.meta.env.DEV) {
       };
       return Object.fromEntries(Object.keys(layers).map((k) => [k, differ(a[k], b[k], mask(k))]));
     },
-    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view }; },
+    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view, bubble: f.bubble, mover: f.mover, stand: f.stand, road: f.road, jabs: f.jabs, stamp: f.stamp }; },
     frames: (reset = false) => {
       const stats = (src: number[]) => {
         const a = [...src].sort((x, y) => x - y);
@@ -2262,8 +3003,26 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    stageStats, boil, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
+    stageStats, boil, life, LIFE, CLARITY, NOTE, standRays, noteSpot: noteSpotNow, noteSpots: noteSpotsNow, set hour(h: number | undefined) { devHour = h; }, set heat(h: number | undefined) { devHeat = h; }, set waitedSince(ms: number) { lastMoveWall = ms; }, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
     set boilClock(ms: number | undefined) { boilClock = ms; },
+    /** Frame-exact captures: `pft.hand(true)`, then `pft.step(ms)` moves the game and the boil on together. */
+    hand: (on: boolean) => { handClock = on ? { due: 0 } : null; if (on) boilClock ??= wall; else boilClock = undefined; },
+    step: (ms: number) => { if (!handClock) return; handClock.due += ms; boilClock = (boilClock ?? wall) + ms; },
+    say: voice.say, voice, get wall() { return wall; }, bubbles, announce, speak, speakStreak, speakBotch, botchOf,
+    /** Voices rendered offline, as 16-bit mono WAV bytes (base64), for listening outside the game. */
+    voiceWav: async (lines: Parameters<typeof voice.renderLines>[0]) => {
+      const pcm = await voice.renderLines(lines);
+      const b = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+      const str = (o: number, s: string) => [...s].forEach((c, i) => b.setUint8(o + i, c.charCodeAt(0)));
+      str(0, "RIFF"); b.setUint32(4, 36 + pcm.length * 2, true); str(8, "WAVEfmt "); b.setUint32(16, 16, true);
+      b.setUint16(20, 1, true); b.setUint16(22, 1, true); b.setUint32(24, 44100, true); b.setUint32(28, 88200, true);
+      b.setUint16(32, 2, true); b.setUint16(34, 16, true); str(36, "data"); b.setUint32(40, pcm.length * 2, true);
+      let peak = 0;
+      pcm.forEach((v, i) => { peak = Math.max(peak, Math.abs(v)); b.setInt16(44 + i * 2, Math.max(-1, Math.min(1, v)) * 32767, true); });
+      let bin = "";
+      new Uint8Array(b.buffer).forEach((x) => (bin += String.fromCharCode(x)));
+      return { wav: btoa(bin), peak, secs: pcm.length / 44100 };
+    },
     cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
     get slow() { return slow; }, set slow(v: boolean) { slow = v; cam.quick = v ? 1.8 : 1; probeSlow = v; },
     start, showTitle, replay: () => replay(file(s, mode)), apply: (st: Step) => { apply(s, st); dirty = true; },

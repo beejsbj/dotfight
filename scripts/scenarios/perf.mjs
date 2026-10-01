@@ -3,7 +3,9 @@
 // pulling back, and (pass and play) the page turning. "script" is main-thread
 // time per rendered frame, the budget a phone's CPU pays; "frame" is the
 // interval between frames in this headless (GPU-less) Chrome.
-// "idle" is a page with nothing moving: only the line boil ticking (8 fps).
+// "idle" is a page with nothing moving: only the line boil ticking (12 fps),
+// and with soldier life, the men breathing and hopping on their side's go.
+// "a kill" fires a shot into the fullest enemy camp and times what follows.
 // BOIL=on pins the boil on and stops the slow-device probe (headless Chrome
 // has no GPU and always looks slow, which would switch the boil off);
 // BOIL=off pins it off with the probe stopped too, for a like-for-like baseline.
@@ -13,16 +15,21 @@ import { idle } from "../lib/phone.mjs";
 export default async function (T, out) {
   const { page, cdp } = T;
   await page.waitForTimeout(1200);
-  const turns = +(process.env.TURNS ?? 70);
+  // Seed 11 finishes at turn 28 on core-4; 27 is its last full live turn.
+  const turns = +(process.env.TURNS ?? 27);
   // THEME=<id> measures one paper (otherwise it's whichever the load drew)
   if (process.env.THEME) await page.evaluate((id) => window.pft.theme?.apply(id), process.env.THEME);
   const info = await page.evaluate((turns) => {
     const r = window.pft.fileWar(11, turns);
     r.mode = { kind: "pnp" };
+    window.pft.LIFE.bubbles = false;
     window.pft.resumeRecord(r);
     return { marks: window.pft.s.marks.length, phase: window.pft.s.phase, turn: window.pft.s.turn };
   }, turns);
   console.log("page:", JSON.stringify(info));
+  if (info.phase !== "play") {
+    throw new Error(`War is not in play phase (phase: "${info.phase}", turn: ${info.turn}); choose smaller TURNS to measure a live game.`);
+  }
   await idle(T);
   await page.waitForTimeout(800);
   const pin = process.env.BOIL;
@@ -30,7 +37,8 @@ export default async function (T, out) {
   // a page just opened makes its boil sprites over the first second or so
   // (give a pinned boil a frame to take its plan first)
   await page.waitForTimeout(250);
-  await page.waitForFunction(() => window.pft.boil?.settled !== false, undefined, { timeout: 10000 });
+  // Software ANGLE can need more than ten seconds to make the sprites on a cold launch.
+  await page.waitForFunction(() => window.pft.boil?.settled !== false, undefined, { timeout: 30000 });
   await page.waitForTimeout(300);
   const rate = +(process.env.THROTTLE ?? 1);
   if (rate > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate });
@@ -46,16 +54,33 @@ export default async function (T, out) {
   await measure("idle (boil only)", 2000);
   const me = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.find((x) => x.alive && x.owner === s.current); });
   const a = await T.world(me.x, me.y);
-  await T.tap(a.x, a.y, 40);
-  await measure("lean in (camera move)", 1200);
+  // Start sampling before pickup: a throttled CDP tap can outlast the lean.
+  await measure("lean in (camera move)", 1200, () => T.tap(a.x, a.y, 40));
   await T.touch("touchStart", [[195, 600]]);
   for (let i = 1; i <= 8; i++) { await T.touch("touchMove", [[195 + i, 600 + i * 14]]); await page.waitForTimeout(20); }
   await measure("aiming (held pull)", 2000);
   await T.shot(`${out}/perf-aim.png`);
+  // sweeping the thumb sideways: on the turning-page camera the sheet swings under it
+  await measure("aiming (sweep sideways)", 2400, async () => {
+    for (let j = 0; j < 40; j++) {
+      await T.touch("touchMove", [[195 + Math.sin(j / 6) * 150, 600 + 112]]);
+      await page.waitForTimeout(55);
+    }
+  });
   await T.touch("touchEnd", []);
   await measure("flick + pull back", 1500);
   await measure("page turn (pnp)", 1800);
   await T.shot(`${out}/perf-after.png`);
+  // a shot into the fullest enemy camp: (with soldier life) flinches, gasps,
+  // a camp holding still, the shooter's camp cheering
+  await idle(T, 60000);
+  await measure("a kill, camps reacting", 2200, () => page.evaluate(() => {
+    const s = window.pft.s;
+    const me = s.soldiers.find((x) => x.alive && x.owner === s.current);
+    const foes = s.soldiers.filter((x) => x.alive && x.owner !== s.current);
+    const t = foes.reduce((a, b) => (foes.filter((x) => Math.hypot(x.x - b.x, x.y - b.y) < 70).length > foes.filter((x) => Math.hypot(x.x - a.x, x.y - a.y) < 70).length ? b : a));
+    window.pft.act({ soldierId: me.id, kind: "shoot", angle: Math.atan2(t.y - me.y, t.x - me.x), length: 1800, bend: 0 });
+  }));
   const slow = await page.evaluate(() => window.pft.slow);
   const boil = await page.evaluate(() => ({ on: window.pft.boilOn, ticks: window.pft.stageStats.boil, tooDear: window.pft.boil?.tooDear, living: window.pft.s.soldiers.filter((x) => x.alive).length }));
   if (rate > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });

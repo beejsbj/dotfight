@@ -8,13 +8,22 @@
 
 import { rng, type Mark, type Pt } from "./game";
 import type { AnyState as GameState } from "./record";
-import { INK, handText, inkCircle, inkCross, inkDot, inkFlick, inkOp, paint, paperGrain } from "./ink";
+import { INK, handText, inkCircle, inkCross, inkDot, inkFlick, inkLeft, inkOp, inkScribble, paint, paperGrain } from "./ink";
 import { GAME } from "./name";
 import { RULES } from "./rules";
 import type { Hold } from "./boil";
 import { theme, type Theme } from "./theme";
 
 type Ctx = CanvasRenderingContext2D;
+
+/**
+ * How the spent (the dead, and the spots men have left) recede so the living
+ * stand out. The page is append-only, so this is decided when a dot is inked:
+ * a living soldier is held off the page (boil sprite) until he dies or moves,
+ * and only then is his dot put down, faded (or, with `hollow`, as an empty
+ * ring). `ring` puts an ink ring round each living man, on his sprite.
+ */
+export const CLARITY = { fade: 0.38, hollow: true, ring: false };
 
 /** How far along each mark is being drawn. Keys: `b<id>` base, `d<soldier>` dot, `m<index>` mark, `sign`. */
 export interface Ink {
@@ -303,19 +312,45 @@ export function drawBase(g: Ctx, b: GameState["bases"][number], p = 1, wob = 0, 
   inkCircle(g, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.8 * theme.ink.width, 2, p, wob, amp);
 }
 
-export function drawMark(g: Ctx, m: Mark, p = 1, wob = 0) {
+/**
+ * Where the soldier who left the spot of "moved" mark `i` went: the spot he
+ * left next (a later "moved" mark of his), else where he stands now. Pure, so a
+ * rebuilt page draws the same arrows as the one that was inked.
+ */
+export function wentTo(s: GameState, i: number): Pt | undefined {
+  const m = s.marks[i];
+  if (m?.t !== "cross" || m.kind !== "moved") return undefined;
+  const id = m.id ?? (s.v === 1 ? s.flicks[m.turn - 1]?.soldierId : undefined);
+  if (id === undefined) return undefined;
+  for (let j = i + 1; j < s.marks.length; j++) {
+    const n = s.marks[j];
+    if (n.t === "cross" && n.kind === "moved" && (n.id ?? (s.v === 1 ? s.flicks[n.turn - 1]?.soldierId : undefined)) === id) return { x: n.x, y: n.y };
+  }
+  const x = s.soldiers[id];
+  return x && (x.x !== m.x || x.y !== m.y) ? { x: x.x, y: x.y } : undefined;
+}
+
+// `to`: where a soldier who left this spot went (wentTo), for the arrow.
+export function drawMark(g: Ctx, m: Mark, p = 1, wob = 0, to?: Pt) {
   const pen = INK.pens[m.owner], k = theme.ink.width;
   if (m.t === "stroke") inkFlick(g, m.pts, pen, m.seed, RULES.inkWidth * k, p, 1, wob);
   else if (m.t === "walk") drawWalk(g, m.a, m.b, pen, m.seed, p);
   else if (m.t === "stand") {
     // the last few, ringed where they stood when their comrades were gone
-    m.at.forEach((q, j) => inkCircle(g, q.x, q.y, RULES.soldierRadius + 9, pen, m.seed + j * 17, 1.7 * k, 1, p));
+    // twice, and heavier than a camp's line: it has to read from bird's-eye
+    m.at.forEach((q, j) => {
+      inkCircle(g, q.x, q.y, RULES.soldierRadius + 9, pen, m.seed + j * 17, 2.7 * k, 1, p);
+      inkCircle(g, q.x, q.y, RULES.soldierRadius + 14, pen, m.seed + j * 17 + 9, 1.6 * k, 1, Math.max(0, (p - 0.3) / 0.7));
+    });
   } else if (m.kind === "moved") {
-    // the old dot stays; the little cross comes after the move
-    inkDot(g, m.x, m.y, RULES.soldierRadius, pen, m.seed, 1, 1, wob);
-    inkCross(g, m.x, m.y, RULES.soldierRadius * 1.2, pen, m.seed, 1.6 * k, 0.7, p, wob);
-  } else if (m.kind === "kill") inkCross(g, m.x, m.y, RULES.soldierRadius * 2.1, pen, m.seed, 2.8 * k, 1, p, wob);
-  else inkCross(g, m.x, m.y, RULES.soldierRadius * 1.6, pen, m.seed, 2 * k, 1, p, wob);
+    // the old dot stays, and a small arrow leaves it: he went that way (a cross means dead, so never a cross)
+    if (m.id === undefined) inkDot(g, m.x, m.y, RULES.soldierRadius, pen, m.seed, 1, 1, wob); // (his dot is the page's own, from dotSpots)
+    if (to) inkLeft(g, m.x, m.y, to, pen, m.seed + 3, RULES.soldierRadius * 1.6, RULES.soldierRadius * 2.6, 1.9 * k, 0.85, p);
+  } else if (m.kind === "kill") {
+    // crossed out: a thin cross, and a light scribble over it. Quiet next to the living, but never a cross without it
+    inkCross(g, m.x, m.y, RULES.soldierRadius * 2.0, pen, m.seed, 2 * k, 0.6, Math.min(1, p / 0.6), wob);
+    inkScribble(g, m.x, m.y, RULES.soldierRadius * 1.3, pen, m.seed + 5, 1.3 * k, 0.5, (p - 0.4) / 0.6);
+  } else inkCross(g, m.x, m.y, RULES.soldierRadius * 1.6, pen, m.seed, 2 * k, 1, p, wob);
 }
 
 /** A convoy's footprints: short ticks, left and right, the way a kid draws soldiers marching. */
@@ -340,6 +375,15 @@ export function drawWalk(g: Ctx, a: Pt, b: Pt, color: string, seed: number, p = 
     g.stroke();
   }
   g.globalAlpha = 1;
+}
+
+/** The dot a man leaves on the page when he dies or moves on: faded, or hollow (see CLARITY). */
+export function drawSpent(g: Ctx, x: Pt & Dotted, at: Pt) {
+  if (CLARITY.hollow) {
+    g.globalAlpha = 0.7;
+    inkCircle(g, at.x, at.y, RULES.soldierRadius * 0.9, INK.pens[x.owner], x.id * 131 + 7, 1.7 * theme.ink.width, 1);
+    g.globalAlpha = 1;
+  } else inkDot(g, at.x, at.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, CLARITY.fade, 1);
 }
 
 export function drawDot(g: Ctx, x: Pt & Dotted, alpha = 1, grow = 1, at: { x: number; y: number } = x, wob = 0, amp = 1) {
@@ -469,10 +513,11 @@ export class PageLayer {
    * Bring the page up to date. `hold` is what stays off the page for now: a
    * soldier riding his ink, and whatever is boiling. Something held that is
    * already on the page (a camp manned again) can't be rubbed out, so the
-   * page is drawn afresh.
+   * page is drawn afresh. `source` keeps a pending presentation snapshot on
+   * the same sheet as its engine state; switching back does not rebuild it.
    */
-  sync(s: GameState, ink: Ink, S: number, epoch: number, sig?: Signature, hold?: Hold) {
-    let fresh = !this.c || this.src !== s || this.S !== S || this.epoch !== epoch || this.themeId !== theme.id || s.marks.length < this.marks.filter(Boolean).length;
+  sync(s: GameState, ink: Ink, S: number, epoch: number, sig?: Signature, hold?: Hold, source = s) {
+    let fresh = !this.c || this.src !== source || this.S !== S || this.epoch !== epoch || this.themeId !== theme.id || s.marks.length < this.marks.filter(Boolean).length;
     // nothing new since last time: most frames stop here
     const acts = s.v === 1 ? s.flicks.length : s.actions.length;
     const stamp = `${s.marks.length}|${s.bases.length}|${s.turn}|${acts}|${[...ink.live].join()}|${hold?.sig}|${!!sig}`;
@@ -486,18 +531,19 @@ export class PageLayer {
       const keys = new Set(spots.map((d) => d.key));
       for (const k of this.dots) if (!keys.has(k)) { fresh = true; break; }
     }
-    if (fresh) this.rebuild(s, S, epoch);
+    if (fresh) { this.rebuild(s, S, epoch); this.src = source; }
     const added: ((g: Ctx) => void)[] = [];
     for (const b of s.bases) {
       if (!this.bases.has(b.id) && !ink.live.has(`b${b.id}`) && !hold?.bases.has(b.id)) { added.push((g) => drawBase(g, b)); this.bases.add(b.id); }
     }
     s.marks.forEach((m, i) => {
-      if (!this.marks[i] && !ink.live.has(`m${i}`) && !hold?.marks.has(i)) { added.push((g) => drawMark(g, m)); this.marks[i] = true; }
+      if (!this.marks[i] && !ink.live.has(`m${i}`) && !hold?.marks.has(i)) { added.push((g) => drawMark(g, m, 1, 0, wentTo(s, i))); this.marks[i] = true; }
     });
     for (const d of spots) {
       if (this.dots.has(d.key) || ink.live.has(`d${d.id}`) || hold?.dots.has(d.key)) continue;
       const x = s.soldiers[d.id];
-      added.push((g) => drawDot(g, x, 1, 1, d));
+      // held-then-released (the boil is on): he was alive until now, so his dot goes down spent
+      added.push((g) => (hold?.ghost ? drawSpent(g, x, d) : drawDot(g, x, 1, 1, d)));
       this.dots.add(d.key);
     }
     // a coffee ring darkens whatever the paper, so it always multiplies
