@@ -34,7 +34,8 @@ export default async function (T, out) {
   // a page just opened makes its boil sprites over the first second or so
   // (give a pinned boil a frame to take its plan first)
   await page.waitForTimeout(250);
-  await page.waitForFunction(() => window.pft.boil?.settled !== false, undefined, { timeout: 10000 });
+  // Software ANGLE can need more than ten seconds to make the sprites on a cold launch.
+  await page.waitForFunction(() => window.pft.boil?.settled !== false, undefined, { timeout: 30000 });
   await page.waitForTimeout(300);
   const rate = +(process.env.THROTTLE ?? 1);
   if (rate > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate });
