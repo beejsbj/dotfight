@@ -21,6 +21,7 @@ export default async function (T, out) {
   const info = await page.evaluate((turns) => {
     const r = window.pft.fileWar(11, turns);
     r.mode = { kind: "pnp" };
+    window.pft.LIFE.bubbles = false;
     window.pft.resumeRecord(r);
     return { marks: window.pft.s.marks.length, phase: window.pft.s.phase, turn: window.pft.s.turn };
   }, turns);

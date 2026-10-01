@@ -250,6 +250,8 @@ export const AMP = { hop: 7.5, flinch: 8.5, gasp: 4, recoil: 6, perk: 5, land: 5
 
 export interface Scene {
   s: GameState;
+  /** Last-stand marks whose ink has not started yet. */
+  pendingStand?: ReadonlySet<Player>;
   /** The page direction of "up" on screen, for hops. */
   up: number;
   /** The camera's zoom (1: the whole page). Standing back, hops are drawn bigger so they still read. */
@@ -389,7 +391,7 @@ export class Life {
   /** Take what's going on now (every rendered frame). `ms`: wall time. */
   see(sc: Scene, ms: number) {
     this.scene = sc;
-    this.stand = [lastStand(sc.s, 0), lastStand(sc.s, 1)];
+    this.stand = [lastStand(sc.s, 0) && !sc.pendingStand?.has(0), lastStand(sc.s, 1) && !sc.pendingStand?.has(1)];
     this.memo.clear();
     const now = new Set(LIFE.line && sc.aim && sc.chosen && sc.aim.power > 0.02 ? inLine(sc.s, sc.chosen.id, sc.aim.angle, sc.aim.reach, sc.aim.spread) : []);
     for (const id of this.dread.keys()) if (!now.has(id)) this.dread.delete(id);
@@ -417,7 +419,9 @@ export class Life {
     const up = sc.up;
     const chosen = sc.chosen;
     // most men, most ticks, are simply standing: say so without the arithmetic
-    const acts = this.acts.get(id);
+    const acts = this.acts.get(id)?.filter((r) => r.t0 + span(r) > ms);
+    if (acts?.length) this.acts.set(id, acts);
+    else this.acts.delete(id);
     const me = chosen && sc.s.soldiers[chosen.id];
     const mate = !!me && chosen!.id !== id && me.owner === x.owner && Math.hypot(me.x - x.x, me.y - x.y) < RULES.baseRadius * 2.4;
     const hop = LIFE.idle && sc.eager === x.owner && chosen?.id !== id ? hopKey(id, h, ms) : null;
@@ -542,7 +546,7 @@ export class Life {
     if (!b) return 1;
     const men = inBase(sc.s.soldiers.filter((x) => x.alive && x.owner === b.owner), b);
     // tired round an emptying camp; a full one goes briskly
-    let p = 0.45 + 0.55 * Math.min(1, men.length / RULES.soldiersPerBase);
+    let p = 0.45 + 0.55 * Math.min(1, men.length / (sc.s.v === 2 ? sc.s.size.soldiers : RULES.soldiersPerBase));
     // hurried while its men are in the line of fire
     if (men.some((x) => this.dread.has(x.id))) p *= 1.5;
     return p;

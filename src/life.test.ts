@@ -346,3 +346,40 @@ describe("a volley: a camp turning on an intruder", () => {
     expect(life.pose(0, 1200)).toEqual({ ox: 0, oy: 0, k: 1, st: 1, ax: 0, rate: 0 });
   });
 });
+
+
+describe("soldier life regression checks", () => {
+  it.each([3, 8, 10])("a full %i-man camp has its full pulse", (soldiers) => {
+    const s = newGame({ name: "custom", bases: 1, soldiers }, 42);
+    act(s, { t: "base", x: 300, y: 1200 });
+    act(s, { t: "base", x: 300, y: 200 });
+    const life = new Life();
+    life.see(scene(s), 0);
+    expect(life.pace(0, 0)).toBe(1);
+    s.soldiers[0].alive = false;
+    expect(life.pace(0, 0)).toBeCloseTo(0.45 + 0.55 * (soldiers - 1) / soldiers);
+  });
+
+  it("holds the last-stand pose until the mark starts", () => {
+    const s = setup();
+    s.soldiers.filter((x) => x.owner === 1).slice(3).forEach((x) => x.alive = false);
+    const id = s.soldiers.find((x) => x.owner === 1)!.id;
+    const life = new Life();
+    life.see(scene(s, { pendingStand: new Set([1]) }), 1000);
+    expect(life.pose(id, 1000).rate).toBe(1);
+    life.see(scene(s), 1100);
+    expect(life.pose(id, 1100).rate).toBeGreaterThan(1);
+  });
+
+  it("prunes expired acts while retaining a future reaction", () => {
+    const s = setup(), life = new Life();
+    life.see(scene(s), 0);
+    life.add(0, { kind: "hop", t0: 0, amp: 1 });
+    life.add(0, { kind: "flinch", t0: 4000, dir: 0, amp: 1 });
+    expect(life.pose(0, 2000).rate).toBe(1);
+    expect(life.reactions(0).map((r) => r.kind)).toEqual(["flinch"]);
+    expect(life.pose(0, 4000 + 2 * FRAME).rate).toBeGreaterThan(1);
+    expect(life.pose(0, 7000).rate).toBe(1);
+    expect(life.reactions(0)).toEqual([]);
+  });
+});

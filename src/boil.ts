@@ -121,7 +121,7 @@ export function lifeOf(s: GameState, ink: Ink) {
   for (const k of ink.live) {
     if (k[0] !== "m") continue;
     const m = s.marks[+k.slice(1)];
-    if (m?.t === "cross" && m.kind === "kill" && ink.p(k) <= 0) dying.add(`${m.x},${m.y}`);
+    if (m?.t === "cross" && (m.kind === "kill" || m.kind === "lost") && ink.p(k) <= 0) dying.add(`${m.x},${m.y}`);
   }
   const soldiers = s.soldiers.filter((x) => x.alive || dying.has(`${x.x},${x.y}`));
   const spots = new Set(soldiers.map(spotKey));
@@ -141,22 +141,22 @@ export function planBoil(s: GameState, ink: Ink, o: { on: boolean; side?: "livin
   const hold: Hold = { dots: new Set(), bases: new Set(), marks: new Set(), sig: "" };
   const plan: Plan = { hold, dots: [], bases: [], marks: [], sig: "" };
   const mover = o.moving !== undefined ? s.soldiers[o.moving] : undefined;
-  const riding = mover?.alive ? spotKey(mover) : undefined;
+  const life = o.on || mover ? lifeOf(s, ink) : undefined;
+  const riding = mover && life?.soldiers.has(mover.id) ? spotKey(mover) : undefined;
   if (riding) hold.dots.add(riding);
   if (o.on) {
-    const life = lifeOf(s, ink);
     const boils = (living: boolean) => (side === "living" ? living : !living);
     // the living boil and can only die; the dead boil and the living may yet
     // join them, so on that side everything that can change stays off the page
     for (const spot of dotSpots(s)) {
-      const living = life.spots.has(spot.key);
+      const living = life!.spots.has(spot.key);
       if (side === "living" && !living) continue;
       hold.dots.add(spot.key);
       if (spot.key === riding || ink.live.has(`d${spot.id}`) && living) continue;
       plan.dots.push({ spot, boils: boils(living) });
     }
     for (const b of s.bases) {
-      const living = life.bases.has(b.id);
+      const living = life!.bases.has(b.id);
       if (side === "living" && !living) continue;
       hold.bases.add(b.id);
       if (!ink.live.has(`b${b.id}`)) plan.bases.push({ id: b.id, boils: boils(living) });

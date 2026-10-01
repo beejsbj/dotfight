@@ -63,3 +63,13 @@ export function reachFraction(i: number, n: number) {
   const e = Math.max(0, Math.min(1, i / n));
   return 1 - Math.sqrt(1 - e); // inverse of "out2"
 }
+
+
+/** The displayed convoy walker, including the eased march and small step bob. */
+export function walkerAt(from: { x: number; y: number }, to: { x: number; y: number }, p: number) {
+  const e = p * p * (3 - 2 * p);
+  return {
+    x: from.x + (to.x - from.x) * e,
+    y: from.y + (to.y - from.y) * e - Math.abs(Math.sin(p * Math.PI * 7)) * 2.5 * (1 - p),
+  };
+}

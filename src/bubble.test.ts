@@ -256,3 +256,18 @@ describe("pencil notes", () => {
     LIFE.bubbles = true;
   });
 });
+
+
+it("a fresh page forgets queued notes, cooldown and its idle window", () => {
+  const b = new Bubbles();
+  b.offer("idle", 1, 1000, 3, ctx);
+  b.urgent("streakCamp", 2, 1100, 6, { ...ctx, streak: 4 });
+  expect(b.next).not.toBeNull();
+  const due = b.idleDue(1000, 42);
+  expect(b.idleDue(1000, 42)).toBe(false);
+  b.reset();
+  expect(b.cur).toBeNull();
+  expect(b.next).toBeNull();
+  expect(b.idleDue(1000, 42)).toBe(due);
+  expect(b.offer("idle", 3, 1100, 3, ctx)).not.toBeNull();
+});

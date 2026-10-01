@@ -29,6 +29,10 @@ export type HapticEvent =
   | "thud" // a lunge dies at a base wall
   | "turn" // the page turned round, the book opened
   | "stand" // a side's last stand begins
+  | "cheer"
+  | "flinch"
+  | "unitcam"
+  | "volley"
   | "over"; // the last cross of the war
 
 export interface Pattern {
@@ -55,6 +59,10 @@ const clamp01 = (x: number) => Math.min(1, Math.max(0, x || 0));
 /** What each event feels like. Pure. */
 export function pattern(ev: HapticEvent, arg = 0): Pattern {
   switch (ev) {
+    case "cheer": return { android: [6, 55, 6, 55, 9], ios: [0, 90, 180], priority: 1 };
+    case "flinch": return { android: [5], ios: [0], priority: 1 };
+    case "unitcam": return { android: [9, 70, 6], ios: [0, 90], priority: 2 };
+    case "volley": return { android: [5, 45, 5, 45, 5, 45, 18], ios: [0, 60, 120, 240], priority: 3 };
     case "tap": return { android: [18], ios: [0], priority: 1 };
     case "pickup": return { android: [28], ios: [0], priority: 2 };
     case "notch": {

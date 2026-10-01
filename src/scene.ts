@@ -11,6 +11,7 @@
 // pen lives on the untilted overlay. A camera move therefore costs a few
 // style writes and a couple of hundred pixels of gradient, not a repaint.
 
+import { walkerAt } from "./timeline";
 import { BoilLayer, planBoil, type Plan } from "./boil";
 import type { Anchor, Mood } from "./bubble";
 import { rng, type Pt } from "./game";
@@ -285,10 +286,7 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
   }
   for (const w of f.walkers ?? []) {
     if (w.p <= 0) continue; // held: still standing where the page shows him
-    const e = w.p * w.p * (3 - 2 * w.p);
-    const at = { x: w.from.x + (w.to.x - w.from.x) * e, y: w.from.y + (w.to.y - w.from.y) * e };
-    // a little bob as he marches
-    at.y -= Math.abs(Math.sin(w.p * Math.PI * 7)) * 2.5 * (1 - w.p);
+    const at = walkerAt(w.from, w.to, w.p);
     drawDot(g, s.soldiers[w.id], 1, 1, at);
     box.add(at.x, at.y, 12);
   }

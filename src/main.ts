@@ -30,7 +30,7 @@ import { boldAt } from "./boil";
 import { comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
 import { ANCHOR, BUBBLE, Bubbles, botchOf, botchVoices, bubbleAt, heatOf, replyAt, strayKind, streakVoices, type BotchKind, type BubbleKind, type Context, type StreakKind } from "./bubble";
-import { feel } from "./feel";
+import { feel, setFeel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
 import { boil, boilSeen, boilTick, forgetDrawn, life, NOTE, noteSpotNow, noteSpotsNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
@@ -38,8 +38,10 @@ import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, 
 import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
 import { apply as roomApply, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
-import { Timeline, reachFraction } from "./timeline";
+import { Timeline, reachFraction, walkerAt } from "./timeline";
 import * as turn from "./turn";
+
+setFeel((ev) => haptic(ev));
 
 // --- state ------------------------------------------------------------------
 
@@ -349,6 +351,14 @@ function reset() {
   inkTL.clear();
   sfx.creak(0);
   life.clear();
+  bubbles.reset();
+  bubbleKey = "";
+  streak = { who: -1, turn: -1, kind: "", n: 0, last: undefined };
+  botchBack = null;
+  botchLast = undefined;
+  lastMoveWall = wall;
+  chosenAt = { id: -1, t0: wall };
+  dreadWas.clear();
   volley = null;
   unit = null;
   penLift = null;
@@ -644,6 +654,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   const kills: Resolve["kills"] = [];
   const snags: Snag[] = [];
   const moments: Resolve["moments"] = [];
+  const stands: { i: number; owner: Player }[] = [];
   const live = opts.cam ?? true; // replays are watched, not felt
   let lastKill = -1;
   for (let i = first + 1; i < s.marks.length; i++) if (s.marks[i].t === "cross" && (s.marks[i] as { kind: string }).kind === "kill") lastKill = i;
@@ -653,9 +664,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     if (held.has(i)) continue;
     if (m.t === "stand") {
       // their comrades are gone: the last few are ringed once the crosses are down
-      const at = dur + 380 * quick;
-      inkTL.add(`m${i}`, 0, at, 500 * quick);
-      moments.push({ at, fn: () => { sfx.scratch(0.5, 0.35, 1600); if (live) cue("last-stand", m.owner); } });
+      stands.push({ i, owner: m.owner });
       continue;
     }
     if (m.t !== "cross") continue;
@@ -679,12 +688,17 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     // home turns on him and jabs (life.planVolley), and his cross, the snag and
     // the thud land on the last jab
     const base = o.crashed, end = o.path[o.path.length - 1];
-    const plan = live ? startVolley(base, { id: f.soldier, x: end.x, y: end.y }, wall + wallTime(dur, snags) / speed, false) : null;
+    const plan = startVolley(base, { id: f.soldier, x: end.x, y: end.y }, wall + wallTime(dur, snags) / speed, false);
     if (plan) {
       volleyHold = plan.cross * speed;
       s.marks.forEach((m, i) => { if (i >= first && m.t === "cross" && m.kind === "lost") inkTL.add(`m${i}`, 0, dur + volleyHold, VOLLEY.crossMs * speed); });
     }
-    moments.push({ at: dur + 20 * quick + volleyHold, fn: () => { sfx.snag(true); sfx.cross(0.03, 1.1); if (live) { cam.shake(7); cue("lunge-death", base); } } });
+    moments.push({ at: dur + 20 * quick + volleyHold, fn: () => { if (live) { sfx.snag(true); sfx.cross(0.03, 1.1); cam.shake(7); cue("lunge-death", base); } } });
+  }
+  for (const { i, owner } of stands) {
+    const at = dur + Math.max(380 * quick, volleyHold ? volleyHold + VOLLEY.crossMs * speed : 0);
+    inkTL.add(`m${i}`, 0, at, 500 * quick);
+    moments.push({ at, fn: () => { sfx.scratch(0.5, 0.35, 1600); if (live) cue("last-stand", owner); } });
   }
   if (o.earned && live) moments.push({ at: dur, fn: () => cue("earned", core()?.left ?? 0) });
   const pen = opts.pen ?? true;
@@ -735,16 +749,22 @@ function campOf(id: number) {
   const own = s.bases.filter((b) => b.owner === x.owner).sort((a, b) => Math.hypot(a.x - x.x, a.y - x.y) - Math.hypot(b.x - x.x, b.y - x.y));
   return own[0]?.id;
 }
-/**
- * `id` might say something of `kind`: a man's id, or (for a camp's line,
- * bubble.ts ANCHOR) a base's. `mate`: a nearby comrade who'd reply in an exchange.
- */
+/** A walker's position on the displayed march, rather than the reducer's destination. */
+function displayedAt(id: number): Pt {
+  const w = lapse?.walkers.find((w) => w.id === id);
+  if (!w || !lapse) return s.soldiers[id];
+  const p = Math.min(1, Math.max(0.001, (T - lapse.t0) / lapse.dur));
+  return walkerAt(w.from, w.to, p);
+}
+
+/** Offer a line from a man or camp; `mate` is a nearby comrade who replies. */
 function speak(kind: BubbleKind, id: number, t0 = wall, seed?: number, mate?: number) {
-  if (!heard()) return;
+  if (!heard() || slow || boil.tooDear || !LIFE.bubbles) return;
   const base = ANCHOR[kind] === "base";
   const at = base ? s.bases[id] : s.soldiers[id];
   if (!at || (!base && !(at as Soldier).alive)) return;
-  const p = cam.toScreen(at.x, at.y);
+  const pos = base ? at : displayedAt(id);
+  const p = cam.toScreen(pos.x, pos.y);
   if (p.x < 20 || p.x > W - 20 || p.y < 60 || p.y > H - 120) return; // off screen, or under the HUD
   if (bubbles.offer(kind, id, t0, seed ?? Math.floor(seeded(s.seed, s.turn, id, kind.length) * 2 ** 31), noteContext(at.owner), mate)) dirty = true;
 }
@@ -771,7 +791,7 @@ function countStreak(o: Outcome, f: Flick, who: Player) {
  * and only someone on screen. It goes up now, rubbing out whatever's there.
  */
 function speakStreak(n: number, id: number, t0: number, seed: number, only?: StreakKind) {
-  if (!heard() || n < 2) return null;
+  if (!heard() || slow || boil.tooDear || n < 2) return null;
   const me = s.soldiers[id];
   if (!me) return null;
   const foe = other(me.owner);
@@ -806,7 +826,7 @@ function speakStreak(n: number, id: number, t0: number, seed: number, only?: Str
 let botchLast: BotchKind | undefined;
 let botchBack: { who: Player; turn: number } | null = null;
 function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number, only?: BotchKind) {
-  if (!heard() || grade < 1) return null;
+  if (!heard() || slow || boil.tooDear || grade < 1) return null;
   const me = s.soldiers[id];
   if (!me) return null;
   if (!only && seeded(seed, 17) >= BUBBLE.botch.chance[Math.min(2, grade)]) return null;
@@ -860,9 +880,9 @@ function startUnitCam(id: number) {
   const face = facing(s, id, lastPull?.id === id ? lastPull.angle : undefined);
   unit = { id, t0: T, back: { ...cam.tgt } };
   const rot = rotFacing(face, cam.cur.rot);
-  if (cam.tiltScale > 0) cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.m, tilt: UNIT_CAM.tilt, fy: UNIT_CAM.fy, rot };
+  if (cam.tiltScale > 0 && !reduced && !slow) cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.m, tilt: UNIT_CAM.tilt, fy: UNIT_CAM.fy, rot };
   else cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.flatM, tilt: 0, fy: 0.55, rot };
-  if (reduced) cam.snap(); // no swoop: just his view
+  if (reduced || slow) cam.snap(); // no swoop: just his view
   if (LIFE.chosen) life.add(id, { kind: "perk", t0: wall, amp: 1 });
   if (heard()) voice.say("look", id, me.owner, 0.05);
   speak("ready", id);
@@ -887,7 +907,7 @@ function stepUnitCam() {
     if (selected === u.id) cam.tgt = { ...u.back };
     else if (selected === undefined) cam.overview(u.back.rot);
     else cam.tgt = { ...cam.tgt, rot: u.back.rot };
-    if (reduced) cam.snap();
+    if (reduced || slow) cam.snap();
     penDrop = T; // the pen comes back down onto him
     status();
   }
@@ -971,7 +991,7 @@ function startVolley(base: number, target: { id: number; x: number; y: number },
     const lead = Math.max(0, at - wall);
     for (const c of voice.curate(plan.cues, target.id * 17 + base)) voice.say(c.say as voice.Say, c.id, s.soldiers[c.id].owner, (lead + c.at) / 1000, c.gain);
     after(lead * speed, () => feel("volley"));
-    after((lead + plan.cross) * speed, () => { sfx.snag(false); sfx.cross(0.02, 1); });
+    if (stamp) after((lead + plan.cross) * speed, () => { sfx.snag(false); sfx.cross(0.02, 1); });
     speak("deny", base, at + plan.cross + 260);
   }
   dirty = true;
@@ -1914,7 +1934,7 @@ function select(id: number) {
 }
 
 function standUp() {
-  if (selected !== undefined && LIFE.pen && screen === "game") { const me = s.soldiers[selected]; penLift = { t0: T, x: me.x, y: me.y, owner: me.owner }; }
+  if (selected !== undefined && LIFE.pen && lively() && screen === "game") { const me = s.soldiers[selected]; penLift = { t0: T, x: me.x, y: me.y, owner: me.owner }; }
   selected = undefined;
   motion.lower();
   cam.overview();
@@ -2225,6 +2245,7 @@ $("#acts").onclick = (e) => {
   const b = (e.target as HTMLElement).closest("button");
   const c0 = core();
   if (!b || !c0 || !humanTurn()) return;
+  unit = null; // turn controls cancel the view before changing the player or camera
   sfx.tap();
   const a = b.dataset.act;
   if (a === "ready") return perform({ t: "ready" }, () => handOver());
@@ -2329,7 +2350,7 @@ function frame(now: number) {
   // the other side's go after a spectacular botch: the callback is more likely than a stray thought
   const back = botchBack && botchBack.who !== s.current && s.turn > botchBack.turn && s.turn <= botchBack.turn + 1 ? botchBack : null;
   if (botchBack && s.turn > botchBack.turn + 1) botchBack = null;
-  if (screen === "game" && !away(s.current) && s.phase === "play" && !aim && !res && !busy && selected === undefined && bubbles.idleDue(wall, s.seed, waited, !!back)) {
+  if (screen === "game" && LIFE.bubbles && !slow && !boil.tooDear && !away(s.current) && s.phase === "play" && !aim && !res && !busy && selected === undefined && bubbles.idleDue(wall, s.seed, waited, !!back)) {
     const mine = turn.aliveOf(s, s.current), theirs = turn.aliveOf(s, other(s.current));
     const lead = mine.length - theirs.length;
     if (mine.length) {
@@ -2382,17 +2403,17 @@ function currentFrame(): Frame {
     s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
     selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
-  const bb = heard() ? bubbles.showing(wall) : null;
+  const bb = heard() && !slow && !boil.tooDear ? bubbles.showing(wall) : null;
   if (bb) {
     f.hud = { h: H, top: cam.top, bottom: cam.bottom };
     f.heat = noteContext(s.current).heat;
     const bs = bubbleAt(bb, wall, reduced);
     if (bs) {
       if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
-      else { const x = s.soldiers[bb.id]; if (x?.alive) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: x, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && s.soldiers[bb.reply.id] }; }
+      else { const x = s.soldiers[bb.id]; if (x?.alive) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: displayedAt(x.id), p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && s.soldiers[bb.reply.id] }; }
     }
     const rs = replyAt(bb, wall, reduced), rx = bb.reply && s.soldiers[bb.reply.id];
-    if (rs && rx?.alive) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rx, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: s.soldiers[bb.id], answers: `${bb.seed}|${bb.text}` };
+    if (rs && rx?.alive) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: displayedAt(rx.id), p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: s.soldiers[bb.id], answers: `${bb.seed}|${bb.text}` };
   }
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
@@ -2534,8 +2555,13 @@ function seeLife(f: Frame) {
   const sel = f.selected ?? (f.aim ? f.aim.soldierId : undefined);
   if (sel !== chosenAt.id) chosenAt = { id: sel ?? -1, t0: wall };
   const r = f.view.rot;
+  const ink = f.ink ?? SETTLED;
   life.see({
     s, up: Math.atan2(-Math.cos(r), -Math.sin(r)), zoom: cam.cur.m,
+    pendingStand: new Set([...ink.live].flatMap((k) => {
+      const m = k[0] === "m" ? s.marks[+k.slice(1)] : undefined;
+      return m?.t === "stand" && ink.p(k) <= 0 ? [m.owner] : [];
+    })),
     eager: s.phase === "play" && !res && screen === "game" ? s.current : undefined,
     chosen: sel !== undefined && !res ? { id: sel, t0: chosenAt.t0 } : undefined,
     aim: f.aim && !res ? { angle: f.aim.angle, power: f.aim.power, reach: f.aim.reach, spread: f.aim.spread } : undefined,

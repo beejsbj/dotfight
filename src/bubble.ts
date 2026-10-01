@@ -540,7 +540,7 @@ export class Bubbles {
 
   clear() { this.cur = null; this.next = null; }
   /** Forget the last one too, so the next chance can be taken at once (dev captures). */
-  reset() { this.cur = null; this.next = null; this.last = -Infinity; }
+  reset() { this.cur = null; this.next = null; this.last = -Infinity; this.window = -1; }
 }
 
 /**
