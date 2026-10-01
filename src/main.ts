@@ -929,7 +929,7 @@ function speakStreak(n: number, id: number, t0: number, seed: number, only?: Str
  * spectacular one is remembered for a sly callback on the other side's go.
  */
 let botchLast: BotchKind | undefined;
-let botchBack: { who: Player; turn: number } | null = null;
+let botchBack: { who: Player; turn: number; queued?: NonNullable<ReturnType<Bubbles["urgent"]>> } | null = null;
 function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number, only?: BotchKind) {
   if (!heard() || slow || boil.tooDear || grade < 1) return null;
   const seen = pendingState();
@@ -2587,16 +2587,40 @@ function frame(now: number) {
   wall = boilClock ?? now;
   const bo = boilOn();
   if (bo !== boilWas) { boilWas = bo; dirty = true; }
+  // A callback belongs to the next go; expire an unwritten queued line with it.
+  if (botchBack && (s.phase !== "play" || s.turn > botchBack.turn + 1)) {
+    const queued = botchBack.queued;
+    if (queued && bubbles.next === queued) bubbles.next = null;
+    if (queued && bubbles.cur === queued) bubbles.cur = null;
+    botchBack = null;
+  }
   // a bubble redraws only while it's written on or fading (on twos), and to go
   flushMoments();
-  const bb = bubbles.showing(wall), bk = bb ? `${bubbleAt(bb, wall, reduced)?.key ?? ""}|${replyAt(bb, wall, reduced)?.key ?? ""}` : "";
-
+  const bb = heard() && !slow && !boil.tooDear ? bubbles.showing(wall) : null;
+  const bk = bb ? `${bubbleAt(bb, wall, reduced)?.key ?? ""}|${replyAt(bb, wall, reduced)?.key ?? ""}` : "";
   if (bk !== bubbleKey) { bubbleKey = bk; dirty = true; }
+  if (bb && bb === botchBack?.queued) botchBack = null; // started: once is enough, even during a flick
+  // One seeded callback chance on Dawood-bot's go, independent of idle windows.
+  // The bot is busy even while thinking/aiming; this note must be allowed then.
+  const back = botchBack && botchBack.who !== s.current && s.turn === botchBack.turn + 1 ? botchBack : null;
+  if (back && isBot(s.current) && heard() && LIFE.bubbles && !slow && !boil.tooDear && !aim && !res) {
+    if (back.queued && bubbles.next !== back.queued && bubbles.cur !== back.queued) back.queued = undefined;
+    if (!back.queued && !bubbles.next && !bubbles.cur?.kind.startsWith("streak")) {
+      if (seeded(s.seed, back.turn, back.who, 13) >= BUBBLE.botch.backChance) botchBack = null;
+      else {
+        const mine = turn.aliveOf(s, s.current).filter((x) => noteOnScreen(displayedAt(x.id)));
+        const me = mine[Math.floor(seeded(s.seed, s.turn, 83) * mine.length)];
+        if (me) {
+          // offer() waits for the full show and normal gap. urgent() erases
+          // the previous note before writing this one, keeping one per page.
+          const b = bubbles.urgent("botchBack", me.id, wall, Math.floor(seeded(s.seed, s.turn, me.id, 9) * 2 ** 31), noteContext(me.owner));
+          if (b) { back.queued = b; dirty = true; }
+        }
+      }
+    }
+  }
   // now and then, on your go with nothing happening, a stray thought
   const waited = wall - lastMoveWall;
-  // the other side's go after a spectacular botch: the callback is more likely than a stray thought
-  const back = botchBack && botchBack.who !== s.current && s.turn > botchBack.turn && s.turn <= botchBack.turn + 1 ? botchBack : null;
-  if (botchBack && s.turn > botchBack.turn + 1) botchBack = null;
   if (screen === "game" && LIFE.bubbles && !slow && !boil.tooDear && !away(s.current) && s.phase === "play" && !aim && !res && !busy && selected === undefined && bubbles.idleDue(wall, s.seed, waited, !!back)) {
     const mine = turn.aliveOf(s, s.current), theirs = turn.aliveOf(s, other(s.current));
     const lead = mine.length - theirs.length;
@@ -2613,7 +2637,7 @@ function frame(now: number) {
       const mate = (near.filter((x) => Math.hypot(x.x - me.x, x.y - me.y) >= RULES.soldierRadius * 6).sort((a, b) => far(a) - far(b))[0] ?? near[0])?.id;
       if (ANCHOR[kind] === "base") { const camp = campOf(me.id); if (camp !== undefined) speak(kind, camp); }
       else speak(kind, me.id, wall, undefined, mate);
-      if (back && bubbles.cur?.kind === "botchBack") botchBack = null; // said: once is enough (not said yet: the next window tries again)
+      if (back && bubbles.cur?.kind === "botchBack") botchBack = null;
     }
   }
   if (active || dirty) {

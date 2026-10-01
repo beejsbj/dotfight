@@ -306,7 +306,7 @@ function scriptSwitch(): Backend {
 
 // iOS 26.5 on: only a real tap on a label ticks, so put labels where taps land.
 // What a tap on the page can deliver (the rest come from drags or timers).
-const TAPPED: HapticEvent[] = ["pickup", "settle"];
+export const TAPPED: readonly HapticEvent[] = ["pickup", "settle", "unitcam"];
 function tapSwitch(): Backend {
   let owed = -Infinity; // when the game last felt something a tap could deliver
   // a gesture that has moved past tap slop won't click, so it can't deliver a tick
