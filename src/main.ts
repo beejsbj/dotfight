@@ -837,11 +837,22 @@ function pendingState(): AnyState {
   return lapseDue.seen ??= beforeMarch(s, lapseDue.walkers);
 }
 
+<<<<<<< HEAD
 /** The displayed ink head or march, rather than the reducer's destination. */
 function displayedAt(id: number): Pt {
   if (res?.mover === id) {
     const it = inkTime(T - res.t0, res.snags);
     if (it < res.dur) return headAt(res.o.path, 1 - Math.pow(1 - Math.max(0, it / res.dur), 2));
+=======
+/** A moving soldier's displayed position, rather than the reducer's destination. */
+function displayedAt(id: number): Pt {
+  if (res?.mover === id) {
+    const it = inkTime(T - res.t0, res.snags);
+    if (it < res.dur) {
+      const p = Math.min(1, it / res.dur);
+      return headAt(res.o.path, 1 - Math.pow(1 - p, 2));
+    }
+>>>>>>> finish-look-20261001-clarity
   }
   const pending = lapseDue?.walkers.find((w) => w.id === id);
   if (pending) return pending.from;
@@ -2572,7 +2583,7 @@ function frame(now: number) {
   }
   if (res) { stepResolve(); active = true; }
   if (unit) { stepUnitCam(); active = true; }
-  if (volley && wall - volley.t0 < volley.plan.ends) active = true;
+  if (volley && (LIFE.crowd && lively() || volley.stamp) && wall - volley.t0 < volley.plan.ends) active = true;
   const live = fx.end(T) > T || inkTL.end(0) > 0;
   if (live || wasLive || aim || botAim || lampOn.moving || dawn.moving || T - penDrop < (LIFE.pen ? SETTLE_MS + 240 : 260) || (penLift && T - penLift.t0 < LIFT_MS)) active = true;
   wasLive = live;
@@ -2815,7 +2826,7 @@ function currentFrame(): Frame {
   }
   if (volley) {
     const v = volley, e = wall - v.t0;
-    f.jabs = v.plan.jabs.map((j) => ({
+    if (LIFE.crowd && lively()) f.jabs = v.plan.jabs.map((j) => ({
       pts: j.pts, owner: j.owner, seed: j.seed,
       p: Math.max(0, Math.min(1, (e - j.at) / j.dur)),
       alpha: Math.max(0, Math.min(1, 1 - (e - j.at - j.dur) / VOLLEY.fade)),
@@ -2952,7 +2963,7 @@ if (import.meta.env.DEV) {
       };
       return Object.fromEntries(Object.keys(layers).map((k) => [k, differ(a[k], b[k], mask(k))]));
     },
-    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view, bubble: f.bubble, mover: f.mover, stand: f.stand, road: f.road }; },
+    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view, bubble: f.bubble, mover: f.mover, stand: f.stand, road: f.road, jabs: f.jabs, stamp: f.stamp }; },
     frames: (reset = false) => {
       const stats = (src: number[]) => {
         const a = [...src].sort((x, y) => x - y);
