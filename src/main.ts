@@ -2715,7 +2715,7 @@ function currentFrame(): Frame {
       f.sendArrow = { from, to: arrowTo, ok: w !== undefined && w !== sending.from && !canSend(c0, sending.from, w, 1) };
     }
   }
-  if (c0 && (c0.phase === "play" || res) && (screen === "game" || screen === "replay" || screen === "view")) {
+  if (c0 && (c0.phase === "play" || c0.phase === "over" || res) && (screen === "game" || screen === "replay" || screen === "view")) {
     // a side in its last stand keeps its survivors marked; a lunger owed another lunge is ringed with his link count
     const held = ([0, 1] as Player[]).filter((p) => c0.stand[p] > 0 && (!res || it >= res.dur || !res.o.stood.includes(p)));
     if (held.length) {
