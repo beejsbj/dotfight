@@ -2698,9 +2698,15 @@ function currentFrame(): Frame {
     if (orders.length) f.orders = orders.map((c) => ({ a: c.road[0], b: c.road[1], at: c.ids.map((id) => c0.soldiers[id]) }));
     // soldiers out on the road, where a lunger could catch them
     const marching = new Set(lapse?.walkers.map((w) => w.id));
-    const out = c0.convoys.filter((c) => c.state === "road").flatMap((c) => {
+    const pending = new Map(lapseDue?.walkers.map((w) => [w.id, w]));
+    const out = c0.convoys.flatMap((c) => {
       const dir = Math.atan2(c.road[1].y - c.road[0].y, c.road[1].x - c.road[0].x);
-      return c.ids.filter((id) => c0.soldiers[id].alive && !marching.has(id)).map((id) => ({ at: c0.soldiers[id] as Pt, dir }));
+      return c.ids.filter((id) => {
+        const w = pending.get(id);
+        // Departures still stand at home; arrivals still stand on the road.
+        const onRoad = w ? !w.departing : c.state === "road";
+        return onRoad && c0.soldiers[id].alive && !marching.has(id);
+      }).map((id) => ({ at: displayedAt(id), dir }));
     });
     if (out.length) f.road = out;
     if (sending?.from !== undefined && arrowTo) {
@@ -2918,7 +2924,7 @@ if (import.meta.env.DEV) {
       };
       return Object.fromEntries(Object.keys(layers).map((k) => [k, differ(a[k], b[k], mask(k))]));
     },
-    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view, bubble: f.bubble, mover: f.mover, stand: f.stand }; },
+    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view, bubble: f.bubble, mover: f.mover, stand: f.stand, road: f.road }; },
     frames: (reset = false) => {
       const stats = (src: number[]) => {
         const a = [...src].sort((x, y) => x - y);
