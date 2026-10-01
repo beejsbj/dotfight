@@ -27,7 +27,7 @@ import { addToDrawer, apply, blank, file, readDrawer, readSave, sizeFor, steps, 
 import { GAME } from "./name";
 import { CUSTOM, FEEL, RULES, SIZES, type Size } from "./rules";
 import { boldAt } from "./boil";
-import { comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
+import { beforeMarch, comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
 import { ANCHOR, BUBBLE, Bubbles, botchOf, botchVoices, bubbleAt, heatOf, replyAt, strayKind, streakVoices, type BotchKind, type BubbleKind, type Context, type StreakKind } from "./bubble";
 import { feel, setFeel } from "./feel";
@@ -747,14 +747,15 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     }
   }
   snags.sort((a, b) => a.at - b.at);
-  feelFlick(o, f, dur, snags, n);
+  const seen = beforeMarch(s, lapseDue?.walkers ?? []);
+  feelFlick(o, f, dur, snags, n, seen);
   let volleyHold = 0;
   if (o.crashed !== undefined) {
     // he lands among their men, and they shoot him where he stands: every man
     // home turns on him and jabs (life.planVolley), and his cross, the snag and
     // the thud land on the last jab
     const base = o.crashed, end = o.path[o.path.length - 1];
-    const plan = startVolley(base, { id: f.soldier, x: end.x, y: end.y }, wall + wallTime(dur, snags) / speed, false);
+    const plan = startVolley(base, { id: f.soldier, x: end.x, y: end.y }, wall + wallTime(dur, snags) / speed, false, seen);
     if (plan) {
       volleyHold = plan.cross * speed;
       s.marks.forEach((m, i) => { if (i >= first && m.t === "cross" && m.kind === "lost") inkTL.add(`m${i}`, 0, dur + volleyHold, VOLLEY.crossMs * speed); });
@@ -826,6 +827,8 @@ function campOf(id: number) {
 }
 /** A walker's position on the displayed march, rather than the reducer's destination. */
 function displayedAt(id: number): Pt {
+  const pending = lapseDue?.walkers.find((w) => w.id === id);
+  if (pending) return pending.from;
   const w = lapse?.walkers.find((w) => w.id === id);
   if (!w || !lapse) return s.soldiers[id];
   const p = Math.min(1, Math.max(0.001, (T - lapse.t0) / lapse.dur));
@@ -877,22 +880,23 @@ function countStreak(o: Outcome, f: Flick, who: Player) {
  */
 function speakStreak(n: number, id: number, t0: number, seed: number, only?: StreakKind) {
   if (!heard() || slow || boil.tooDear || n < 2) return null;
-  const me = s.soldiers[id];
+  const seen = beforeMarch(s, lapseDue?.walkers ?? []);
+  const me = seen.soldiers[id];
   if (!me) return null;
   const foe = other(me.owner);
   const d = (p: Pt) => Math.hypot(p.x - me.x, p.y - me.y);
   const onScreen = (p: Pt) => noteOnScreen(p, t0);
   const who = (k: StreakKind): number | undefined => {
     if (k === "streakMe") return me.alive ? id : undefined;
-    if (k === "streakFoe") return turn.aliveOf(s, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+    if (k === "streakFoe") return turn.aliveOf(seen, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
     if (k === "streakCamp") return campOf(id);
-    const manned = s.bases.filter((b) => b.owner === foe && s.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
     return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
   };
   for (const k of only ? [only] : streakVoices(n, seeded(seed, n, 71), streak.last)) {
     const at = who(k);
     if (at === undefined) continue;
-    const p = ANCHOR[k] === "base" ? s.bases[at] : s.soldiers[at];
+    const p = ANCHOR[k] === "base" ? seen.bases[at] : seen.soldiers[at];
     if (!p || !onScreen(p)) continue;
     const owner = k === "streakMe" || k === "streakCamp" ? me.owner : foe;
     const b = bubbles.urgent(k, at, t0, Math.floor(seeded(seed, n, 73) * 2 ** 31), { ...noteContext(owner), streak: n });
@@ -912,7 +916,8 @@ let botchLast: BotchKind | undefined;
 let botchBack: { who: Player; turn: number } | null = null;
 function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number, only?: BotchKind) {
   if (!heard() || slow || boil.tooDear || grade < 1) return null;
-  const me = s.soldiers[id];
+  const seen = beforeMarch(s, lapseDue?.walkers ?? []);
+  const me = seen.soldiers[id];
   if (!me) return null;
   if (!only && seeded(seed, 17) >= BUBBLE.botch.chance[Math.min(2, grade)]) return null;
   const foe = other(me.owner);
@@ -921,14 +926,14 @@ function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number
   const who = (k: BotchKind): number | undefined => {
     if (k === "botchMe") return me.alive ? id : undefined;
     if (k === "botchCamp") return campOf(id);
-    if (k === "botchFoe") return turn.aliveOf(s, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
-    const manned = s.bases.filter((b) => b.owner === foe && s.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    if (k === "botchFoe") return turn.aliveOf(seen, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
     return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
   };
   for (const k of only ? [only] : botchVoices(grade, seeded(seed, grade, 79), botchLast)) {
     const at = who(k);
     if (at === undefined) continue;
-    const p = ANCHOR[k] === "base" ? s.bases[at] : s.soldiers[at];
+    const p = ANCHOR[k] === "base" ? seen.bases[at] : seen.soldiers[at];
     if (!p || !onScreen(p)) continue;
     const owner = k === "botchMe" || k === "botchCamp" ? me.owner : foe;
     // a spectacular one rubs out whatever's up ("Charge!" and then this), unless it's a streak's line;
@@ -1006,10 +1011,10 @@ function skipUnitCam() { if (unit && !unit.rising) unit.skip = T - unit.t0; }
  * clock the boil draws by. Ink time is snagged on each kill; `when` turns a
  * place on the line into the wall ms at which the ink's head gets there.
  */
-function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) {
+function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number, seen: AnyState) {
   const when = (i: number) => wallTime(reachFraction(Math.min(n, Math.round(i)), n) * dur, snags) / speed;
   const arrive = wallTime(dur, snags) / speed;
-  const plan = planFlick(s, o, f.soldier, f.kind === "snipe" ? "shoot" : "move", when, arrive);
+  const plan = planFlick(seen, o, f.soldier, f.kind === "snipe" ? "shoot" : "move", when, arrive);
   const on = (k: string) => (k === "recoil" || k === "flinch" || k === "gasp" ? LIFE.line : k === "land" ? LIFE.chosen : LIFE.crowd);
   for (const { id, r } of plan.acts) if (on(r.kind)) life.add(id, { ...r, t0: wall + r.t0 });
   if (LIFE.camps) for (const h of plan.hush) life.hold(h.base, wall + h.at, wall + h.at + h.ms);
@@ -1025,7 +1030,7 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   const bo = st.n === 0 && st.ended < 3 ? botchOf({
     kind: f.kind, from: o.path[0], aim: f.angle, path: o.path, killed: o.killed.length, lost: o.lost, crashed: o.crashed !== undefined,
     offPage: o.events.some((e) => e.kind === "edge") || (o.lost && o.crashed === undefined),
-    foes: turn.aliveOf(s, other(shooter)), own: s.bases.filter((b) => b.owner === shooter),
+    foes: turn.aliveOf(seen, other(shooter)), own: seen.bases.filter((b) => b.owner === shooter),
   }) : null;
   const phew = plan.cues.find((c) => c.say === "phew");
   if (phew && (bo?.grade ?? 0) < 2) speak("phew", phew.id, wall + phew.at);
@@ -1064,9 +1069,9 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
  * the lunge rule the engine's own cross is held back to land on the last jab).
  * Returns the plan, or null for an empty ring or disabled optional motion.
  */
-function startVolley(base: number, target: { id: number; x: number; y: number }, at = wall, stamp = true) {
+function startVolley(base: number, target: { id: number; x: number; y: number }, at = wall, stamp = true, seen: AnyState = s) {
   if (!LIFE.crowd || !lively()) return null;
-  const plan = planVolley(s, base, target);
+  const plan = planVolley(seen, base, target);
   if (!plan) return null;
   volley = { plan, t0: at, stamp };
   for (const { id, r } of plan.acts) life.add(id, { ...r, t0: at + r.t0 });

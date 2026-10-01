@@ -18,6 +18,13 @@ import type { AnyState as GameState } from "./record";
 import { inBase } from "./hand";
 import { RULES } from "./rules";
 
+/** Presentation keeps pending convoy departures until the ink has landed. */
+export function beforeMarch<S extends GameState>(s: S, walkers: readonly { id: number; from: Pt }[]): S {
+  if (!walkers.length) return s;
+  const from = new Map(walkers.map((w) => [w.id, w.from]));
+  return { ...s, soldiers: s.soldiers.map((x) => from.has(x.id) ? { ...x, ...from.get(x.id)! } : x) };
+}
+
 /**
  * Every idea is its own switch, so each can be compared on and off.
  * (Dev: `pft.LIFE.voices = false`, live.)
