@@ -113,6 +113,8 @@ export interface TraceEvent {
   soldier?: number;
   /** A wall at the shooter's back (leaving the base he stands in): free. */
   free?: boolean;
+  /** A wall's price: the share of a snipe's length it took, or the lunger's shake (radians, 1 sd). */
+  cost?: number;
   /** Radians the lunger's heading turned here. */
   jolt?: number;
 }
@@ -276,6 +278,28 @@ export function sendable(s: GameState, b: Base) {
   return s.soldiers.filter((x) => x.alive && x.owner === b.owner && x.convoy === undefined && s.chain?.soldier !== x.id && dist(b, x) <= reach);
 }
 
+/**
+ * How tough a base's wall is right now, 0 (an empty ring) to 1 (a full base):
+ * its garrison over the soldiers a base starts with, capped at full and shaped
+ * by the rules' curve. `gone`: soldiers this line already crossed out;
+ * `but`: the man flicking (never his own wall's garrison). 1 on flat walls.
+ */
+export function wallStrength(s: GameState, b: Base, gone?: Set<number>, but?: number) {
+  const G = s.rules.garrison;
+  if (!G) return 1;
+  let n = 0;
+  for (const x of garrison(s, b)) if (x.id !== but && !gone?.has(x.id)) n++;
+  return Math.pow(Math.min(1, n / Math.max(1, s.size.soldiers)), G.curve);
+}
+
+/** What crossing this wall costs a line now: a snipe's share of length lost, or a lunger's jolt (radians, 1 sd). */
+export function wallCost(s: GameState, b: Base, kind: Kind, gone?: Set<number>, but?: number) {
+  const G = s.rules.garrison;
+  if (!G) return kind === "snipe" ? s.rules.snipeWallLoss : s.rules.lungeWallShake;
+  const [lo, hi] = kind === "snipe" ? G.snipeLoss : G.lungeShake;
+  return lo + (hi - lo) * wallStrength(s, b, gone, but);
+}
+
 /** Can this soldier flick now (and flick this kind)? */
 export function canFlick(s: GameState, id: number, kind?: Kind) {
   const x = s.soldiers[id];
@@ -300,23 +324,48 @@ export function hand(s: GameState, id: number, kind: Kind) {
   const x = s.soldiers[id];
   const mult = x && inLastStand(s, x.owner) ? s.rules.lastStandSteady : 1;
   const tremor = kind === "lunge" && s.chain?.soldier === id ? s.rules.lungeLinkTremor * s.chain.link : 0;
-  return { mult, tremor };
+  return { mult, tremor, wild: (power: number) => wildOf(s.rules, power) };
 }
 
 /** Flicks a side gets at the start of its turn. */
 export const allotment = (s: GameState, p: Player) => (inLastStand(s, p) ? s.rules.lastStandFlicks : 1);
 
-/** How long a flick of this power is (0..1). Both kinds reach as far. */
+/** Version 1 pages ran on this one reach and curve; the hand's error, wobble and bend were tuned on it. */
+const V1_REACH = { min: 300, max: 1800, curve: 0.9 };
+
+/** The reach a page runs on: one for both kinds. Version 1 pages keep the old one. */
+const reachFor = (R: CoreRules) => (R.version < 2 ? V1_REACH : R.reach);
+
+/** How long a flick of this power is (power 0..1, the share of the thumb's travel). Snipe and lunge reach alike. */
 export function reachOf(R: CoreRules, power: number) {
-  const p = Math.pow(Math.max(0, Math.min(1, power)), 0.9);
-  return R.reach.min + (R.reach.max - R.reach.min) * p;
+  const r = reachFor(R);
+  return r.min + (r.max - r.min) * Math.pow(Math.max(0, Math.min(1, power)), r.curve);
 }
 
 /** The power that gives a flick this length (inverse of reachOf). */
 export function powerFor(R: CoreRules, length: number) {
-  const f = Math.max(0, Math.min(1, (length - R.reach.min) / Math.max(1, R.reach.max - R.reach.min)));
-  return Math.pow(f, 1 / 0.9);
+  const r = reachFor(R);
+  const f = Math.max(0, Math.min(1, (length - r.min) / Math.max(1, r.max - r.min)));
+  return Math.pow(f, 1 / r.curve);
 }
+
+/** The longest line a flick can draw. */
+export const maxReach = (R: CoreRules) => reachFor(R).max;
+
+/**
+ * How wild a line of this length is, as a power 0..1 on the version-1 curve
+ * (where the hand's error, wobble and bend were tuned). Error follows the
+ * line's length, not the thumb's travel, so changing the reach or the pull
+ * range doesn't change how accurate a 700-unit line is.
+ */
+export function wildOfLength(length: number) {
+  const r = V1_REACH;
+  const f = Math.max(0, Math.min(1, (length - r.min) / (r.max - r.min)));
+  return Math.pow(f, 1 / r.curve);
+}
+
+/** `wildOfLength` for a flick pulled to this power. */
+export const wildOf = (R: CoreRules, power: number) => wildOfLength(reachOf(R, power));
 
 /** How close ink must pass a dot to cross it out. */
 export const hitReach = () => RULES.soldierRadius + RULES.inkWidth / 2 + RULES.hitSlop;
@@ -415,8 +464,10 @@ export function trace(s: GameState, f: Flick): { pts: Pt[]; events: TraceEvent[]
     if (ev.kind === "edge") { offPage = true; events.push({ kind: "edge", at, d }); break; }
     if (ev.kind === "wall") {
       if (free.has(ev.base!)) { free.delete(ev.base!); events.push({ kind: "wall", at, d, base: ev.base, free: true }); continue; }
-      if (snipe) { end = d + (end - d) * (1 - R.snipeWallLoss); events.push({ kind: "wall", at, d, base: ev.base }); }
-      else events.push({ kind: "wall", at, d, base: ev.base, jolt: jolt(at, R.lungeWallShake) });
+      // garrisoned walls: as tough as the men inside at this moment (those this line crossed out don't hold it)
+      const cost = wallCost(s, s.bases[ev.base!], f.kind, hit, me.id);
+      if (snipe) { end = d + (end - d) * (1 - cost); events.push({ kind: "wall", at, d, base: ev.base, cost }); }
+      else events.push({ kind: "wall", at, d, base: ev.base, cost, jolt: jolt(at, cost) });
       continue;
     }
     hit.add(ev.soldier!);

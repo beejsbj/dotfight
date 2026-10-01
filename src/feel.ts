@@ -6,17 +6,8 @@
 //   stand    your side is down to its last three: two slow heartbeats
 //   volley   a camp turning on a lunger in it: a rattle of jabs, then the cross
 //
-// feel/haptics (PR #7) brings a semantic vocabulary, haptic("..."), with one
-// global gate and an iPhone backend. This doesn't depend on it: until it
-// lands, these play on Android's navigator.vibrate through a gate of their
-// own. When both are merged, route them through it once, at boot:
-//
-//   import { haptic } from "./haptics";
-//   setFeel((ev) => haptic(TO_HAPTICS[ev] as HapticEvent));
-//
-// "stand" is already in that vocabulary (PR #7 lists it, unwired). "cheer",
-// "flinch", "unitcam" and "volley" would be added there, with PATTERNS below
-// as their Android shapes and the iOS tick rhythms in IOS below.
+// main.ts routes these moments to haptics.ts, including its shared gate and
+// iPhone backend. The local gate keeps life chatter sparse before that route.
 
 import { LIFE } from "./life";
 

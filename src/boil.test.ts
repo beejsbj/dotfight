@@ -214,3 +214,22 @@ describe("the other way round", () => {
     expect(p.hold.dots.has(spotKey(me))).toBe(true);
   });
 });
+
+
+it("keeps a crashed lunger animated at his destination until the lost cross starts", () => {
+  const s = setup();
+  const me = s.soldiers[0], end = { x: 320, y: 210 };
+  const origin = { ...me };
+  me.alive = false;
+  Object.assign(me, end);
+  s.marks.push({ t: "cross", kind: "moved", owner: me.owner, x: origin.x, y: origin.y, seed: 1, turn: s.turn, id: me.id });
+  s.marks.push({ t: "cross", kind: "lost", owner: me.owner, ...end, seed: 2, turn: s.turn });
+  const key = `m${s.marks.length - 1}`;
+  const before = planBoil(s, drawing({ [key]: 0 }), { on: true });
+  expect(before.dots.some((d) => d.spot.key === spotKey(me) && d.boils)).toBe(true);
+  expect(before.hold.dots.has(spotKey(me))).toBe(true);
+  const riding = planBoil(s, drawing({ [key]: 0 }), { on: true, moving: me.id });
+  expect(riding.hold.dots.has(spotKey(me))).toBe(true);
+  expect(riding.dots.some((d) => d.spot.key === spotKey(me))).toBe(false);
+  expect(planBoil(s, drawing({ [key]: 0.01 }), { on: true }).dots.some((d) => d.spot.key === spotKey(me))).toBe(false);
+});

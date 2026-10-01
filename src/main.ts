@@ -9,8 +9,8 @@ import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
-  act, canArrange, canSend, garrison, illegal, newGame, other, pathLen, sendMax,
-  type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
+  act, canArrange, canSend, garrison, illegal, inLastStand, newGame, other, pathLen, sendMax,
+  type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
 import { haptic, haptics, Ratchet } from "./haptics";
@@ -29,17 +29,21 @@ import { CUSTOM, RULES, SIZES, type Size } from "./rules";
 import { boldAt } from "./boil";
 import { comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
-import { Bubbles, bubbleAt, type BubbleKind } from "./bubble";
-import { feel } from "./feel";
+import { ANCHOR, BUBBLE, Bubbles, botchOf, botchVoices, bubbleAt, heatOf, replyAt, strayKind, streakVoices, type BotchKind, type BubbleKind, type Context, type StreakKind } from "./bubble";
+import { feel, setFeel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
-import { boil, boilSeen, boilTick, field, streak, forgetDrawn, life, NOTE, noteSpotNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { boil, boilSeen, boilTick, field, streak as streakLayer, forgetDrawn, life, NOTE, noteSpotNow, noteSpotsNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
-import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
-import { apply as roomApply, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
+import { keepIcon, paperIcon, tearIcon } from "./icons";
+import { orderGames, type GameLine } from "./games";
+import { forgetRoom, listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
+import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
-import { Timeline, reachFraction } from "./timeline";
+import { Timeline, reachFraction, walkerAt } from "./timeline";
 import * as turn from "./turn";
+
+setFeel((ev) => haptic(ev));
 
 // --- state ------------------------------------------------------------------
 
@@ -88,6 +92,9 @@ const dawn = new Tween(0);
 // things to do later, on the game clock
 let later: { at: number; fn: () => void; g: number }[] = [];
 function after(ms: number, fn: () => void) { later.push({ at: T + ms, fn, g: gen }); }
+// the room's own business (the lamp) outlives any one game
+const ROOM = -1;
+function whenever(ms: number, fn: () => void) { later.push({ at: T + ms, fn, g: ROOM }); }
 
 // the flick resolving now
 interface Resolve {
@@ -332,7 +339,7 @@ const learn = (k: string) => localStorage.setItem(`pft:taught:${k}`, "1");
 
 function reset() {
   gen++;
-  later = [];
+  later = later.filter((l) => l.g === ROOM);
   busy = false;
   res = null;
   aim = null;
@@ -349,6 +356,14 @@ function reset() {
   inkTL.clear();
   sfx.creak(0);
   life.clear();
+  bubbles.reset();
+  bubbleKey = "";
+  streak = { who: -1, turn: -1, kind: "", n: 0, last: undefined };
+  botchBack = null;
+  botchLast = undefined;
+  lastMoveWall = wall;
+  chosenAt = { id: -1, t0: wall };
+  dreadWas.clear();
   volley = null;
   unit = null;
   penLift = null;
@@ -503,6 +518,7 @@ function botSends(a: Extract<Action, { t: "send" }>) {
  */
 function perform(a: Action, then: () => void) {
   const c0 = core();
+  lastMoveWall = wall;
   if (!c0) return then();
   const before = c0.soldiers.map((x) => ({ x: x.x, y: x.y }));
   const first = c0.marks.length;
@@ -621,6 +637,7 @@ const penLean = (power: number) => 0.06 + power * 0.5;
 // `power` is how hard the pen was pulled back; `lean` how far it was leaning when it went.
 function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?: boolean; quick?: number } = {}) {
   const who = s.current;
+  lastMoveWall = wall;
   const first = s.marks.length; // the flick appends its stroke, then its crosses
   const before = s.soldiers.map((x) => ({ x: x.x, y: x.y }));
   const o = turn.flick(s, f);
@@ -642,6 +659,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   const kills: Resolve["kills"] = [];
   const snags: Snag[] = [];
   const moments: Resolve["moments"] = [];
+  const stands: { i: number; owner: Player }[] = [];
   const live = opts.cam ?? true; // replays are watched, not felt
   let lastKill = -1;
   for (let i = first + 1; i < s.marks.length; i++) if (s.marks[i].t === "cross" && (s.marks[i] as { kind: string }).kind === "kill") lastKill = i;
@@ -651,9 +669,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     if (held.has(i)) continue;
     if (m.t === "stand") {
       // their comrades are gone: the last few are ringed once the crosses are down
-      const at = dur + 380 * quick;
-      inkTL.add(`m${i}`, 0, at, 500 * quick);
-      moments.push({ at, fn: () => { sfx.scratch(0.5, 0.35, 1600); if (live) cue("last-stand", m.owner); } });
+      stands.push({ i, owner: m.owner });
       continue;
     }
     if (m.t !== "cross") continue;
@@ -677,12 +693,17 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     // home turns on him and jabs (life.planVolley), and his cross, the snag and
     // the thud land on the last jab
     const base = o.crashed, end = o.path[o.path.length - 1];
-    const plan = live ? startVolley(base, { id: f.soldier, x: end.x, y: end.y }, wall + wallTime(dur, snags) / speed, false) : null;
+    const plan = startVolley(base, { id: f.soldier, x: end.x, y: end.y }, wall + wallTime(dur, snags) / speed, false);
     if (plan) {
       volleyHold = plan.cross * speed;
       s.marks.forEach((m, i) => { if (i >= first && m.t === "cross" && m.kind === "lost") inkTL.add(`m${i}`, 0, dur + volleyHold, VOLLEY.crossMs * speed); });
     }
-    moments.push({ at: dur + 20 * quick + volleyHold, fn: () => { sfx.snag(true); sfx.cross(0.03, 1.1); if (live) { cam.shake(7); cue("lunge-death", base); } } });
+    moments.push({ at: dur + 20 * quick + volleyHold, fn: () => { if (live) { sfx.snag(true); sfx.cross(0.03, 1.1); cam.shake(7); cue("lunge-death", base); } } });
+  }
+  for (const { i, owner } of stands) {
+    const at = dur + Math.max(380 * quick, volleyHold ? volleyHold + VOLLEY.crossMs * speed : 0);
+    inkTL.add(`m${i}`, 0, at, 500 * quick);
+    moments.push({ at, fn: () => { sfx.scratch(0.5, 0.35, 1600); if (live) cue("last-stand", owner); } });
   }
   if (o.earned && live) moments.push({ at: dur, fn: () => cue("earned", core()?.left ?? 0) });
   const pen = opts.pen ?? true;
@@ -714,12 +735,135 @@ const heard = () => screen === "game"; // replays are watched in silence
 // Comic bubbles (bubble.ts): rare, one at a time, seeded by the page and the man.
 const bubbles = new Bubbles();
 let bubbleKey = "";
-function speak(kind: BubbleKind, id: number, t0 = wall, seed?: number) {
+let devHour: number | undefined; // dev: pin the hour of the day the men remark on
+let devHeat: number | undefined; // dev: pin how hot the war is (captures of early and late lines)
+let lastMoveWall = 0; // wall ms of the last move: a long wait brings yawns and crickets
+/** What a line is said in the light of: the sides' pen names on this paper, the paper, the hour, how hot the war is. */
+function noteContext(owner: Player): Context {
+  const c0 = core();
+  const dead = s.soldiers.filter((x) => !x.alive).length;
+  const standing = !!c0 && (inLastStand(c0, 0) || inLastStand(c0, 1));
+  return { me: theme.ink.names[owner], them: theme.ink.names[other(owner)], paper: theme.id, hour: devHour ?? new Date().getHours(), heat: devHeat ?? heatOf(s.turn, dead, s.soldiers.length, standing) };
+}
+/** The camp a man speaks from: his home base, else his side's nearest. */
+function campOf(id: number) {
   const x = s.soldiers[id];
-  if (!heard() || !x?.alive) return;
-  const p = cam.toScreen(x.x, x.y);
+  if (!x) return undefined;
+  const home = "home" in x ? x.home : undefined;
+  if (home !== undefined && s.bases[home]) return home;
+  const own = s.bases.filter((b) => b.owner === x.owner).sort((a, b) => Math.hypot(a.x - x.x, a.y - x.y) - Math.hypot(b.x - x.x, b.y - x.y));
+  return own[0]?.id;
+}
+/** A walker's position on the displayed march, rather than the reducer's destination. */
+function displayedAt(id: number): Pt {
+  const w = lapse?.walkers.find((w) => w.id === id);
+  if (!w || !lapse) return s.soldiers[id];
+  const p = Math.min(1, Math.max(0.001, (T - lapse.t0) / lapse.dur));
+  return walkerAt(w.from, w.to, p);
+}
+
+/** Offer a line from a man or camp; `mate` is a nearby comrade who replies. */
+function speak(kind: BubbleKind, id: number, t0 = wall, seed?: number, mate?: number) {
+  if (!heard() || slow || boil.tooDear || !LIFE.bubbles) return;
+  const base = ANCHOR[kind] === "base";
+  const at = base ? s.bases[id] : s.soldiers[id];
+  if (!at || (!base && !(at as Soldier).alive)) return;
+  const pos = base ? at : displayedAt(id);
+  const p = cam.toScreen(pos.x, pos.y);
   if (p.x < 20 || p.x > W - 20 || p.y < 60 || p.y > H - 120) return; // off screen, or under the HUD
-  if (bubbles.offer(kind, id, t0, seed ?? Math.floor(seeded(s.seed, s.turn, id, kind.length) * 2 ** 31))) dirty = true;
+  const b = bubbles.offer(kind, id, t0, seed ?? Math.floor(seeded(s.seed, s.turn, id, kind.length) * 2 ** 31), noteContext(at.owner), mate);
+  if (b) {
+    if (kind === "send") b.at = { x: pos.x, y: pos.y };
+    dirty = true;
+  }
+}
+
+/**
+ * A streak on the page: chained lunges (the engine's `chain.link`), or snipes
+ * that keep earning, in one turn. Counted here, for presentation only.
+ */
+let streak = { who: -1, turn: -1, kind: "", n: 0, last: undefined as StreakKind | undefined };
+/** How long the streak is after this flick (0: it didn't earn, and any streak is over; `ended`: how long the one it ended was). */
+function countStreak(o: Outcome, f: Flick, who: Player) {
+  if (!o.earned) { const ended = streak.n; streak.n = 0; streak.last = undefined; return { n: 0, ended }; }
+  const c0 = core();
+  if (streak.who === who && streak.turn === s.turn && streak.kind === f.kind) streak.n++;
+  else streak = { who, turn: s.turn, kind: f.kind, n: 1, last: undefined };
+  // a lunge chain's count is the engine's own
+  if (f.kind === "lunge" && c0?.chain?.soldier === f.soldier) streak.n = c0.chain.link;
+  return { n: streak.n, ended: 0 };
+}
+/**
+ * The page reacts to a streak `n` links long (from 2), at wall `t0`: the
+ * streaker, the enemy man nearest him, his home camp, or the camp nearest him
+ * he's tearing through; picked by a seeded roll, not the one who spoke last,
+ * and only someone on screen. It goes up now, rubbing out whatever's there.
+ */
+function speakStreak(n: number, id: number, t0: number, seed: number, only?: StreakKind) {
+  if (!heard() || slow || boil.tooDear || n < 2) return null;
+  const me = s.soldiers[id];
+  if (!me) return null;
+  const foe = other(me.owner);
+  const d = (p: Pt) => Math.hypot(p.x - me.x, p.y - me.y);
+  const onScreen = (p: Pt) => { const q = cam.toScreen(p.x, p.y); return q.x >= 20 && q.x <= W - 20 && q.y >= 60 && q.y <= H - 120; };
+  const who = (k: StreakKind): number | undefined => {
+    if (k === "streakMe") return me.alive ? id : undefined;
+    if (k === "streakFoe") return turn.aliveOf(s, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+    if (k === "streakCamp") return campOf(id);
+    const manned = s.bases.filter((b) => b.owner === foe && s.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+  };
+  for (const k of only ? [only] : streakVoices(n, seeded(seed, n, 71), streak.last)) {
+    const at = who(k);
+    if (at === undefined) continue;
+    const p = ANCHOR[k] === "base" ? s.bases[at] : s.soldiers[at];
+    if (!p || !onScreen(p)) continue;
+    const owner = k === "streakMe" || k === "streakCamp" ? me.owner : foe;
+    const b = bubbles.urgent(k, at, t0, Math.floor(seeded(seed, n, 73) * 2 ** 31), { ...noteContext(owner), streak: n });
+    if (b) { streak.last = k; dirty = true; return b; }
+  }
+  return null;
+}
+
+/**
+ * A botch on the page: the shooter's miss, graded (bubble.ts botchOf) and
+ * remarked on by the flicker, his own camp, or the enemy man or camp nearest
+ * where the ink ended; not the voice that remarked last, only someone on
+ * screen, and only if nothing's up (a streak's line comes first). A
+ * spectacular one is remembered for a sly callback on the other side's go.
+ */
+let botchLast: BotchKind | undefined;
+let botchBack: { who: Player; turn: number } | null = null;
+function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number, only?: BotchKind) {
+  if (!heard() || slow || boil.tooDear || grade < 1) return null;
+  const me = s.soldiers[id];
+  if (!me) return null;
+  if (!only && seeded(seed, 17) >= BUBBLE.botch.chance[Math.min(2, grade)]) return null;
+  const foe = other(me.owner);
+  const d = (p: Pt) => Math.hypot(p.x - end.x, p.y - end.y);
+  const onScreen = (p: Pt) => { const q = cam.toScreen(p.x, p.y); return q.x >= 20 && q.x <= W - 20 && q.y >= 60 && q.y <= H - 120; };
+  const who = (k: BotchKind): number | undefined => {
+    if (k === "botchMe") return me.alive ? id : undefined;
+    if (k === "botchCamp") return campOf(id);
+    if (k === "botchFoe") return turn.aliveOf(s, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+    const manned = s.bases.filter((b) => b.owner === foe && s.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
+  };
+  for (const k of only ? [only] : botchVoices(grade, seeded(seed, grade, 79), botchLast)) {
+    const at = who(k);
+    if (at === undefined) continue;
+    const p = ANCHOR[k] === "base" ? s.bases[at] : s.soldiers[at];
+    if (!p || !onScreen(p)) continue;
+    const owner = k === "botchMe" || k === "botchCamp" ? me.owner : foe;
+    // a spectacular one rubs out whatever's up ("Charge!" and then this), unless it's a streak's line;
+    // a mild one waits its turn like any other note
+    const up = bubbles.next ?? bubbles.cur, streaking = !!up && up.kind.startsWith("streak");
+    const ls = Math.floor(seeded(seed, grade, 83) * 2 ** 31), c = { ...noteContext(owner), botch: grade };
+    const b = grade >= 2 && !streaking ? bubbles.urgent(k, at, t0, ls, c) : bubbles.offer(k, at, t0, ls, c, undefined, BUBBLE.botch.gapMs);
+    if (b) { botchLast = k; dirty = true; return b; }
+    return null; // something's up (a streak's line, a phew): it keeps the page
+  }
+  return null;
 }
 
 /** A soldier picked up: he perks up and says so; a campmate mutters. */
@@ -745,9 +889,9 @@ function startUnitCam(id: number) {
   const face = facing(s, id, lastPull?.id === id ? lastPull.angle : undefined);
   unit = { id, t0: T, back: { ...cam.tgt } };
   const rot = rotFacing(face, cam.cur.rot);
-  if (cam.tiltScale > 0) cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.m, tilt: UNIT_CAM.tilt, fy: UNIT_CAM.fy, rot };
+  if (cam.tiltScale > 0 && !reduced && !slow) cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.m, tilt: UNIT_CAM.tilt, fy: UNIT_CAM.fy, rot };
   else cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.flatM, tilt: 0, fy: 0.55, rot };
-  if (reduced) cam.snap(); // no swoop: just his view
+  if (reduced || slow) cam.snap(); // no swoop: just his view
   if (LIFE.chosen) life.add(id, { kind: "perk", t0: wall, amp: 1 });
   if (heard()) voice.say("look", id, me.owner, 0.05);
   speak("ready", id);
@@ -772,7 +916,7 @@ function stepUnitCam() {
     if (selected === u.id) cam.tgt = { ...u.back };
     else if (selected === undefined) cam.overview(u.back.rot);
     else cam.tgt = { ...cam.tgt, rot: u.back.rot };
-    if (reduced) cam.snap();
+    if (reduced || slow) cam.snap();
     penDrop = T; // the pen comes back down onto him
     status();
   }
@@ -793,6 +937,7 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   const on = (k: string) => (k === "recoil" || k === "flinch" || k === "gasp" ? LIFE.line : k === "land" ? LIFE.chosen : LIFE.crowd);
   for (const { id, r } of plan.acts) if (on(r.kind)) life.add(id, { ...r, t0: wall + r.t0 });
   if (LIFE.camps) for (const h of plan.hush) life.hold(h.base, wall + h.at, wall + h.at + h.ms);
+  const st = countStreak(o, f, s.soldiers[f.soldier].owner); // counted even unheard, so it's right when the sound comes back
   if (!heard()) return;
   // under your thumb: your camp cheering your kill; the bot's ink going right past one of yours
   const shooter = s.soldiers[f.soldier].owner;
@@ -800,13 +945,33 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   if (cheer && !away(shooter)) after(cheer.r.t0 * speed, () => feel("cheer"));
   const close = plan.cues.find((c) => c.say === "eep" && !away(s.soldiers[c.id].owner));
   if (close && away(shooter)) after(close.at * speed, () => feel("flinch"));
+  // a botch: graded from the flick as it ran; a spectacular one takes the page from the target's "phew"
+  const bo = st.n === 0 && st.ended < 3 ? botchOf({
+    kind: f.kind, from: o.path[0], aim: f.angle, path: o.path, killed: o.killed.length, lost: o.lost, crashed: o.crashed !== undefined,
+    offPage: o.events.some((e) => e.kind === "edge") || (o.lost && o.crashed === undefined),
+    foes: turn.aliveOf(s, other(shooter)), own: s.bases.filter((b) => b.owner === shooter),
+  }) : null;
   const phew = plan.cues.find((c) => c.say === "phew");
-  if (phew) speak("phew", phew.id, wall + phew.at);
+  if (phew && (bo?.grade ?? 0) < 2) speak("phew", phew.id, wall + phew.at);
   // in writing: a lunger yells as he goes, a big snipe fires with a shout; a kill
   // (or the last one: the war is won) is claimed; a campmate mourns the fallen
-  if (f.kind === "lunge") speak("lunge", f.soldier);
-  else if (pathLen(o.path) > 480) speak("snipe", f.soldier);
-  if (cheer && !o.lost) speak(s.phase === "over" ? "win" : "kill", f.soldier, wall + cheer.r.t0 + 120);
+  const camp = campOf(f.soldier);
+  // a streak: the page reacts once the kill that keeps it going lands, bigger with every link; when a long one ends, the camp it tore through breathes out
+  const seed = s.seed * 31 + s.turn * 977 + f.soldier;
+  if (f.kind === "lunge" && camp !== undefined) speak("lunge", camp);
+  else if (pathLen(o.path) > 480 && camp !== undefined) speak("snipe", camp);
+  if (st.n >= 2) speakStreak(st.n, f.soldier, wall + arrive + 180, seed);
+  else if (cheer && !o.lost) { if (s.phase === "over") { if (camp !== undefined) speak("win", camp, wall + cheer.r.t0 + 120); } else speak("kill", f.soldier, wall + cheer.r.t0 + 120); }
+  if (bo?.grade) {
+    const end = o.path[o.path.length - 1];
+    speakBotch(bo.grade, f.soldier, end, wall + arrive + 260, seed + 5);
+    if (bo.grade >= 2) botchBack = { who: shooter, turn: o.handover ? s.turn - 1 : s.turn }; // the turn he flicked in (a miss hands the pen over)
+  }
+  if (st.ended >= 3 && s.phase !== "over") {
+    const foe = other(shooter), me = s.soldiers[f.soldier];
+    const near = s.bases.filter((b) => b.owner === foe).sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y))[0];
+    if (near) speak("streakEnd", near.id, wall + arrive + 400);
+  }
   const oh = plan.cues.find((c) => c.say === "oh");
   if (oh) speak("mourn", oh.id, wall + oh.at + 240);
   // a flick is one moment: one voice, now and then two, never the crowd
@@ -835,9 +1000,8 @@ function startVolley(base: number, target: { id: number; x: number; y: number },
     const lead = Math.max(0, at - wall);
     for (const c of voice.curate(plan.cues, target.id * 17 + base)) voice.say(c.say as voice.Say, c.id, s.soldiers[c.id].owner, (lead + c.at) / 1000, c.gain);
     after(lead * speed, () => feel("volley"));
-    after((lead + plan.cross) * speed, () => { sfx.snag(false); sfx.cross(0.02, 1); });
-    const jab = plan.cues.find((c) => c.say === "jab");
-    if (jab) speak("deny", jab.id, at + plan.cross + 260);
+    if (stamp) after((lead + plan.cross) * speed, () => { sfx.snag(false); sfx.cross(0.02, 1); });
+    speak("deny", base, at + plan.cross + 260);
   }
   dirty = true;
   return plan;
@@ -849,7 +1013,8 @@ onCue((c, p) => {
   if (c !== "last-stand" || p === undefined || !heard()) return;
   const few = turn.aliveOf(s, p as Player);
   if (few[0]) voice.say("uhoh", few[0].id, p as Player, 0.15, 0.8);
-  if (few[0]) speak("last", few[Math.floor(seeded(s.seed, s.turn, 67) * few.length)].id, wall + 400);
+  const camp = few[0] && campOf(few[Math.floor(seeded(s.seed, s.turn, 67) * few.length)].id);
+  if (camp !== undefined) speak("last", camp, wall + 400);
 });
 
 // What the status line says after a flick.
@@ -977,8 +1142,12 @@ function titleDesk(saved = load()) {
   dirty = true;
 }
 
+let tearing: string | null = null; // a cover row waiting on "tear it out?"
+let showDone = false;
+
 function showTitle() {
   screen = "title";
+  tearing = null;
   leaveRoom();
   restoreLabel();
   reset();
@@ -991,7 +1160,7 @@ function showTitle() {
   cover.hidden = false;
   cover.classList.remove("open");
   // the lamp comes on
-  if (lampOn.to < 1) after(450, switchOn);
+  if (lampOn.to < 1 && !later.some((l) => l.fn === switchOn)) whenever(450, switchOn);
 }
 
 // The slip tucked in the cover, and the page on the desk under it.
@@ -1004,23 +1173,27 @@ function coverMenu() {
   // a page started on another paper says so
   const elsewhere = saved && paperOf(saved.s.page) !== currentTheme() ? ` · ${themeOf(saved.s.page?.theme).name.toLowerCase()}` : "";
   const menu = $("#cover .menu");
+  const mark = $("#cover .tabs .m1 sup");
+  mark.textContent = d.length ? String(d.length) : "";
   const where = (x: AnyState) => x.phase === "setup" ? "still drawing camps" : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
   const draw = () => {
-    menu.innerHTML = `
-    ${canResume ? `<button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>` : ""}
-    <p class="head">quick battle</p>
+    const carry = canResume ? (tearing === "local" ? `
+      <div class="carry tearing">
+        <div class="say"><p class="struck">${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}</p>
+        <p class="ask">tear this page out for good?</p></div>
+        <span class="acts"><button data-a="tear" data-code="local" class="ico rip" aria-label="tear this page out for good">${tearIcon()}</button><button data-a="keep" class="ico" aria-label="keep it">${keepIcon()}</button></span>
+      </div>` : `
+      <div class="carry">
+        <span class="carry-icon">${paperIcon(themeOf(saved!.s.page?.theme).paper, -2)}</span><button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>
+        <button data-a="ask" data-code="local" class="x" aria-label="tear this page out">×</button>
+      </div>`) : "";
+    menu.innerHTML = `${carry}${friendsList()}
+    <h2 class="sect">new game</h2>
     ${sizeRow()}
     <button data-a="bot" class="ink red">play Dawood-bot</button>
     <p class="levels">${LEVELS.map((l, i) => `<button data-lvl="${i}" class="${i === botLevel ? "on" : ""}">${l}</button>`).join("")}</p>
     <button data-a="pnp" class="ink blue">pass &amp; play<small>two of you, one phone</small></button>
-    <button data-a="friend" class="ink blue">play a friend<small>send a link: each on your own phone</small></button>
-    ${friendsList()}
-    <p class="row">
-      <button data-a="drawer" class="pencil">the drawer${d.length ? ` (${d.length})` : ""}</button>
-      <button data-a="how" class="pencil">how it's played</button>
-      <a href="/rules" class="pencil">the rulebook</a>
-      <button data-a="settings" class="pencil">settings</button>
-    </p>`;
+    <button data-a="friend" class="ink blue">play a friend<small>send a link: each on your own phone</small></button>`;
   };
   draw();
   menu.onclick = (e) => {
@@ -1032,10 +1205,17 @@ function coverMenu() {
     if (a === "resume" && saved) resume(saved);
     else if (a === "pnp") start({ kind: "pnp" });
     else if (a === "bot") start({ kind: "bot", level: botLevel });
-    else if (a === "how") showHow();
-    else if (a === "drawer") showDrawer();
-    else if (a === "settings") showSettings();
     else if (a === "friend") newRoomOnCover();
+    else if (a === "ask") { tearing = b.dataset.code!; draw(); }
+    else if (a === "keep") { tearing = null; draw(); }
+    else if (a === "tear") {
+      const code = b.dataset.code!;
+      if (code === "local") { localStorage.removeItem("pft:save"); tearing = null; sfx.rustle(); coverMenu(); return; }
+      forgetRoom(localStorage, code);
+      tearing = null;
+      sfx.rustle();
+      draw();
+    } else if (a === "more") { showDone = !showDone; draw(); }
     else if (b.dataset.room) { const x = readRoom(localStorage, b.dataset.room); if (x) enterRoom(x); }
     else if (b.dataset.lvl) {
       botLevel = +b.dataset.lvl as Level;
@@ -1055,6 +1235,17 @@ function coverMenu() {
   };
 }
 
+// the bookmarks on the cover's top edge
+$("#cover .tabs").addEventListener("click", (e) => {
+  const b = (e.target as HTMLElement).closest("button");
+  if (!b) return;
+  sfx.unlock();
+  sfx.tap();
+  if (b.dataset.a === "how") showHow();
+  else if (b.dataset.a === "drawer") showDrawer();
+  else if (b.dataset.a === "settings") showSettings();
+});
+
 function switchOn() {
   sfx.lamp();
   const kind = theme.light.switch;
@@ -1062,15 +1253,15 @@ function switchOn() {
   else if (kind === "tube") {
     // a tube light: blinks twice on its starter, then catches
     lampOn.go(0.55, 30);
-    after(60, () => lampOn.go(0.08, 40));
-    after(210, () => lampOn.go(0.65, 30));
-    after(270, () => lampOn.go(0.12, 50));
-    after(430, () => lampOn.go(1, 80));
+    whenever(60, () => lampOn.go(0.08, 40));
+    whenever(210, () => lampOn.go(0.65, 30));
+    whenever(270, () => lampOn.go(0.12, 50));
+    whenever(430, () => lampOn.go(1, 80));
   } else {
     // a lamp's flicker: on, off, on
     lampOn.go(0.75, 40);
-    after(70, () => lampOn.go(0.15, 50));
-    after(160, () => lampOn.go(1, 180));
+    whenever(70, () => lampOn.go(0.15, 50));
+    whenever(160, () => lampOn.go(1, 180));
   }
   document.body.classList.add("lit");
 }
@@ -1102,7 +1293,7 @@ function showHow() {
     <h2>How Dawood played it</h2>
     <ol>
       <li>Take turns drawing camps, each jotted full of men. Then arrange your men: in camp, or just outside the wall.</li>
-      <li>On your go, pick up one soldier. Pull back from anywhere on the screen and let go, like flicking a pen stood on its tip.</li>
+      <li>On your go, pick up one soldier. Pull back from anywhere on the screen and let go, like flicking a pen stood on its tip: a small pull is a short line, a long one crosses the page (lunge and snipe reach alike).</li>
       <li><b>Snipe</b>: he stays put and the ink goes through every enemy it crosses. Walls and bodies sap it. Take two with one line and you flick again.</li>
       <li><b>Lunge</b>: he runs along his ink and crosses out whoever he passes. A kill earns him another lunge, shakier each time. Land among a camp's men and they shoot him; an empty camp is safe; off the page, he's gone.</li>
       <li><b>Send</b>, free, once a turn: up to five men walk to another of your camps. They're out on the open page for one enemy turn.</li>
@@ -1579,15 +1770,32 @@ function coverNote(t: string) {
 }
 
 function friendsList() {
-  const rs = listRooms(localStorage).slice(0, 4);
-  if (!rs.length) return "";
-  return `<p class="friends"><span>games with friends</span>${rs.map((r) => {
-    const foe = r.seat === null ? `${r.names[0]} v ${r.names[1] ?? "?"}` : r.names[r.seat === 0 ? 1 : 0] ?? "your friend";
-    const sm = r.summary;
-    const st = !sm ? "" : sm.next === null ? (r.seat === null ? "done" : sm.winner === r.seat ? "you won" : "they won")
-      : r.seat === null ? "watching" : sm.next === r.seat ? "your go" : "their go";
-    return `<button data-room="${esc(r.code)}" class="pencil">${esc(foe)}${st ? ` · ${st}` : ""}</button>`;
-  }).join("")}</p>`;
+  const all = listRooms(localStorage);
+  const rooms = new Map(all.map((r) => [r.code, r]));
+  const { running, finished } = orderGames(all);
+  if (!running.length && !finished.length) return "";
+  const tilt = (c: string) => [...c].reduce((n, ch) => n + ch.charCodeAt(0), 0) % 7 - 3;
+  const acts = (code: string, tear: string, keep: string) =>
+    `<span class="acts"><button data-a="tear" data-code="${esc(code)}" class="ico rip" aria-label="${tear}">${tearIcon()}</button><button data-a="keep" class="ico" aria-label="${keep}">${keepIcon()}</button></span>`;
+  const row = (g: GameLine) => {
+    const r = rooms.get(g.code)!;
+    if (tearing === g.code) return `<li class="game tearing">
+      <div class="say"><p class="struck">${esc(g.foe)}</p>
+      <p class="ask">tear it out of this phone? ${esc(g.foe)} keeps theirs.</p></div>
+      ${acts(g.code, `tear ${esc(g.foe)}'s game out of this phone`, "keep it")}
+    </li>`;
+    return `<li class="game ${g.yours ? "yours" : g.running ? "theirs" : "done"}">
+      <button data-room="${esc(g.code)}" class="go">${paperIcon(themeOf(r.theme ?? r.setup?.page?.theme).paper, tilt(g.code))}<b>${esc(g.foe)}</b>${g.standing ? `<span>${g.standing}</span>` : ""}${g.turn && g.running ? `<small>turn ${g.turn}</small>` : ""}</button>
+      <button data-a="ask" data-code="${esc(g.code)}" class="x" aria-label="tear ${esc(g.foe)}'s game out of this phone">×</button>
+    </li>`;
+  };
+  // up to four running games show; the rest (more running ones, then the finished) fold under one line
+  const shown = running.slice(0, 4);
+  const rest = [...running.slice(4), ...finished];
+  const open = showDone || !shown.length;
+  return `<h2 class="sect">games with friends</h2>
+    <ul class="games">${shown.map(row).join("")}
+    ${rest.length ? (open ? rest.map(row).join("") : `<li class="more"><button data-a="more" class="pencil">${running.length > 4 ? `more games (${rest.length})` : `finished games (${rest.length})`}</button></li>`) : ""}</ul>`;
 }
 
 function newRoomOnCover() {
@@ -1641,7 +1849,7 @@ async function openRoom(code: string) {
   } catch (e) {
     return home(e instanceof RoomHttpError && e.status === 404 ? "that page has gone: links last 30 days after the last move" : "couldn't open that page: check your signal and open the link again");
   }
-  if (v.engine !== ENGINE) return home("that page needs a newer copy of the game: reload");
+  if (!roomCanRead(v.engine)) return home("that page needs a newer copy of the game: reload");
   const host = v.names[0];
   const input = v.names[1] === null ? nameOnLabel() : null;
   menu.innerHTML = input ? `
@@ -1778,7 +1986,7 @@ function select(id: number) {
 }
 
 function standUp() {
-  if (selected !== undefined && LIFE.pen && screen === "game") { const me = s.soldiers[selected]; penLift = { t0: T, x: me.x, y: me.y, owner: me.owner }; }
+  if (selected !== undefined && LIFE.pen && lively() && screen === "game") { const me = s.soldiers[selected]; penLift = { t0: T, x: me.x, y: me.y, owner: me.owner }; }
   selected = undefined;
   motion.lower();
   cam.overview();
@@ -2089,6 +2297,7 @@ $("#acts").onclick = (e) => {
   const b = (e.target as HTMLElement).closest("button");
   const c0 = core();
   if (!b || !c0 || !humanTurn()) return;
+  unit = null; // turn controls cancel the view before changing the player or camera
   sfx.tap();
   const a = b.dataset.act;
   if (a === "ready") return perform({ t: "ready" }, () => handOver());
@@ -2156,7 +2365,7 @@ function frame(now: number) {
   if (later.length) {
     const due = later.filter((l) => l.at <= T);
     later = later.filter((l) => l.at > T);
-    for (const l of due) if (l.g === gen) l.fn();
+    for (const l of due) if (l.g === gen || l.g === ROOM) l.fn();
   }
   const moving = cam.tick(dt);
   let active = moving;
@@ -2177,7 +2386,7 @@ function frame(now: number) {
   if (aim) {
     steer();
     const p = pull(aim);
-    const w = wobble(aim, T);
+    const w = wobble(aim, T, turn.handFor(s, aim.soldierId, aim.kind));
     sfx.creak(p.power, Math.abs(w) * 12);
     if (ratchet.shake(w !== 0)) haptic("wobble");
   }
@@ -2186,13 +2395,31 @@ function frame(now: number) {
   const bo = boilOn();
   if (bo !== boilWas) { boilWas = bo; dirty = true; }
   // a bubble redraws only while it's written on or fading (on twos), and to go
-  const bb = bubbles.showing(wall), bk = bb ? bubbleAt(bb, wall, reduced)?.key ?? "" : "";
+  const bb = bubbles.showing(wall), bk = bb ? `${bubbleAt(bb, wall, reduced)?.key ?? ""}|${replyAt(bb, wall, reduced)?.key ?? ""}` : "";
   if (bk !== bubbleKey) { bubbleKey = bk; dirty = true; }
   // now and then, on your go with nothing happening, a stray thought
-  if (screen === "game" && !away(s.current) && s.phase === "play" && !aim && !res && !busy && selected === undefined && bubbles.idleDue(wall, s.seed)) {
+  const waited = wall - lastMoveWall;
+  // the other side's go after a spectacular botch: the callback is more likely than a stray thought
+  const back = botchBack && botchBack.who !== s.current && s.turn > botchBack.turn && s.turn <= botchBack.turn + 1 ? botchBack : null;
+  if (botchBack && s.turn > botchBack.turn + 1) botchBack = null;
+  if (screen === "game" && LIFE.bubbles && !slow && !boil.tooDear && !away(s.current) && s.phase === "play" && !aim && !res && !busy && selected === undefined && bubbles.idleDue(wall, s.seed, waited, !!back)) {
     const mine = turn.aliveOf(s, s.current), theirs = turn.aliveOf(s, other(s.current));
     const lead = mine.length - theirs.length;
-    if (mine.length) speak(lead >= 4 ? "idleUp" : lead <= -4 ? "idleDown" : "idle", mine[Math.floor(seeded(s.seed, s.turn, Math.floor(wall / 1000)) * mine.length)].id);
+    if (mine.length) {
+      const me = mine[Math.floor(seeded(s.seed, s.turn, Math.floor(wall / 1000)) * mine.length)];
+      const inBase = s.bases.some((b) => b.owner === me.owner && Math.hypot(b.x - me.x, b.y - me.y) < b.r);
+      const c0 = core();
+      let kind = strayKind(seeded(s.seed, s.turn, Math.floor(wall / 1000), 3), { lead, waited, inBase, heat: noteContext(me.owner).heat });
+      if (kind === "chant" && c0 && inLastStand(c0, me.owner)) kind = "chantLast";
+      if (back) kind = "botchBack";
+      // an exchange wants a comrade near enough to talk to, but not so near their two dots read as one from above
+      const near = comrades(s, me.owner, me, RULES.baseRadius * 2.5, me.id);
+      const far = (x: Soldier) => Math.abs(Math.hypot(x.x - me.x, x.y - me.y) - RULES.baseRadius * 1.3);
+      const mate = (near.filter((x) => Math.hypot(x.x - me.x, x.y - me.y) >= RULES.soldierRadius * 6).sort((a, b) => far(a) - far(b))[0] ?? near[0])?.id;
+      if (ANCHOR[kind] === "base") { const camp = campOf(me.id); if (camp !== undefined) speak(kind, camp); }
+      else speak(kind, me.id, wall, undefined, mate);
+      if (back && bubbles.cur?.kind === "botchBack") botchBack = null; // said: once is enough (not said yet: the next window tries again)
+    }
   }
   if (active || dirty) {
     const t0 = performance.now();
@@ -2228,8 +2455,18 @@ function currentFrame(): Frame {
     s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
     selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
-  const bb = heard() ? bubbles.showing(wall) : null, bs = bb && bubbleAt(bb, wall, reduced), bx = bb && s.soldiers[bb.id];
-  if (bb && bs && bx?.alive) { f.hud = { h: H, top: cam.top, bottom: cam.bottom }; f.bubble = { text: bb.text, mood: bb.mood, at: bx, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: bx.owner }; }
+  const bb = heard() && !slow && !boil.tooDear ? bubbles.showing(wall) : null;
+  if (bb) {
+    f.hud = { h: H, top: cam.top, bottom: cam.bottom };
+    f.heat = noteContext(s.current).heat;
+    const bs = bubbleAt(bb, wall, reduced);
+    if (bs) {
+      if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
+      else { const x = s.soldiers[bb.id]; if (x?.alive) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: bb.at ?? x, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && s.soldiers[bb.reply.id] }; }
+    }
+    const rs = replyAt(bb, wall, reduced), rx = bb.reply && s.soldiers[bb.reply.id];
+    if (rs && rx?.alive) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rx, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: s.soldiers[bb.id], answers: `${bb.seed}|${bb.text}` };
+  }
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
   if (ghost) {
@@ -2297,7 +2534,7 @@ function currentFrame(): Frame {
     const ink = inkLeft(owner);
     if (aim) {
       const pl = pull(aim);
-      const ang = aimAngle + wobble(aim, T);
+      const ang = aimAngle + wobble(aim, T, turn.handFor(s, selected, kind));
       f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: aimError(pl.power, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pl.power), kind };
       // at full pull it shivers under the finger (the pen only: the aim is the hand's)
       const sh = LIFE.pen && lively() && pl.live ? shiver(T, pl.power) : 0;
@@ -2377,8 +2614,13 @@ function seeLife(f: Frame) {
   const sel = f.selected ?? (f.aim ? f.aim.soldierId : undefined);
   if (sel !== chosenAt.id) chosenAt = { id: sel ?? -1, t0: wall };
   const r = f.view.rot;
+  const ink = f.ink ?? SETTLED;
   life.see({
     s, up: Math.atan2(-Math.cos(r), -Math.sin(r)), zoom: cam.cur.m,
+    pendingStand: new Set([...ink.live].flatMap((k) => {
+      const m = k[0] === "m" ? s.marks[+k.slice(1)] : undefined;
+      return m?.t === "stand" && ink.p(k) <= 0 ? [m.owner] : [];
+    })),
     eager: s.phase === "play" && !res && screen === "game" ? s.current : undefined,
     chosen: sel !== undefined && !res ? { id: sel, t0: chosenAt.t0 } : undefined,
     aim: f.aim && !res ? { angle: f.aim.angle, power: f.aim.power, reach: f.aim.reach, spread: f.aim.spread } : undefined,
@@ -2430,7 +2672,7 @@ if (import.meta.env.DEV) {
      * frame: per layer, how many pixels differ by more than antialiasing, and where.
      */
     redrawCheck: () => {
-      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, field: field.c, streak: streak.c, rings: boil.parts[0].c, rest: boil.parts[1].c };
+      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, field: field.c, streak: streakLayer.c, rings: boil.parts[0].c, rest: boil.parts[1].c };
       const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => [k, c.width && c.height && c.style.visibility !== "hidden" ? c.getContext("2d")!.getImageData(0, 0, c.width, c.height) : null]));
       renderNow();
       const a = grab();
@@ -2458,12 +2700,12 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    stageStats, boil, life, LIFE, CLARITY, NOTE, noteSpot: noteSpotNow, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
+    stageStats, boil, life, LIFE, CLARITY, NOTE, noteSpot: noteSpotNow, noteSpots: noteSpotsNow, set hour(h: number | undefined) { devHour = h; }, set heat(h: number | undefined) { devHeat = h; }, set waitedSince(ms: number) { lastMoveWall = ms; }, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
     set boilClock(ms: number | undefined) { boilClock = ms; },
     /** Frame-exact captures: `pft.hand(true)`, then `pft.step(ms)` moves the game and the boil on together. */
     hand: (on: boolean) => { handClock = on ? { due: 0 } : null; if (on) boilClock ??= wall; else boilClock = undefined; },
     step: (ms: number) => { if (!handClock) return; handClock.due += ms; boilClock = (boilClock ?? wall) + ms; },
-    say: voice.say, voice, get wall() { return wall; }, bubbles, speak,
+    say: voice.say, voice, get wall() { return wall; }, bubbles, speak, speakStreak, speakBotch, botchOf,
     /** Voices rendered offline, as 16-bit mono WAV bytes (base64), for listening outside the game. */
     voiceWav: async (lines: Parameters<typeof voice.renderLines>[0]) => {
       const pcm = await voice.renderLines(lines);
@@ -2509,7 +2751,7 @@ if (import.meta.env.DEV) {
     resumeRecord: (r: Filed) => resume({ s: unfile(r), mode: r.mode }),
     // motion aiming: synthetic sensors, and what the aim made of them
     sensors: motion.simulator(),
-    get aim() { return aim && { angle: aimAngle, thumb: byThumb.angle, wobble: wobble(aim, T), steady: aim.steady, power: pull(aim).power }; },
+    get aim() { return aim && { angle: aimAngle, thumb: byThumb.angle, wobble: wobble(aim, T, turn.handFor(s, aim.soldierId, aim.kind)), steady: aim.steady, power: pull(aim).power }; },
     get gun() { return motion.gun && { fwd: gunFwd, delta: motion.gun.delta, armed: motion.gun.armed }; },
   };
 }

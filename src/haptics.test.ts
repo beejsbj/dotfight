@@ -4,7 +4,7 @@ import {
   type Backend, type BackendKind, type HapticEvent, type Pattern,
 } from "./haptics";
 
-const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "over"];
+const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "cheer", "flinch", "unitcam", "volley", "over"];
 
 describe("pattern", () => {
   it("gives every event a playable pattern on both backends", () => {
@@ -233,4 +233,14 @@ describe("createHaptics", () => {
     expect(rig("none").h.supported).toBe(false);
     expect(rig("switch").h.supported).toBe(true);
   });
+});
+
+
+it("life feedback shares the gate and cannot replace a core cross impact", () => {
+  for (const ev of ["cheer", "flinch", "unitcam", "volley"] as HapticEvent[]) {
+    const gate = new Gate(), cross = pattern("kill"), life = pattern(ev);
+    expect(gate.allow(cross.priority, 100, length(cross, "vibrate"))).toBe(true);
+    expect(gate.allow(life.priority, 110, length(life, "vibrate"))).toBe(false);
+    expect(gate.allow(life.priority, 200, length(life, "vibrate"))).toBe(true);
+  }
 });
