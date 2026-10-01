@@ -2893,7 +2893,7 @@ if (import.meta.env.DEV) {
       };
       return Object.fromEntries(Object.keys(layers).map((k) => [k, differ(a[k], b[k], mask(k))]));
     },
-    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view }; },
+    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view, bubble: f.bubble, mover: f.mover, stand: f.stand }; },
     frames: (reset = false) => {
       const stats = (src: number[]) => {
         const a = [...src].sort((x, y) => x - y);
