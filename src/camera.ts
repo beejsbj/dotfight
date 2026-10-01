@@ -18,6 +18,8 @@ export interface Pose {
 }
 
 // how quickly each part of the pose catches up (per second)
+/** While aiming the page follows the thumb closely (per second). */
+export const AIM_ROT_RATE = 16;
 const RATE = { pos: 8, m: 7, rot: 5.5, tilt: 7, fy: 7 };
 
 export class Camera {
@@ -36,6 +38,8 @@ export class Camera {
   quick = 1;
   cur: Pose = { x: RULES.pageW / 2, y: RULES.pageH / 2, m: 1, rot: 0, tilt: 0, fy: 0.5 };
   tgt: Pose = { ...this.cur };
+  /** How fast the page's turn catches up (per second); unset = the easy default. Aiming sets a snappier one. */
+  rotRate: number | undefined;
   private shakeAmp = 0;
   private shakeT = 0;
   private shakeSeed = 0;
@@ -97,6 +101,23 @@ export class Camera {
     while (r - this.tgt.rot > Math.PI * 2 - 1e-6) r -= Math.PI * 2;
     this.tgt.rot = r;
   }
+  /**
+   * Turn the page so world direction `angle` points straight up the screen (the
+   * shot always goes up, the pull always comes down). Reached from the current
+   * target the short way, so a continuous aim never spins the long way round.
+   */
+  aimUp(angle: number, rate = AIM_ROT_RATE) {
+    const TAU = Math.PI * 2, r = -(angle + Math.PI / 2);
+    this.tgt.rot = r + Math.round((this.tgt.rot - r) / TAU) * TAU;
+    this.rotRate = rate;
+  }
+  /** Back to facing `rot` (the player's own way up), eased the short way. */
+  face(rot: number, snap = false) {
+    const TAU = Math.PI * 2;
+    this.tgt.rot = rot + Math.round((this.cur.rot - rot) / TAU) * TAU;
+    this.rotRate = undefined;
+    if (snap) this.cur.rot = this.tgt.rot;
+  }
   snap() {
     this.cur = { ...this.tgt };
   }
@@ -127,7 +148,7 @@ export class Camera {
     a.x += (b.x - a.x) * k(RATE.pos);
     a.y += (b.y - a.y) * k(RATE.pos);
     a.m += (b.m - a.m) * k(RATE.m);
-    a.rot += (b.rot - a.rot) * k(RATE.rot);
+    a.rot += (b.rot - a.rot) * k(this.rotRate ?? RATE.rot);
     a.tilt += (b.tilt - a.tilt) * k(RATE.tilt);
     a.fy += (b.fy - a.fy) * k(RATE.fy);
     this.shakeT += dt;
