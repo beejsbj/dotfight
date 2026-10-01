@@ -2685,6 +2685,7 @@ function currentFrame(): Frame {
   };
   const bb = heard() && !slow && !boil.tooDear ? bubbles.showing(wall) : null;
   if (bb) {
+    const shown = lifeOf(f.s, ink).soldiers;
     f.hud = { h: H, top: cam.top, bottom: cam.bottom };
     f.heat = noteContext(s.current).heat;
     const bs = bubbleAt(bb, wall, reduced);
@@ -2696,11 +2697,12 @@ function currentFrame(): Frame {
           const next = turn.aliveOf(s, x.owner)[0];
           if (next) { bb.id = next.id; x = next; }
         }
-        if (x && (x.alive || bb.important) && (bb.important || noteOnScreen(bb.at ?? displayedAt(x.id)))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: bb.at ?? displayedAt(x.id), p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && { ...s.soldiers[bb.reply.id], ...displayedAt(bb.reply.id) } }; }
+        if (x && (shown.has(x.id) || bb.important) && (bb.important || noteOnScreen(bb.at ?? displayedAt(x.id)))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: bb.at ?? displayedAt(x.id), p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && { ...s.soldiers[bb.reply.id], ...displayedAt(bb.reply.id) } }; }
+
 
     }
     const rs = replyAt(bb, wall, reduced), rx = bb.reply && s.soldiers[bb.reply.id], rat = rx && displayedAt(rx.id);
-    if (rs && rx?.alive && rat && noteOnScreen(rat)) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rat, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: { ...s.soldiers[bb.id], ...displayedAt(bb.id) }, answers: `${bb.seed}|${bb.text}` };
+    if (rs && rx && shown.has(rx.id) && rat && noteOnScreen(rat)) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rat, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: { ...s.soldiers[bb.id], ...displayedAt(bb.id) }, answers: `${bb.seed}|${bb.text}` };
   }
 
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
