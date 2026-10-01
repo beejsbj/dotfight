@@ -30,8 +30,8 @@ export function pull(a: Aim) {
 }
 
 // The visible tremble: grows with power and with how long you've held it.
-export function wobble(a: Aim, now: number) {
-  const { power } = pull(a);
+export function wobble(a: Aim, now: number, h: Hand = STEADY) {
+  const power = wildOf(pull(a).power, h);
   const held = now - a.t0 - FEEL.wobbleStartMs;
   if (!a.charged || held <= 0) return 0;
   const amp = FEEL.wobbleMax * power * Math.min(1, held / FEEL.wobbleGrowMs) * (a.steady ?? 1);
@@ -44,11 +44,18 @@ export function sigma(power: number) {
 }
 
 /** How shaky the hand is: a multiplier on the release error, and a tremor (radians, 1 sd) added in quadrature. */
-export interface Hand { mult: number; tremor: number }
+export interface Hand {
+  mult: number;
+  tremor: number;
+  /** How wild a line pulled to this power is (0..1); error, wobble and bend follow it. Absent: the pull's own power. */
+  wild?: (power: number) => number;
+}
 export const STEADY: Hand = { mult: 1, tremor: 0 };
 
+const wildOf = (power: number, h: Hand) => h.wild?.(power) ?? power;
+
 /** Radians (1 sd) of release error for a flick of this power by this hand. */
-export const aimError = (power: number, h: Hand = STEADY) => Math.hypot(sigma(power) * h.mult, h.tremor);
+export const aimError = (power: number, h: Hand = STEADY) => Math.hypot(sigma(wildOf(power, h)) * h.mult, h.tremor);
 
 // Let go of the pen. `lengthOf` turns power into a line length; every bit of
 // randomness is resolved here, so the engine only ever sees a finished flick.
@@ -58,9 +65,9 @@ export function release(a: Aim, now: number, lengthOf: (power: number) => number
   return {
     soldier: a.soldierId,
     kind: a.kind,
-    angle: p.angle + wobble(a, now) + gauss(rand) * aimError(p.power, h),
+    angle: p.angle + wobble(a, now, h) + gauss(rand) * aimError(p.power, h),
     length: lengthOf(p.power) * (1 + gauss(rand) * FEEL.lengthJitter * h.mult),
-    bend: (rand() * 2 - 1) * FEEL.bendMax * (0.3 + 0.7 * p.power),
+    bend: (rand() * 2 - 1) * FEEL.bendMax * (0.3 + 0.7 * wildOf(p.power, h)),
     wob: (rand() * 2 ** 32) >>> 0,
   };
 }

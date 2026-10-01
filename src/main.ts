@@ -30,8 +30,10 @@ import { boldAt } from "./boil";
 import { boil, boilSeen, boilTick, forgetDrawn, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
-import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
-import { apply as roomApply, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
+import { keepIcon, paperIcon, tearIcon } from "./icons";
+import { orderGames, type GameLine } from "./games";
+import { forgetRoom, listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
+import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
 import { Timeline, reachFraction } from "./timeline";
 import * as turn from "./turn";
@@ -84,6 +86,9 @@ const dawn = new Tween(0);
 // things to do later, on the game clock
 let later: { at: number; fn: () => void; g: number }[] = [];
 function after(ms: number, fn: () => void) { later.push({ at: T + ms, fn, g: gen }); }
+// the room's own business (the lamp) outlives any one game
+const ROOM = -1;
+function whenever(ms: number, fn: () => void) { later.push({ at: T + ms, fn, g: ROOM }); }
 
 // the flick resolving now
 interface Resolve {
@@ -346,7 +351,7 @@ const learn = (k: string) => localStorage.setItem(`pft:taught:${k}`, "1");
 
 function reset() {
   gen++;
-  later = [];
+  later = later.filter((l) => l.g === ROOM);
   busy = false;
   res = null;
   aim = null;
@@ -841,8 +846,12 @@ function titleDesk(saved = load()) {
   dirty = true;
 }
 
+let tearing: string | null = null; // a cover row waiting on "tear it out?"
+let showDone = false;
+
 function showTitle() {
   screen = "title";
+  tearing = null;
   leaveRoom();
   restoreLabel();
   reset();
@@ -855,7 +864,7 @@ function showTitle() {
   cover.hidden = false;
   cover.classList.remove("open");
   // the lamp comes on
-  if (lampOn.to < 1) after(450, switchOn);
+  if (lampOn.to < 1 && !later.some((l) => l.fn === switchOn)) whenever(450, switchOn);
 }
 
 // The slip tucked in the cover, and the page on the desk under it.
@@ -868,23 +877,27 @@ function coverMenu() {
   // a page started on another paper says so
   const elsewhere = saved && paperOf(saved.s.page) !== currentTheme() ? ` · ${themeOf(saved.s.page?.theme).name.toLowerCase()}` : "";
   const menu = $("#cover .menu");
+  const mark = $("#cover .tabs .m1 sup");
+  mark.textContent = d.length ? String(d.length) : "";
   const where = (x: AnyState) => x.phase === "setup" ? "still drawing camps" : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
   const draw = () => {
-    menu.innerHTML = `
-    ${canResume ? `<button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>` : ""}
-    <p class="head">quick battle</p>
+    const carry = canResume ? (tearing === "local" ? `
+      <div class="carry tearing">
+        <div class="say"><p class="struck">${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}</p>
+        <p class="ask">tear this page out for good?</p></div>
+        <span class="acts"><button data-a="tear" data-code="local" class="ico rip" aria-label="tear this page out for good">${tearIcon()}</button><button data-a="keep" class="ico" aria-label="keep it">${keepIcon()}</button></span>
+      </div>` : `
+      <div class="carry">
+        <span class="carry-icon">${paperIcon(themeOf(saved!.s.page?.theme).paper, -2)}</span><button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>
+        <button data-a="ask" data-code="local" class="x" aria-label="tear this page out">×</button>
+      </div>`) : "";
+    menu.innerHTML = `${carry}${friendsList()}
+    <h2 class="sect">new game</h2>
     ${sizeRow()}
     <button data-a="bot" class="ink red">play Dawood-bot</button>
     <p class="levels">${LEVELS.map((l, i) => `<button data-lvl="${i}" class="${i === botLevel ? "on" : ""}">${l}</button>`).join("")}</p>
     <button data-a="pnp" class="ink blue">pass &amp; play<small>two of you, one phone</small></button>
-    <button data-a="friend" class="ink blue">play a friend<small>send a link: each on your own phone</small></button>
-    ${friendsList()}
-    <p class="row">
-      <button data-a="drawer" class="pencil">the drawer${d.length ? ` (${d.length})` : ""}</button>
-      <button data-a="how" class="pencil">how it's played</button>
-      <a href="/rules" class="pencil">the rulebook</a>
-      <button data-a="settings" class="pencil">settings</button>
-    </p>`;
+    <button data-a="friend" class="ink blue">play a friend<small>send a link: each on your own phone</small></button>`;
   };
   draw();
   menu.onclick = (e) => {
@@ -896,10 +909,17 @@ function coverMenu() {
     if (a === "resume" && saved) resume(saved);
     else if (a === "pnp") start({ kind: "pnp" });
     else if (a === "bot") start({ kind: "bot", level: botLevel });
-    else if (a === "how") showHow();
-    else if (a === "drawer") showDrawer();
-    else if (a === "settings") showSettings();
     else if (a === "friend") newRoomOnCover();
+    else if (a === "ask") { tearing = b.dataset.code!; draw(); }
+    else if (a === "keep") { tearing = null; draw(); }
+    else if (a === "tear") {
+      const code = b.dataset.code!;
+      if (code === "local") { localStorage.removeItem("pft:save"); tearing = null; sfx.rustle(); coverMenu(); return; }
+      forgetRoom(localStorage, code);
+      tearing = null;
+      sfx.rustle();
+      draw();
+    } else if (a === "more") { showDone = !showDone; draw(); }
     else if (b.dataset.room) { const x = readRoom(localStorage, b.dataset.room); if (x) enterRoom(x); }
     else if (b.dataset.lvl) {
       botLevel = +b.dataset.lvl as Level;
@@ -919,6 +939,17 @@ function coverMenu() {
   };
 }
 
+// the bookmarks on the cover's top edge
+$("#cover .tabs").addEventListener("click", (e) => {
+  const b = (e.target as HTMLElement).closest("button");
+  if (!b) return;
+  sfx.unlock();
+  sfx.tap();
+  if (b.dataset.a === "how") showHow();
+  else if (b.dataset.a === "drawer") showDrawer();
+  else if (b.dataset.a === "settings") showSettings();
+});
+
 function switchOn() {
   sfx.lamp();
   const kind = theme.light.switch;
@@ -926,15 +957,15 @@ function switchOn() {
   else if (kind === "tube") {
     // a tube light: blinks twice on its starter, then catches
     lampOn.go(0.55, 30);
-    after(60, () => lampOn.go(0.08, 40));
-    after(210, () => lampOn.go(0.65, 30));
-    after(270, () => lampOn.go(0.12, 50));
-    after(430, () => lampOn.go(1, 80));
+    whenever(60, () => lampOn.go(0.08, 40));
+    whenever(210, () => lampOn.go(0.65, 30));
+    whenever(270, () => lampOn.go(0.12, 50));
+    whenever(430, () => lampOn.go(1, 80));
   } else {
     // a lamp's flicker: on, off, on
     lampOn.go(0.75, 40);
-    after(70, () => lampOn.go(0.15, 50));
-    after(160, () => lampOn.go(1, 180));
+    whenever(70, () => lampOn.go(0.15, 50));
+    whenever(160, () => lampOn.go(1, 180));
   }
   document.body.classList.add("lit");
 }
@@ -966,7 +997,7 @@ function showHow() {
     <h2>How Dawood played it</h2>
     <ol>
       <li>Take turns drawing camps, each jotted full of men. Then arrange your men: in camp, or just outside the wall.</li>
-      <li>On your go, pick up one soldier. Pull back from anywhere on the screen and let go, like flicking a pen stood on its tip.</li>
+      <li>On your go, pick up one soldier. Pull back from anywhere on the screen and let go, like flicking a pen stood on its tip: a small pull is a short line, a long one crosses the page (lunge and snipe reach alike).</li>
       <li><b>Snipe</b>: he stays put and the ink goes through every enemy it crosses. Walls and bodies sap it. Take two with one line and you flick again.</li>
       <li><b>Lunge</b>: he runs along his ink and crosses out whoever he passes. A kill earns him another lunge, shakier each time. Land among a camp's men and they shoot him; an empty camp is safe; off the page, he's gone.</li>
       <li><b>Send</b>, free, once a turn: up to five men walk to another of your camps. They're out on the open page for one enemy turn.</li>
@@ -1436,15 +1467,32 @@ function coverNote(t: string) {
 }
 
 function friendsList() {
-  const rs = listRooms(localStorage).slice(0, 4);
-  if (!rs.length) return "";
-  return `<p class="friends"><span>games with friends</span>${rs.map((r) => {
-    const foe = r.seat === null ? `${r.names[0]} v ${r.names[1] ?? "?"}` : r.names[r.seat === 0 ? 1 : 0] ?? "your friend";
-    const sm = r.summary;
-    const st = !sm ? "" : sm.next === null ? (r.seat === null ? "done" : sm.winner === r.seat ? "you won" : "they won")
-      : r.seat === null ? "watching" : sm.next === r.seat ? "your go" : "their go";
-    return `<button data-room="${esc(r.code)}" class="pencil">${esc(foe)}${st ? ` · ${st}` : ""}</button>`;
-  }).join("")}</p>`;
+  const all = listRooms(localStorage);
+  const rooms = new Map(all.map((r) => [r.code, r]));
+  const { running, finished } = orderGames(all);
+  if (!running.length && !finished.length) return "";
+  const tilt = (c: string) => [...c].reduce((n, ch) => n + ch.charCodeAt(0), 0) % 7 - 3;
+  const acts = (code: string, tear: string, keep: string) =>
+    `<span class="acts"><button data-a="tear" data-code="${esc(code)}" class="ico rip" aria-label="${tear}">${tearIcon()}</button><button data-a="keep" class="ico" aria-label="${keep}">${keepIcon()}</button></span>`;
+  const row = (g: GameLine) => {
+    const r = rooms.get(g.code)!;
+    if (tearing === g.code) return `<li class="game tearing">
+      <div class="say"><p class="struck">${esc(g.foe)}</p>
+      <p class="ask">tear it out of this phone? ${esc(g.foe)} keeps theirs.</p></div>
+      ${acts(g.code, `tear ${esc(g.foe)}'s game out of this phone`, "keep it")}
+    </li>`;
+    return `<li class="game ${g.yours ? "yours" : g.running ? "theirs" : "done"}">
+      <button data-room="${esc(g.code)}" class="go">${paperIcon(themeOf(r.theme ?? r.setup?.page?.theme).paper, tilt(g.code))}<b>${esc(g.foe)}</b>${g.standing ? `<span>${g.standing}</span>` : ""}${g.turn && g.running ? `<small>turn ${g.turn}</small>` : ""}</button>
+      <button data-a="ask" data-code="${esc(g.code)}" class="x" aria-label="tear ${esc(g.foe)}'s game out of this phone">×</button>
+    </li>`;
+  };
+  // up to four running games show; the rest (more running ones, then the finished) fold under one line
+  const shown = running.slice(0, 4);
+  const rest = [...running.slice(4), ...finished];
+  const open = showDone || !shown.length;
+  return `<h2 class="sect">games with friends</h2>
+    <ul class="games">${shown.map(row).join("")}
+    ${rest.length ? (open ? rest.map(row).join("") : `<li class="more"><button data-a="more" class="pencil">${running.length > 4 ? `more games (${rest.length})` : `finished games (${rest.length})`}</button></li>`) : ""}</ul>`;
 }
 
 function newRoomOnCover() {
@@ -1498,7 +1546,7 @@ async function openRoom(code: string) {
   } catch (e) {
     return home(e instanceof RoomHttpError && e.status === 404 ? "that page has gone: links last 30 days after the last move" : "couldn't open that page: check your signal and open the link again");
   }
-  if (v.engine !== ENGINE) return home("that page needs a newer copy of the game: reload");
+  if (!roomCanRead(v.engine)) return home("that page needs a newer copy of the game: reload");
   const host = v.names[0];
   const input = v.names[1] === null ? nameOnLabel() : null;
   menu.innerHTML = input ? `
@@ -2043,7 +2091,7 @@ function frame(now: number) {
   if (later.length) {
     const due = later.filter((l) => l.at <= T);
     later = later.filter((l) => l.at > T);
-    for (const l of due) if (l.g === gen) l.fn();
+    for (const l of due) if (l.g === gen || l.g === ROOM) l.fn();
   }
   const moving = cam.tick(dt);
   let active = moving;
@@ -2062,7 +2110,7 @@ function frame(now: number) {
   if (aim) {
     steer();
     const p = pull(aim);
-    const w = wobble(aim, T);
+    const w = wobble(aim, T, turn.handFor(s, aim.soldierId, aim.kind));
     sfx.creak(p.power, Math.abs(w) * 12);
     if (ratchet.shake(w !== 0)) haptic("wobble");
   }
@@ -2161,7 +2209,7 @@ function currentFrame(): Frame {
     const ink = inkLeft(owner);
     if (aim) {
       const pl = pull(aim);
-      const ang = aimAngle + wobble(aim, T);
+      const ang = aimAngle + wobble(aim, T, turn.handFor(s, selected, kind));
       f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: aimError(pl.power, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pl.power), kind };
       f.pen = tip(leaning(me.x, me.y, ang, pl.live ? penLean(pl.power) : 0.04, owner, ink), ang, penSide);
       // a lunger landing among their men is shot: those camps are hatched while you aim one
@@ -2313,7 +2361,7 @@ if (import.meta.env.DEV) {
     resumeRecord: (r: Filed) => resume({ s: unfile(r), mode: r.mode }),
     // motion aiming: synthetic sensors, and what the aim made of them
     sensors: motion.simulator(),
-    get aim() { return aim && { angle: aimAngle, thumb: byThumb.angle, wobble: wobble(aim, T), steady: aim.steady, power: pull(aim).power }; },
+    get aim() { return aim && { angle: aimAngle, thumb: byThumb.angle, wobble: wobble(aim, T, turn.handFor(s, aim.soldierId, aim.kind)), steady: aim.steady, power: pull(aim).power }; },
     get gun() { return motion.gun && { fwd: gunFwd, delta: motion.gun.delta, armed: motion.gun.armed }; },
   };
 }

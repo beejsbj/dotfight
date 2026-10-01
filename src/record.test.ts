@@ -3,8 +3,12 @@ import { botAction, botArrange, botBase } from "./bot";
 import { act, canPlaceBase, illegal, newGame, type GameState } from "./game";
 import { inkTime, totalHold, wallTime } from "./inkclock";
 import * as legacy from "./legacy";
-import { addToDrawer, apply, blank, file, fromRecord, readDrawer, readSave, steps, toRecord, unfile, type Filed } from "./record";
-import { CORE, SIZES } from "./rules";
+import { addToDrawer, apply, blank, file, fromRecord, readDrawer, readSave, steps, toRecord, unfile, type Filed, type GameRecord } from "./record";
+import { CORE, SIZES, savedRules } from "./rules";
+// two wars (Quick, Classic) recorded on origin/main's engine before garrisoned walls, with how they ended
+import beforeRaw from "./__fixtures__/core-v1-wars.json?raw";
+
+const before = JSON.parse(beforeRaw) as { record: GameRecord; end: { winner: number; turn: number; marks: number; soldiers: number[][] } }[];
 
 // A whole June-prototype war (bot v bot), seeded: what old saves and drawer pages hold.
 function oldWar(seed: number, maxTurns = 400): legacy.LegacyState {
@@ -48,6 +52,48 @@ describe("record (core rules)", () => {
     } finally {
       CORE.snipeWallLoss = was;
     }
+  });
+
+  it("a record from before garrisoned walls (no `garrison`) keeps flat walls, never today's", () => {
+    const { garrison: _g, ...old } = CORE;
+    void _g;
+    expect(savedRules(old).garrison).toBeNull();
+    expect(savedRules(CORE).garrison).toEqual(CORE.garrison);
+    expect(CORE.garrison).not.toBeNull();
+    const r = JSON.parse(JSON.stringify({ ...toRecord(newGame(SIZES.quick, 5)), rules: { ...old, version: 1 } }));
+    expect(fromRecord(r).rules.garrison).toBeNull();
+    expect(blank({ ...r, mode: { kind: "pnp" }, turns: 0, at: 0 } as Filed)).toMatchObject({ rules: { garrison: null } });
+  });
+
+  it("wars recorded on the engine before garrisoned walls replay exactly as they were played", () => {
+    for (const { record, end } of before) {
+      expect(record.rules).not.toHaveProperty("garrison");
+      const s = fromRecord(record);
+      expect(s.phase).toBe("over");
+      expect({ winner: s.winner, turn: s.turn, marks: s.marks.length }).toEqual({ winner: end.winner, turn: end.turn, marks: end.marks });
+      s.soldiers.forEach((x, i) => {
+        expect(x.x).toBeCloseTo(end.soldiers[i][0], 2);
+        expect(x.y).toBeCloseTo(end.soldiers[i][1], 2);
+        expect(x.alive ? 1 : 0).toBe(end.soldiers[i][2]);
+      });
+    }
+  });
+
+  it("a page played on version-1 rules (one reach, curve 0.9) still replays on its own numbers", () => {
+    const v1 = { ...CORE, version: 1, reach: { min: 300, max: 1800 } } as unknown as typeof CORE;
+    const s = newGame(SIZES.quick, 21, undefined, v1);
+    let k = 21;
+    while (s.phase === "setup") { const p = botBase(s, (x, y) => !canPlaceBase(s, x, y), k++)!; act(s, { t: "base", ...p }); }
+    while (s.phase === "position") for (const a of botArrange(s, k++)) { if (!illegal(s, a)) act(s, a); if (a.t === "ready") break; }
+    while (s.phase === "play" && s.turn < 60) act(s, botAction(s, 1, k++));
+    expect(s.turn).toBeGreaterThan(3);
+    const r = JSON.parse(JSON.stringify(toRecord(s)));
+    expect(r.rules.version).toBe(1);
+    expect(r.rules.reach).toEqual({ min: 300, max: 1800 });
+    const same = (a: GameState) => expect(a).toEqual(s);
+    same(fromRecord(r));
+    same(unfile(JSON.parse(JSON.stringify(file(s, { kind: "pnp" })))) as GameState);
+    expect(fromRecord(r).rules.version).toBe(1);
   });
 
   it("steps replay one at a time to the same page", () => {

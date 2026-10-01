@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { stubRedis } from "../api/_redis-stub";
 import { RoomError, rooms, type Rooms } from "../api/_rooms";
 import { botAction, botArrange, botBase } from "./bot";
-import { canPlaceBase, illegal, type Action, type GameState } from "./game";
+import { canPlaceBase, illegal, reachOf, type Action, type GameState } from "./game";
+import { file, fromRecord, readSave, toRecord, unfile } from "./record";
 import { CORE, SIZES } from "./rules";
-import { ENGINE, apply, check, drifted, fresh, hash, replay, turn, type Payload, type Setup } from "./room-engine";
+import { ENGINE, READS, apply, canRead, check, drifted, fresh, hash, replay, turn, type Payload, type Setup } from "./room-engine";
 import { RoomHttpError, type RoomApi, type Seat } from "./room-protocol";
 import { listRooms, readRoom, RoomLink, type Saved } from "./room";
 
@@ -108,6 +109,48 @@ describe("room engine adapter", () => {
     expect(check(fresh(setup), 0, { a: { t: "nope" } })).toBeTruthy();
     expect(check(fresh(setup), 0, { t: "base", x: 1, y: 1 })).toBe("unknown action");
     expect(check(fresh(setup), 1, { a: { t: "ready" } })).toBe("not their turn");
+  });
+});
+
+describe("room engines", () => {
+  it("new rooms use core-4, which older clients reject for the reload path", () => {
+    expect(ENGINE).toBe("core-4");
+    expect(READS).toEqual(["core-2", "core-3", "core-4"]);
+    expect(["core-2", "core-3"].includes(ENGINE)).toBe(false);
+    expect(canRead("core-1")).toBe(false);
+    expect(canRead("core-5")).toBe(false);
+  });
+
+  it.each(["core-2", "core-3", "core-4"])("%s rooms, records and saves retain their rules and replay without drift", (engine) => {
+    expect(canRead(engine)).toBe(true);
+    const { garrison: _g, ...flat } = CORE;
+    void _g;
+    const rules = engine === "core-4" ? CORE : engine === "core-3" ? flat : { ...flat, version: 1, reach: { min: 300, max: 1800 } };
+    const old: Setup = JSON.parse(JSON.stringify({ ...setup, rules }));
+    const s = fresh(old);
+    expect(s.rules.garrison).toEqual(engine === "core-4" ? CORE.garrison : null);
+    expect(reachOf(s.rules, 0)).toBe(engine === "core-2" ? 300 : 200);
+    expect(reachOf(s.rules, 1)).toBe(engine === "core-2" ? 1800 : 1200);
+    const log: { seat: Seat; a: Payload }[] = [];
+    while (s.phase !== "over" && log.length < 150) {
+      const a = botMove(s);
+      const seat = turn(s)!;
+      apply(s, { a });
+      log.push({ seat, a: { a, h: hash(s) } });
+      const step = replay(old, log);
+      expect(step.s).toEqual(s);
+      expect(step.bad).toBeUndefined();
+      expect(step.drift).toBeUndefined();
+    }
+    const r = replay(JSON.parse(JSON.stringify(old)), log);
+    expect(r.s).toEqual(s);
+    expect(r.drift).toBeUndefined();
+    expect(r.bad).toBeUndefined();
+    const record = JSON.parse(JSON.stringify({ ...toRecord(s), rules }));
+    expect(fromRecord(record)).toEqual(s);
+    const filed = JSON.parse(JSON.stringify({ ...file(s, { kind: "pnp" }), rules }));
+    expect(unfile(filed)).toEqual(s);
+    expect(readSave(JSON.stringify({ s: { ...s, rules }, mode: { kind: "pnp" } }))!.s).toEqual(s);
   });
 });
 
