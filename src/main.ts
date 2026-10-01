@@ -25,7 +25,7 @@ import { leaning, PEN, type PenPose } from "./pen";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
-import { CUSTOM, RULES, SIZES, type Size } from "./rules";
+import { CUSTOM, FEEL, RULES, SIZES, type Size } from "./rules";
 import { boldAt } from "./boil";
 import { boil, boilSeen, boilTick, forgetDrawn, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
@@ -267,6 +267,7 @@ function acts() {
       html = `<span>send</span>${Array.from({ length: max }, (_, i) => `<button data-act="n" data-n="${i + 1}">${i + 1}</button>`).join("")}<button data-act="cancel" class="x">cancel</button>`;
     } else if (sending) html = `<button data-act="cancel" class="x">cancel the send</button>`;
     else {
+      if (selected !== undefined && !c0.chain) html += `<button data-act="down" class="x">put down</button>`;
       if (c0.chain) html += `<button data-act="stop" class="go">stop here</button>`;
       if (!c0.sent && canSendAny(c0)) html += `<button data-act="send">send men <small>free</small></button>`;
     }
@@ -277,6 +278,32 @@ function acts() {
 /** Is there any send the current player could make? */
 function canSendAny(c0: GameState) {
   return c0.bases.some((a) => a.owner === c0.current && sendMax(c0, a.id) > 0 && c0.bases.some((b) => b !== a && !canSend(c0, a.id, b.id, 1)));
+}
+
+// A pencilled mark where the pull began, for the whole pull: a dot with the dead
+// zone drawn faintly round it. Slide the thumb back onto it and the ring firms
+// up (and ticks): let go there and the aim is dropped, nothing fired. One small
+// fixed DOM element in screen space, so no page or canvas layer is touched.
+let ringOn = false; // the thumb is inside the ring
+let markOn = false;
+const ringEl = document.createElement("div");
+ringEl.id = "cancel-ring";
+ringEl.hidden = true;
+ringEl.innerHTML = "<i></i>";
+document.body.append(ringEl);
+function syncRing() {
+  const shown = !!aim && g.t === "aim";
+  if (shown && g.t === "aim") {
+    const r = FEEL.minPullPx;
+    ringEl.style.transform = `translate(${g.sx - r}px, ${g.sy - r}px)`;
+    ringEl.style.width = ringEl.style.height = `${r * 2}px`;
+  }
+  if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
+  const on = shown && !!aim && aim.charged && !pull(aim).live;
+  if (on === ringOn) return;
+  ringOn = on;
+  ringEl.classList.toggle("in", on);
+  if (on) { haptic("brink"); learn("cancel"); }
 }
 
 function status(msg?: string) {
@@ -293,13 +320,14 @@ function status(msg?: string) {
     else if (res || lapse) t = "";
     else if (isBot(s.current)) t = `${who} is lining up…`;
     else if (sending) t = sending.to !== undefined ? "how many go?" : sending.from !== undefined ? "…to another of your camps" : "drag from one of your camps to another";
-    else if (aim) t = pull(aim).live ? `let go to ${turn.verb(s, kind)}` : "pull back further…";
+    else if (aim) t = pull(aim).live ? (taught("cancel") ? `let go to ${turn.verb(s, kind)}` : `let go to ${turn.verb(s, kind)}, or slide back to the start to cancel`) : aim.charged ? "let go to cancel" : "pull back further…";
     else if (c0?.chain) t = "he lunges again, or stop";
     else if (motion.gun) t = motion.gun.armed < 1 ? "point the phone, hold it still…" : "flick your wrist to fire";
     else if (selected !== undefined) t = motion.live("gun") ? "pull back, or tap him and raise the phone" : `pull back from anywhere, let go`;
     else if (c0 && c0.left > 1) t = `${who}: ${c0.left} flicks this turn`;
     else t = lastNote ? `${lastNote}` : `${who}: pick up a soldier`;
   }
+  syncRing();
   $("#status").textContent = t;
   $("#status").classList.toggle("tap", t === RESEND);
 }
@@ -604,6 +632,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   selected = undefined;
   aim = null;
   busy = true;
+  acts();
   sfx.creak(0);
   // convoys marching as the pen changes hands wait for the ink to land
   holdLapse(o, before, first);
@@ -1632,7 +1661,19 @@ function select(id: number) {
   selected = id;
   sitOn(s.soldiers[id]);
   dirty = true;
+  acts();
   status();
+}
+
+/**
+ * Aiming only ever happens leaned in over the soldier in hand, under the fog:
+ * the camera is sitting on him (close, tilted unless "sit down to aim" is off).
+ * Anything that moves the camera off him (a pinch, the wheel) puts him down.
+ */
+function leanedIn(id: number | undefined) {
+  if (id === undefined) return false;
+  const p = s.soldiers[id], t = cam.tgt;
+  return t.m >= 1.9 && Math.hypot(t.x - p.x, t.y - p.y) < 2 && (cam.tiltScale === 0 || t.tilt > 0.3);
 }
 
 function standUp() {
@@ -1640,6 +1681,7 @@ function standUp() {
   motion.lower();
   cam.overview();
   dirty = true;
+  acts();
   status();
 }
 
@@ -1658,10 +1700,12 @@ over.addEventListener("pointerdown", (e) => {
   over.setPointerCapture(e.pointerId);
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (ptrs.size === 2) {
-    // two fingers always mean the camera: stand up, then zoom
+    // two fingers always mean the camera: put the soldier down (no aim survives
+    // zoomed out, out of the fog), then zoom
     if (aim) sfx.creak(0);
     aim = null;
     ghost = undefined;
+    if (selected !== undefined) standUp();
     if (cam.cur.tilt > 0.02 || cam.tgt.tilt > 0) { cam.tgt = { ...cam.tgt, tilt: 0, fy: cam.fitFy }; cam.cur = { ...cam.cur, tilt: 0, fy: cam.fitFy }; }
     const { d } = pinchInfo();
     g = { t: "pinch", d0: d, m0: cam.cur.m };
@@ -1704,6 +1748,8 @@ over.addEventListener("pointerdown", (e) => {
   }
   if (humanTurn() && s.phase === "play" && !sending && w) {
     const near = nearestOwn(w);
+    // a soldier in hand but the camera off him (never should be): put him down, then treat this as a fresh touch
+    if (selected !== undefined && !leanedIn(selected)) standUp();
     if (near !== undefined || selected !== undefined) {
       if (near !== undefined && near !== selected) select(near);
       g = { t: "aim", id: e.pointerId, sx: e.clientX, sy: e.clientY, tapOn: near };
@@ -1759,6 +1805,8 @@ over.addEventListener("pointermove", (e) => {
   if (g.t === "aim" && g.id === e.pointerId && selected !== undefined) {
     if (!aim) {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
+      if (!leanedIn(selected)) { standUp(); g = { t: "none" }; return; }
+      if (leanOf() < 0.6) return; // still easing in from the page view: the aim waits until he's under the fog
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
       ratchet.reset();
       acts();
@@ -1821,7 +1869,7 @@ function stepGun() {
   if (e?.t === "fire") {
     const id = selected;
     motion.lower();
-    if (id === undefined || !humanTurn() || !turn.canFlick(s, id, kind)) return;
+    if (id === undefined || !humanTurn() || !turn.canFlick(s, id, kind) || !leanedIn(id)) return;
     learn("aim");
     const f = release(gunPull(id, kind, gunFwd + e.delta, e.power, T), T, (pw) => turn.lengthFor(s, kind, pw), turn.handFor(s, id, kind))!;
     haptic("flick", e.power);
@@ -1883,12 +1931,23 @@ function up(e: PointerEvent) {
     const tapped = Math.hypot(p.x - g.sx, p.y - g.sy) < TAP;
     if (aim && e.type === "pointerup") {
       updateAim(p.x, p.y);
+      if (aim.charged && !pull(aim).live) {
+        // thumb back at the start: a cancel, quietly. He stays picked up.
+        aim = null;
+        sfx.creak(0);
+        g = { t: "none" };
+        acts();
+        status();
+        dirty = true;
+        return;
+      }
       const f = release(aim, T, (pw) => turn.lengthFor(s, kind, pw), turn.handFor(s, aim.soldierId, kind));
       const pw = pull(aim).power;
       const lean = penLean(pw);
       aim = null;
       sfx.creak(0);
-      if (f && turn.canFlick(s, f.soldier, f.kind)) { learn("aim"); haptic("flick", pw); fire(f, pw, lean); }
+      if (f && !leanedIn(f.soldier)) { standUp(); status(); }
+      else if (f && turn.canFlick(s, f.soldier, f.kind)) { learn("aim"); haptic("flick", pw); fire(f, pw, lean); }
       else status("too soft: pull back further");
     } else if (tapped && gunTap) {
       // that tap put the raised phone down
@@ -1915,6 +1974,7 @@ over.addEventListener("pointercancel", up);
 over.addEventListener("contextmenu", (e) => e.preventDefault());
 over.addEventListener("wheel", (e) => {
   e.preventDefault();
+  if (selected !== undefined && !busy) { aim = null; sfx.creak(0); standUp(); }
   if (cam.cur.tilt > 0.02) { cam.tgt = { ...cam.tgt, tilt: 0, fy: cam.fitFy }; cam.cur = { ...cam.cur, tilt: 0, fy: cam.fitFy }; }
   cam.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.002));
   dirty = true;
@@ -1940,6 +2000,7 @@ $("#acts").onclick = (e) => {
   sfx.tap();
   const a = b.dataset.act;
   if (a === "ready") return perform({ t: "ready" }, () => handOver());
+  if (a === "down") { learn("cancel"); standUp(); dirty = true; return; }
   if (a === "send") { sending = {}; selected = undefined; cam.overview(); }
   else if (a === "cancel") { sending = null; arrowTo = null; }
   else if (a === "n" && sending?.to !== undefined) {

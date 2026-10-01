@@ -411,3 +411,16 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 
 /* the hand-off card is one big button (a haptic tap target on iPhone) */
 .handoff-tap { all: unset; display: block; width: 100%; cursor: pointer; }
+
+/* the start mark: where the pull began, with the dead zone faint round it; firms up when the thumb is back inside */
+#cancel-ring {
+  position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; box-sizing: border-box;
+  border: 2px dashed rgba(var(--desk-rgb), .38); border-radius: 48% 52% 46% 54% / 54% 46% 52% 48%;
+  transition: border-color .12s, background-color .12s;
+}
+#cancel-ring i {
+  position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%;
+  background: rgba(var(--desk-rgb), .7);
+}
+#cancel-ring.in { border-style: solid; border-color: rgba(var(--desk-rgb), .95); background: rgba(var(--desk-rgb), .16); }
+#cancel-ring[hidden] { display: none; }
