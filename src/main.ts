@@ -837,13 +837,6 @@ function pendingState(): AnyState {
   return lapseDue.seen ??= beforeMarch(s, lapseDue.walkers);
 }
 
-<<<<<<< HEAD
-/** The displayed ink head or march, rather than the reducer's destination. */
-function displayedAt(id: number): Pt {
-  if (res?.mover === id) {
-    const it = inkTime(T - res.t0, res.snags);
-    if (it < res.dur) return headAt(res.o.path, 1 - Math.pow(1 - Math.max(0, it / res.dur), 2));
-=======
 /** A moving soldier's displayed position, rather than the reducer's destination. */
 function displayedAt(id: number): Pt {
   if (res?.mover === id) {
@@ -852,7 +845,6 @@ function displayedAt(id: number): Pt {
       const p = Math.min(1, it / res.dur);
       return headAt(res.o.path, 1 - Math.pow(1 - p, 2));
     }
->>>>>>> finish-look-20261001-clarity
   }
   const pending = lapseDue?.walkers.find((w) => w.id === id);
   if (pending) return pending.from;
