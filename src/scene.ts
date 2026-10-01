@@ -17,6 +17,7 @@ import { rng, type Pt } from "./game";
 import type { AnyState as GameState } from "./record";
 import { INK, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilStroke, rubOut } from "./ink";
 import { Life } from "./life";
+import { PencilLayer } from "./pencil-layer";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { drawBase, drawDot, drawMark, drawSignature, wentTo, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
@@ -90,7 +91,9 @@ export interface Frame {
 
 export const page = new PageLayer();
 export const pageState = { epoch: 0, S: 1.6 };
-export const stageStats = { live: 0, air: 0, frames: 0, boil: 0 };
+export const stageStats = { live: 0, air: 0, frames: 0, boil: 0, field: 0, streak: 0 };
+export const field = new PencilLayer();
+export const streak = new PencilLayer();
 export const boil = new BoilLayer();
 /** What the living are feeling (life.ts): the boil draws each soldier in his pose. */
 export const life = new Life();
@@ -100,6 +103,8 @@ export interface Els {
   desk: HTMLCanvasElement;
   pageHost: HTMLElement;
   boilHost: HTMLElement;
+  fieldHost: HTMLElement;
+  streakHost: HTMLElement;
   live: HTMLCanvasElement;
   /** Notes: pencil on the same sheet, the theme's blend like the live layer; its own dirty box, hidden when no one's talking. */
   talk: HTMLCanvasElement;
@@ -124,7 +129,7 @@ class Box {
   get empty() { return this.x0 > this.x1; }
 }
 
-let lastCss = { desk: "", page: "", live: "", talk: "", boil: ["", ""] };
+let lastCss = { field: "", streak: "", desk: "", page: "", live: "", talk: "", boil: ["", ""] };
 let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
 let talkDirty: { x: number; y: number; w: number; h: number } | null = null;
 let airKey = "";
@@ -160,6 +165,14 @@ function place(els: Els, f: Frame) {
     const bm = cssMatrix(layerMatrix(v, page.S, p.ox, p.oy));
     if (bm !== lastCss.boil[i]) { b.style.transform = bm; lastCss.boil[i] = bm; }
   });
+  for (const [name, layer, host] of [["field", field, els.fieldHost], ["streak", streak, els.streakHost]] as const) {
+    if (layer.c.parentElement !== host) { host.replaceChildren(layer.c); lastCss[name] = ""; }
+    layer.c.style.visibility = layer.empty ? "hidden" : "";
+    if (!layer.empty) {
+      const m = cssMatrix(layerMatrix(v, layer.S, layer.ox, layer.oy));
+      if (m !== lastCss[name]) { layer.c.style.transform = m; lastCss[name] = m; }
+    }
+  }
   const lc = stageCss(v);
   const lk = lc.transform + lc.origin;
   if (lk !== lastCss.live) { els.live.style.transform = lc.transform; els.live.style.transformOrigin = lc.origin; lastCss.live = lk; }
@@ -172,6 +185,16 @@ export function renderStage(els: Els, f: Frame) {
   const plan = boilPlan(f, ink);
   page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold);
   boil.set(plan, s, pageState.S);
+  const road = f.road ?? [];
+  const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road]);
+  if (field.draw(key, road.map((q) => q.at), pageState.S, 42, (g) => {
+    for (const q of road) drawRoad(g, q.at, q.dir, 3, s.soldiers.length + Math.round(q.at.x));
+  })) stageStats.field++;
+  const mover = f.mover && (f.mover.stretch ?? 1) > 1.04 ? f.mover : undefined;
+  const speedKey = JSON.stringify([theme.id, pageState.epoch, pageState.S, mover]);
+  if (streak.draw(speedKey, mover ? [mover.at] : [], pageState.S, 80, (g) => {
+    drawSpeed(g, mover!.at, mover!.angle ?? 0, mover!.stretch ?? 1, 3, mover!.id);
+  })) stageStats.streak++;
   place(els, f);
   seen = onScreen(f);
   bold = f.boil?.bold ?? 0;
@@ -213,6 +236,7 @@ function onScreen(f: Frame) {
 export const boilSeen = () => seen;
 
 export function forgetDrawn() {
+  field.key = ""; streak.key = "";
   liveDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   talkDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   inked = { x: 0, y: 0, w: 1e6, h: 1e6 };
@@ -262,7 +286,6 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     drawDot(g, s.soldiers[f.mover.id], 1, 1, at);
     g.restore();
     box.add(at.x, at.y, 12 * stretch);
-    if (stretch > 1.04) { drawSpeed(g, at, angle, stretch, 1 / v.z, f.mover.id); box.add(at.x, at.y, 36 + (stretch - 1) * 60); }
   }
   for (const j of f.jabs ?? []) {
     if (j.p <= 0 || j.alpha <= 0) continue;
@@ -380,7 +403,6 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
   if (f.keepOut) {
     for (const k of f.keepOut) { pencilHatchRing(g, k.x, k.y, k.r, px); box.add(k.x, k.y, k.r + 6); }
   }
-  for (const q of f.road ?? []) { drawRoad(g, q.at, q.dir, px, s.soldiers.length + Math.round(q.at.x)); box.add(q.at.x, q.at.y, 34); }
   if (f.hint) for (const b of f.hint.bases) { pencilLoop(g, b.x, b.y, b.r + 12, 900 + b.id * 17, Math.max(1.6, px * 1.1), f.hint.p, 0.75); box.add(b.x, b.y, b.r + 24); }
   if (f.selected !== undefined && !f.aim && !f.mover) {
     const x = s.soldiers[f.selected];

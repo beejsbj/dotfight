@@ -32,7 +32,7 @@ import * as voice from "./voice";
 import { Bubbles, bubbleAt, type BubbleKind } from "./bubble";
 import { feel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
-import { boil, boilSeen, boilTick, forgetDrawn, life, NOTE, noteSpotNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { boil, boilSeen, boilTick, field, streak, forgetDrawn, life, NOTE, noteSpotNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
 import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
@@ -128,7 +128,7 @@ let arrowTo: Pt | null = null; // the pencil end of a send being drawn
 
 const $ = <T extends HTMLElement>(q: string) => document.querySelector(q) as T;
 const els: Els = {
-  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), live: $<HTMLCanvasElement>("#live"), talk: $<HTMLCanvasElement>("#talk"),
+  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), fieldHost: $("#field-host"), streakHost: $("#streak-host"), live: $<HTMLCanvasElement>("#live"), talk: $<HTMLCanvasElement>("#talk"),
   light: $<HTMLCanvasElement>("#light"), haze: $<HTMLCanvasElement>("#haze"),
 };
 const over = $<HTMLCanvasElement>("#over");
@@ -2430,7 +2430,7 @@ if (import.meta.env.DEV) {
      * frame: per layer, how many pixels differ by more than antialiasing, and where.
      */
     redrawCheck: () => {
-      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, rings: boil.parts[0].c, rest: boil.parts[1].c };
+      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, field: field.c, streak: streak.c, rings: boil.parts[0].c, rest: boil.parts[1].c };
       const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => [k, c.width && c.height && c.style.visibility !== "hidden" ? c.getContext("2d")!.getImageData(0, 0, c.width, c.height) : null]));
       renderNow();
       const a = grab();

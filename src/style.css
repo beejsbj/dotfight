@@ -348,3 +348,5 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 
 /* the hand-off card is one big button (a haptic tap target on iPhone) */
 .handoff-tap { all: unset; display: block; width: 100%; cursor: pointer; }
+
+#field-host canvas, #streak-host canvas { position: fixed; display: block; transform-origin: 0 0; mix-blend-mode: var(--live-blend); will-change: transform; }
