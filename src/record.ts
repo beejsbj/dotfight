@@ -9,7 +9,7 @@
 import { act, newGame, type Action, type GameState, type Player } from "./game";
 import * as legacy from "./legacy";
 import type { LegacyFlick, LegacyState } from "./legacy";
-import { CORE, SIZES, type CoreRules, type Size } from "./rules";
+import { SIZES, savedRules, type CoreRules, type Size } from "./rules";
 
 export type Mode = { kind: "pnp" } | { kind: "bot"; level: 0 | 1 | 2 } | { kind: "room"; code: string };
 
@@ -36,7 +36,7 @@ export function toRecord(s: GameState): GameRecord {
 
 /** Replay a record from a blank page. */
 export function fromRecord(r: GameRecord, upTo = r.actions.length): GameState {
-  const s = newGame(r.size, r.seed, r.page, { ...CORE, ...r.rules });
+  const s = newGame(r.size, r.seed, r.page, savedRules(r.rules));
   for (const a of r.actions.slice(0, upTo)) act(s, a);
   return s;
 }
@@ -107,7 +107,7 @@ export function steps(r: Filed): Step[] {
 
 /** The blank sheet a replay starts from. */
 export function blank(r: Filed): AnyState {
-  return r.v === 2 ? newGame(r.size, r.seed, r.page, { ...CORE, ...r.rules }) : legacy.newGame(r.seed, r.page);
+  return r.v === 2 ? newGame(r.size, r.seed, r.page, savedRules(r.rules)) : legacy.newGame(r.seed, r.page);
 }
 
 /** Apply one step. */
@@ -130,7 +130,7 @@ export function readSave(raw: string | null): Save | null {
     const v = JSON.parse(raw || "null");
     if (!Array.isArray(v?.s?.marks)) return null;
     if (v.s.v === 1) return { s: v.s, mode: MODE(v.mode) };
-    if (v.s.v === 2 && Array.isArray(v.s.actions) && v.s.size && v.s.rules) return { s: { ...v.s, rules: { ...CORE, ...v.s.rules } }, mode: MODE(v.mode) };
+    if (v.s.v === 2 && Array.isArray(v.s.actions) && v.s.size && v.s.rules) return { s: { ...v.s, rules: savedRules(v.s.rules) }, mode: MODE(v.mode) };
     return null;
   } catch {
     return null;

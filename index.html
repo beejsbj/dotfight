@@ -29,6 +29,7 @@
       <div id="page-host"></div>
       <div id="boil-host"></div>
       <div id="field-host"></div>
+      <div id="streak-host"></div>
       <canvas id="live"></canvas>
       <canvas id="talk"></canvas>
       <canvas id="light"></canvas>
@@ -54,6 +55,13 @@
 
     <section id="cover" hidden>
       <div class="book">
+        <nav class="tabs" aria-label="Bookmarks">
+          <button data-a="drawer" class="mark m1">drawer<sup></sup></button>
+          <button data-a="how" class="mark m2">how to</button>
+          <a href="/rules" class="mark m3">rules</a>
+          <button data-a="settings" class="mark m4">settings</button>
+        </nav>
+        <div class="leaf">
         <div class="label">
           <p class="school">EXERCISE BOOK · SQUARED</p>
           <h1>%GAME_NAME_HTML%</h1>
@@ -62,6 +70,7 @@
           <p class="field"><span>Class</span><b class="hand blue" data-klass>after lights out</b></p>
         </div>
         <nav class="menu"></nav>
+        </div>
       </div>
     </section>
 

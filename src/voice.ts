@@ -127,6 +127,7 @@ export let level = (() => {
 })();
 export function setLevel(v: number) {
   level = v;
+  if (chain) chain.out.gain.setValueAtTime(v, chain.ac.currentTime);
   localStorage.setItem("pft:voices", String(v));
 }
 export const levelName = () => (level >= 1 ? "on" : level > 0 ? "soft" : "off");
@@ -143,7 +144,7 @@ let busyUntil: number[] = [];
 const lastSaid = new Map<string, number>();
 let lastAny: number | undefined;
 let n = 0;
-let chain: { ac: AudioContext; bus: GainNode; out: AudioNode } | null = null;
+let chain: { ac: AudioContext; bus: AudioNode; out: GainNode } | null = null;
 
 /**
  * Should `what` be said now? Its own cooldown, room among the voices
@@ -195,7 +196,7 @@ export function say(what: Say, id: number, owner: 0 | 1, delay = 0, gain = 1, le
     lp.connect(g).connect(b.out);
     chain = { ac, bus: lp, out: g };
   }
-  (chain.out as GainNode).gain.value = level;
+  chain.out.gain.value = level;
   const t = ac.currentTime + Math.max(0, delay);
   busyUntil = busyUntil.filter((x) => x > ac.currentTime);
   const key = `${what}`;

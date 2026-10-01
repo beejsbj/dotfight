@@ -589,6 +589,45 @@ export function handText(
   return w;
 }
 
+// Handwriting along an arc: each letter set on a circle of radius `r` about
+// (cx, cy), the run centred on `mid` (radians), reading clockwise, upright
+// to the circle (a camp's chant round its ring). `upTo` reveals it letter by
+// letter. Returns the run's angular half-width.
+export function arcText(
+  ctx: Ctx, text: string, cx: number, cy: number, r: number, mid: number, size: number, color: string,
+  o: { upTo?: number; alpha?: number; weight?: number; grain?: number; stretch?: number; jitter?: number; seed?: number } = {},
+) {
+  const { upTo = 1, alpha = 1, weight = 700, grain = theme.ink.grain, stretch = 1, jitter = 0, seed = 1 } = o;
+  ctx.save();
+  ctx.font = `${weight} ${size}px Caveat, "Patrick Hand", cursive`;
+  const chars = [...text];
+  const widths = chars.map((c) => ctx.measureText(c).width * stretch);
+  const total = widths.reduce((a, b) => a + b, 0);
+  const half = total / 2 / r;
+  if (upTo <= 0 || alpha <= 0) { ctx.restore(); return half; }
+  const rand = rng(seed);
+  const shown = Math.ceil(chars.length * Math.min(1, upTo));
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = paint(ctx, color, grain);
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "center";
+  let acc = 0;
+  for (let i = 0; i < chars.length; i++) {
+    const a = mid - half + (acc + widths[i] / 2) / r;
+    acc += widths[i];
+    const jx = (rand() - 0.5) * jitter, jr = (rand() - 0.5) * jitter * 0.6;
+    if (i >= shown) continue;
+    ctx.save();
+    ctx.translate(cx + Math.cos(a) * (r + jr), cy + Math.sin(a) * (r + jr));
+    ctx.rotate(a + Math.PI / 2 + jx * 0.02);
+    ctx.scale(stretch, 1);
+    ctx.fillText(chars[i], 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+  return half;
+}
+
 // Grain for the paper, rendered once per paper. `tooth` scales the speckle,
 // `foxing` is the colour of the few soft age stains.
 export function paperGrain(w: number, h: number, seed: number, tooth = 1, foxing = "rgba(170, 130, 60, 0.07)"): HTMLCanvasElement {

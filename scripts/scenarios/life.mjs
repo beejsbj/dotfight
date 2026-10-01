@@ -433,20 +433,344 @@ export default async function (T, out) {
         natural = await page.evaluate(() => window.pft.bubbles.cur?.text ?? null);
         console.log("the lunger said:", natural);
       }
-      if (natural !== "Luuunge!") await force("lunge", me.id, "Luuunge!");
+      // (a lunge is yelled from his camp, in its late form once the war's hot)
+      const camp = await page.evaluate((id) => window.pft.s.soldiers[id].home, me.id);
+      await page.evaluate(() => { window.pft.heat = 1; });
+      if (natural !== "Luuunge!") await force("lunge", camp, "Luuunge!");
       await still(`note2-${theme}-lunge`, 700);
       for (let i = 0; i < 20; i++) await step(1000 / 12, 30);
       await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
       await step(0, 100);
       const men = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).map((x) => x.id); });
-      await force("lunge", men[1], "fooor Dawooood!");
+      await force("lunge", camp, "fooor Dawooood!");
       await still(`note2-${theme}-dawood`, 800);
       await force("aim", men[2], "steady…");
       await still(`note2-${theme}-quiet`, 900);
       // a shout, written and rubbed out
-      await force("lunge", men[3], "Chaaarge!");
+      await force("lunge", camp, "Chaaarge!");
       await seq(`note2-${theme}-shout`, 36, 1000 / 12);
+      await page.evaluate(() => { window.pft.bubbles.reset(); window.pft.heat = undefined; });
+    }
+  }
+  // --- notes, round three: camps speak from their ring, moods, exchanges, crickets ------------
+  //   note3-<theme>-chant        a camp's chant along its ring, from bird's-eye
+  //   note3-<theme>-who          an individual's line from bird's-eye: the tail and the ring round his dot
+  //   note3-<theme>-early/late   "for Dawood!" from a camp early in the war, "fooor Dawooood!" late
+  //   note3-<theme>-tiny-lean    a tiny whisper leaning in (and -tiny-bird: barely there from above)
+  //   note3-<theme>-chat         an exchange: a line and a nearby comrade's reply
+  //   note3-<theme>-crickets     a long wait
+  if (want("notes3")) {
+    const force = (kind, id, text, mate) => page.evaluate(({ kind, id, text, mate }) => {
+      const p = window.pft;
+      for (let k = 0; k < 8000; k++) {
+        p.bubbles.reset(); p.speak(kind, id, p.wall, 1000 + k * 7, mate);
+        if (p.bubbles.cur && (!text || p.bubbles.cur.text === text) && (mate === undefined || p.bubbles.cur.reply)) { p.poke(); return p.bubbles.cur.text; }
+      }
+      return null;
+    }, { kind, id, text, mate });
+    const still = async (name, ms = 900, clip) => { await step(ms, 150); await page.screenshot(clip ? { path: `${out}/${name}.png`, clip } : { path: `${out}/${name}.png` }); console.log(`shot ${name}`); await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100); };
+    for (const theme of (process.env.THEMES ?? "lamplight,blueprint").split(",")) {
+      await page.evaluate((id) => window.pft.theme?.apply(id), theme);
+      await war(7, 12);
+      await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
+      await step(0, 150);
+      const camp = await fullest("mine");
+      const men = await menIn(camp);
+      const mate = await page.evaluate((id) => { const s = window.pft.s, x = s.soldiers[id]; return s.soldiers.filter((y) => y.alive && y.owner === x.owner && y.id !== id).sort((a, b) => Math.hypot(a.x - x.x, a.y - x.y) - Math.hypot(b.x - x.x, b.y - x.y))[0]?.id; }, men[0].id);
+      console.log("chant:", await force("chant", camp.id, "Da-wood! Da-wood!"));
+      await still(`note3-${theme}-chant`, 1700);
+      console.log("who:", await force("idle", men[2].id, "hold the line"));
+      await still(`note3-${theme}-who`, 900);
+      await page.evaluate(() => { window.pft.heat = 0; });
+      console.log("early:", await force("lunge", camp.id, "for Dawood!"));
+      await still(`note3-${theme}-early`, 800);
+      await page.evaluate(() => { window.pft.heat = 1; });
+      console.log("late:", await force("lunge", camp.id, "fooor Dawooood!"));
+      await still(`note3-${theme}-late`, 800);
+      await page.evaluate(() => { window.pft.heat = undefined; });
+      console.log("chat:", await force("chat", men[0].id, "what's the plan", mate));
+      await still(`note3-${theme}-chat`, 1900);
+      console.log("crickets:", await force("wait", men[3].id, "*crickets*"));
+      await still(`note3-${theme}-crickets-bird`, 1000);
+      console.log("tiny:", await force("tiny", men[1].id, "psst"));
+      await still(`note3-${theme}-tiny-bird`, 1000);
+      await flat(camp, 2.4);
+      console.log("tiny:", await force("tiny", men[1].id, "psst"));
+      await still(`note3-${theme}-tiny-lean`, 1100, await box(camp, 200));
+      console.log("crickets:", await force("wait", men[3].id, "*crickets*"));
+      await still(`note3-${theme}-crickets-lean`, 1000, await box(camp, 200));
+      console.log("chat:", await force("chat", men[0].id, "what's the plan", mate));
+      await seq(`note3-${theme}-chat-clip`, 46, 1000 / 12, { [`note3-${theme}-chat-clip`]: await box(camp, 220) });
       await page.evaluate(() => window.pft.bubbles.reset());
+      await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
+      await step(0, 150);
+      console.log("chant:", await force("chant", camp.id, "Da-wood! Da-wood!"));
+      await seq(`note3-${theme}-chant-clip`, 42, 1000 / 12);
+      await page.evaluate(() => window.pft.bubbles.reset());
+    }
+  }
+  // --- exchanges: two men talking --------------------------------------------------
+  //   exchange-<style>-<theme>          both lines up, bird's-eye at phone size
+  //   exchange-<style>-<theme>-lean     the same, leaning in on the pair
+  //   exchange-<style>-<theme>-beat     the beat, frame by frame (GIF, and a strip of six)
+  if (want("exchange")) {
+    const pair = (id) => page.evaluate((id) => {
+      // as main.ts picks: a comrade near enough to talk to, not so near their dots read as one
+      const s = window.pft.s, me = s.soldiers[id], d = (x) => Math.hypot(x.x - me.x, x.y - me.y);
+      const near = s.soldiers.filter((x) => x.alive && x.owner === me.owner && x.id !== id && d(x) <= 62 * 2.5).sort((a, b) => d(a) - d(b));
+      return (near.filter((x) => d(x) >= 42).sort((a, b) => Math.abs(d(a) - 80.6) - Math.abs(d(b) - 80.6))[0] ?? near[0])?.id;
+    }, id);
+    const say = (id, mate, text) => page.evaluate(({ id, mate, text }) => {
+      const p = window.pft;
+      for (let k = 0; k < 20000; k++) { p.bubbles.reset(); p.speak("chat", id, p.wall, 1000 + k * 7, mate); if (p.bubbles.cur?.reply && (!text || p.bubbles.cur.text === text)) { p.poke(); return `${p.bubbles.cur.text} / ${p.bubbles.cur.reply.text}`; } }
+      return null;
+    }, { id, mate, text });
+    for (const theme of (process.env.THEMES ?? "lamplight,blueprint").split(",")) {
+      await page.evaluate((id) => window.pft.theme?.apply(id), theme);
+      await war(7, 12);
+      { const style = "face";
+        await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); });
+        await step(0, 150);
+        const camp = await fullest("mine");
+        const men = await menIn(camp);
+        const lines = [["what's the plan", men[0].id], ["where's Dawood?", men[3].id], [undefined, men[5].id]];
+        for (const [i, [text, id]] of lines.entries()) {
+          const mate = await pair(id);
+          console.log(`exchange ${style} ${theme} ${i}:`, await say(id, mate, text));
+          await step(2300, 150);
+          const name = `exchange-${style}-${theme}${i ? `-${i}` : ""}`;
+          await page.screenshot({ path: `${out}/${name}.png` }); console.log("shot", name);
+          await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100);
+        }
+        // the beat, clipped round the pair
+        const id = men[0].id, mate = await pair(id);
+        const a = await page.evaluate(({ id, mate }) => { const s = window.pft.s, x = s.soldiers[id], y = s.soldiers[mate]; return { x: (x.x + y.x) / 2, y: (x.y + y.y) / 2 }; }, { id, mate });
+        await say(id, mate, "what's the plan");
+        const beat = `exchange-${style}-${theme}-beat`;
+        await seq(beat, 56, 1000 / 12, { [beat]: await box(a, 190) });
+        const fs = await import("node:fs");
+        const pick = [4, 11, 17, 26, 42, 51].map((k) => `${out}/${beat}-${String(k).padStart(3, "0")}.png`).filter((f) => fs.existsSync(f));
+        if (pick.length === 6) spawnSync("ffmpeg", ["-loglevel", "error", "-y", ...pick.flatMap((f) => ["-i", f]), "-filter_complex", "hstack=inputs=6", `${out}/${beat}-strip.png`], { stdio: "inherit" });
+        await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100);
+        // leaning in on the pair
+        await flat(a, 2.4);
+        await say(id, mate, "what's the plan");
+        await step(2300, 150);
+        await page.screenshot({ path: `${out}/exchange-${style}-${theme}-lean.png`, clip: await box(a, 190) }); console.log("shot lean");
+        await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100);
+      }
+    }
+  }
+  // --- notes, round four: loops that hug their words, fitting where it's full, streaks ---
+  //   ovals-<theme>-who                 "hold the line" from bird's-eye (as notes3's who, for before and after)
+  //   ovals-<theme>-gallery-<i>         short, long, wrapped and shouted lines at several angles, leaning in (clips)
+  //   fit-<theme>                       a crowded exchange: written smaller to sit close to its man
+  //   streak-<theme>-<voice>-<n>        each voice of a streak forced at link 2 and link 5, bird's-eye
+  //   streak-<theme>-chain-<link>       a real lunge chain, fired through the game, after each link lands
+  //   streak-<theme>-chain              the chain building, frame by frame (GIF), and a strip
+  if (want("notes4")) {
+    const force = (kind, id, text, mate) => page.evaluate(({ kind, id, text, mate }) => {
+      const p = window.pft;
+      for (let k = 0; k < 20000; k++) {
+        p.bubbles.reset(); p.speak(kind, id, p.wall, 1000 + k * 7, mate);
+        if (p.bubbles.cur && (!text || p.bubbles.cur.text === text) && (mate === undefined || p.bubbles.cur.reply)) { p.poke(); return p.bubbles.cur.text; }
+      }
+      return null;
+    }, { kind, id, text, mate });
+    const clear = async () => { await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100); };
+    const overview = async () => { await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); }); await step(0, 150); };
+    for (const theme of (process.env.THEMES ?? "lamplight,blueprint").split(",")) {
+      await page.evaluate((id) => window.pft.theme?.apply(id), theme);
+      await war(7, 12);
+      await overview();
+      const camp = await fullest("mine");
+      const men = await menIn(camp);
+      // the loops
+      console.log("who:", await force("idle", men[2].id, "hold the line"));
+      await step(900, 150); await page.screenshot({ path: `${out}/ovals-${theme}-who.png` }); await clear();
+      const lines = [["ready", "ok!"], ["idle", "what's the plan"], ["ponder", "I think, therefore I'm a dot"], ["phew", "HEY!"], ["dread", "!"]];
+      const angles = [0, 0.5, Math.PI / 2, -0.85];
+      await flat(camp, 2.4);
+      let gi = 0;
+      for (const [kind, text] of lines) for (const ang of angles) {
+        await page.evaluate((a) => { window.pft.NOTE.angle = a; }, ang);
+        const got = await force(kind, men[1].id, text);
+        if (!got) { console.log("no line", kind, text); continue; }
+        await step(1200, 120);
+        await page.screenshot({ path: `${out}/ovals-${theme}-gallery-${String(gi++).padStart(2, "0")}.png`, clip: await box(camp, 195) });
+        await clear();
+      }
+      await page.evaluate(() => { window.pft.NOTE.angle = undefined; });
+      await overview();
+      // a crowded exchange: find one written smaller so it sits close to its man
+      const pair = (id) => page.evaluate((id) => {
+        const s = window.pft.s, me = s.soldiers[id], d = (x) => Math.hypot(x.x - me.x, x.y - me.y);
+        const near = s.soldiers.filter((x) => x.alive && x.owner === me.owner && x.id !== id && d(x) <= 62 * 2.5).sort((a, b) => d(a) - d(b));
+        return (near.filter((x) => d(x) >= 42).sort((a, b) => Math.abs(d(a) - 80.6) - Math.abs(d(b) - 80.6))[0] ?? near[0])?.id;
+      }, id);
+      const all = await page.evaluate(() => { const s = window.pft.s; return s.soldiers.filter((x) => x.alive && x.owner === s.current).map((x) => x.id); });
+      let fitted = null;
+      for (const id of all) {
+        const mate = await pair(id);
+        if (mate === undefined) continue;
+        for (let k = 0; k < 6 && !fitted; k++) {
+          await page.evaluate(({ id, mate, k }) => { const p = window.pft; for (let j = 0; j < 4000; j++) { p.bubbles.reset(); p.speak("chat", id, p.wall, 5000 + k * 977 + j * 7, mate); if (p.bubbles.cur?.reply) break; } p.poke(); }, { id, mate, k });
+          await step(2300, 60);
+          const sp = await page.evaluate(() => window.pft.noteSpots().slice(-2).map((m) => m.k));
+          if (sp.some((x) => x > 0)) fitted = { id, mate, sp };
+          else await clear();
+        }
+        if (fitted) break;
+      }
+      if (fitted) { console.log("fit:", JSON.stringify(fitted), await page.evaluate(() => `${window.pft.bubbles.cur?.text} / ${window.pft.bubbles.cur?.reply?.text}`)); await page.screenshot({ path: `${out}/fit-${theme}.png` }); }
+      else console.log("fit: no crowded exchange found");
+      await clear();
+      // each voice of a streak, forced, at link 2 and link 5
+      const streaker = men[0].id;
+      for (const n of [2, 5]) for (const v of ["streakMe", "streakFoe", "streakCamp", "streakFoeCamp"]) {
+        const got = await page.evaluate(({ n, v, id }) => { const p = window.pft; p.bubbles.reset(); const b = p.speakStreak(n, id, p.wall, 4242 + n, v); p.poke(); return b ? `${b.kind} ${b.mood}: ${b.text}` : null; }, { n, v, id: streaker });
+        console.log(`streak ${theme} ${v} ${n}:`, got);
+        if (!got) continue;
+        await step(n >= 4 ? 1500 : 1000, 150);
+        await page.screenshot({ path: `${out}/streak-${theme}-${v}-${n}.png` });
+        await clear();
+      }
+      // a real lunge chain, through the game: search for a lunge that kills and lands safe, fire it, again with the same man
+      const findKill = () => page.evaluate(async () => {
+        const g = await import("/src/game.ts");
+        const s = window.pft.s, c = s.chain;
+        const ids = c ? [c.soldier] : s.soldiers.filter((x) => x.alive && x.owner === s.current).map((x) => x.id);
+        let best = null;
+        for (const id of ids) {
+          if (!g.canFlick(s, id, "lunge")) continue;
+          for (let a = 0; a < 360; a += 4) for (let len = 120; len <= 620; len += 20) {
+            const f = { soldier: id, kind: "lunge", angle: (a * Math.PI) / 180, length: len, bend: 0, wob: 7 };
+            const o = g.preview(s, f);
+            if (!o.killed.length || o.lost || o.crashed !== undefined) continue;
+            // one kill a link keeps men about for the next; nearer the middle of the page keeps him on screen
+            const end = o.path[o.path.length - 1], score = (o.killed.length === 1 ? 0 : 50) + Math.hypot(end.x - 500, end.y - 850) * 0.05 + len * 0.02;
+            if (!best || score < best.score) best = { f, score };
+          }
+          if (best && !c) break;
+        }
+        return best?.f ?? null;
+      });
+      await page.evaluate(() => window.pft.bubbles.reset());
+      const chainFrames = [];
+      let link = 0;
+      for (let k = 0; k < 7; k++) {
+        const f = await findKill();
+        if (!f) { console.log("chain: no more kills from here"); break; }
+        const fired = await page.evaluate((f) => { window.pft.flick(f); return window.pft.wall; }, f);
+        // step through the flick and the note, a frame on twos; a still once this link's note is written
+        let shot = false;
+        for (let i = 0; i < 40; i++) {
+          await step(1000 / 12, 40);
+          if (!shot) {
+            const up = await page.evaluate((fired) => { const p = window.pft, b = p.bubbles.cur; return b && b.kind.startsWith("streak") && b.t0 >= fired && p.wall - b.t0 > 900 ? `${b.kind} ${b.mood}: ${b.text}` : null; }, fired);
+            if (up) { shot = true; await page.screenshot({ path: `${out}/streak-${theme}-chain-${link + 1}.png` }); console.log(`chain link ${link + 1} said:`, up); }
+          }
+          const full = await page.screenshot({ type: "jpeg", quality: 80 });
+          const file = `${out}/streak-${theme}-chain-f${String(chainFrames.length).padStart(3, "0")}.jpg`;
+          (await import("node:fs")).writeFileSync(file, full);
+          chainFrames.push(file);
+        }
+        for (let i = 0; i < 40 && await page.evaluate(() => window.pft.busy); i++) await step(1000 / 12, 20);
+        link++;
+        const st = await page.evaluate(() => { const p = window.pft, b = p.bubbles.cur; return { chain: p.s.chain?.link ?? 0, busy: !!p.busy, note: b ? `${b.kind} ${b.mood}: ${b.text}` : null }; });
+        console.log(`chain link ${link}:`, JSON.stringify(st));
+        if (!st.chain) break;
+      }
+      if (chainFrames.length) spawnSync("ffmpeg", ["-loglevel", "error", "-y", "-framerate", "12", "-i", `${out}/streak-${theme}-chain-f%03d.jpg`, "-vf", "scale=360:-1:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=none", "-loop", "0", `${out}/streak-${theme}-chain.gif`], { stdio: "inherit" });
+      await clear();
+    }
+  }
+  // --- notes, round five: botches, and notes kept off the page's border, header and title block ---
+  //   edge-<theme>-<voice>-<n>          the streak shots that poked past the border or sat on the title block (compare round four's)
+  //   botch-<theme>-<voice>-<grade>     each botch voice, a mutter (1) and the full treatment (2), bird's-eye
+  //   botch-<theme>-clap                the enemy camp's slow clap, frame by frame (GIF and a strip)
+  //   botch-<theme>-real-<grade>        a real botched flick fired through the game, graded by the game's own hook
+  //   botch-<theme>-back                the callback on the other side's next go
+  if (want("notes5")) {
+    const clear = async () => { await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100); };
+    const overview = async () => { await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); }); await step(0, 150); };
+    for (const theme of (process.env.THEMES ?? "lamplight,blueprint").split(",")) {
+      await page.evaluate((id) => { window.pft.theme?.apply(id); window.__mildSaid = false; }, theme);
+      await war(7, 12);
+      await overview();
+      const camp = await fullest("mine");
+      const men = await menIn(camp);
+      // the edges: the same forced lines as round four's streak shots
+      for (const [n, v] of [[2, "streakFoe"], [5, "streakFoeCamp"], [5, "streakCamp"]]) {
+        const got = await page.evaluate(({ n, v, id }) => { const p = window.pft; p.bubbles.reset(); const b = p.speakStreak(n, id, p.wall, 4242 + n, v); p.poke(); return b ? b.text : null; }, { n, v, id: men[0].id });
+        console.log(`edge ${theme} ${v} ${n}:`, got);
+        await step(n >= 4 ? 1500 : 1000, 150);
+        await page.screenshot({ path: `${out}/edge-${theme}-${v}-${n}.png` });
+        await clear();
+      }
+      // each botch voice, forced at both grades, the ink ending short of their lines
+      const me = men[0];
+      const end = { x: me.x + 40, y: me.y - 60 };
+      for (const grade of [1, 2]) for (const v of ["botchMe", "botchCamp", "botchFoe", "botchFoeCamp"]) {
+        const got = await page.evaluate(({ grade, v, id, end }) => { const p = window.pft; p.bubbles.reset(); const b = p.speakBotch(grade, id, end, p.wall, 7000 + grade * 13, v); p.poke(); return b ? `${b.kind} ${b.mood}: ${b.text}` : null; }, { grade, v, id: me.id, end });
+        console.log(`botch ${theme} ${v} ${grade}:`, got);
+        if (!got) continue;
+        await step(1400, 150);
+        await page.screenshot({ path: `${out}/botch-${theme}-${v}-${grade}.png` });
+        await clear();
+      }
+      // the slow clap, frame by frame
+      const clap = await page.evaluate(({ id, end }) => { const p = window.pft; for (let k = 0; k < 600; k++) { p.bubbles.reset(); const b = p.speakBotch(2, id, end, p.wall, 100 + k, "botchFoeCamp"); if (b?.text === "clap. clap. clap.") { p.poke(); return b.bid ?? b.id; } } return null; }, { id: me.id, end });
+      console.log(`clap ${theme}:`, clap);
+      if (clap !== null) {
+        const base = await page.evaluate((id) => { const b = window.pft.s.bases[id]; return { x: b.x, y: b.y }; }, clap);
+        const name = `botch-${theme}-clap`;
+        await seq(name, 44, 1000 / 12, { [name]: await box(base, 170) });
+        const fs = await import("node:fs");
+        const pick = [6, 13, 20, 27, 34, 43].map((k) => `${out}/${name}-${String(k).padStart(3, "0")}.png`).filter((f) => fs.existsSync(f));
+        if (pick.length === 6) spawnSync("ffmpeg", ["-loglevel", "error", "-y", ...pick.flatMap((f) => ["-i", f]), "-filter_complex", "hstack=inputs=6", `${out}/${name}-strip.png`], { stdio: "inherit" });
+        await clear();
+      }
+      // a real botch, through the game: search the engine for a flick of each grade, fire it, and let the game's hook grade it
+      const tried = [];
+      for (const want of [2, 1, 1, 1, 1]) {
+        if (want === 1 && await page.evaluate(() => !!window.__mildSaid)) break;
+        await overview();
+        const f = await page.evaluate(async ({ want, tried }) => {
+          const g = await import("/src/game.ts");
+          const p = window.pft, s = p.s, foe = 1 - s.current;
+          const foes = s.soldiers.filter((x) => x.alive && x.owner === foe), own = s.bases.filter((b) => b.owner === s.current);
+          for (const x of s.soldiers.filter((y) => y.alive && y.owner === s.current)) {
+            if (!g.canFlick(s, x.id, "snipe") || tried.includes(x.id)) continue;
+            for (let a = 0; a < 360; a += 6) for (const len of want === 2 ? [70, 90] : [200, 260, 320]) {
+              const f = { soldier: x.id, kind: "snipe", angle: (a * Math.PI) / 180, length: len, bend: 0, wob: 3 };
+              const o = g.preview(s, f);
+              const bo = p.botchOf({ kind: "snipe", from: o.path[0], aim: f.angle, path: o.path, killed: o.killed.length, lost: o.lost, crashed: o.crashed !== undefined, offPage: o.events.some((e) => e.kind === "edge"), foes, own });
+              if (bo.grade === want) return { f, why: bo.why, score: bo.score };
+            }
+          }
+          return null;
+        }, { want, tried });
+        if (!f) { console.log(`real botch ${want}: none found`); continue; }
+        tried.push(f.f.soldier);
+        // retry the seed-dependent chance: fire, and if nothing was said, try again on the next turn
+        await page.evaluate(() => window.pft.bubbles.reset());
+        await page.evaluate((f) => window.pft.flick(f), f.f);
+        let said = null;
+        for (let i = 0; i < 50 && !said; i++) { await step(1000 / 12, 30); said = await page.evaluate(() => { const b = window.pft.bubbles.cur; return b && b.kind.startsWith("botch") && window.pft.wall - b.t0 > 1000 ? `${b.kind} ${b.mood}: ${b.text}` : null; }); }
+        console.log(`real botch ${want} (${f.why.join(", ")}, ${f.score.toFixed(2)}):`, said);
+        if (said) await page.screenshot({ path: `${out}/botch-${theme}-real-${want}.png` });
+        if (said && want === 1) await page.evaluate(() => { window.__mildSaid = true; });
+        for (let i = 0; i < 40 && await page.evaluate(() => window.pft.busy); i++) await step(1000 / 12, 20);
+        // the other side's go: wait for the callback
+        if (want === 2) {
+          let back = null;
+          for (let i = 0; i < 90 && !back; i++) { await step(500, 20); back = await page.evaluate(() => { const b = window.pft.bubbles.cur; return b && b.kind === "botchBack" && window.pft.wall - b.t0 > 900 ? `${b.kind}: ${b.text}` : null; }); }
+          console.log(`callback ${theme}:`, back);
+          if (back) await page.screenshot({ path: `${out}/botch-${theme}-back.png` });
+        }
+        await clear();
+      }
     }
   }
   await page.evaluate(() => window.pft.hand(false));
