@@ -33,7 +33,7 @@ The same rules are in plain text in [RULES.md](RULES.md). The playable game stil
 
 ## Coming
 
-Sharing a room link so you can play a friend without passing the phone, a real-time mode, a tutorial you play rather than read, haptics, and app-store versions for Android and iPhone.
+Sharing a room link so you can play a friend without passing the phone, a real-time mode, a tutorial you play rather than read, and app-store versions for Android and iPhone.
 
 ## Building it
 
