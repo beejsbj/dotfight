@@ -128,6 +128,16 @@ export default async function (T, out) {
     if (shot5 && !shot6 && Math.abs(wrap(last.rot - aimed.rot)) > 0.01) { shot6 = true; await page.waitForTimeout(350); await T.shot(`${out}/polish-6-turning-back.png`); }
     await page.waitForTimeout(50);
   }
+  if (!samples.some((x) => x.settled)) {
+    // The headless compositor can supply too few RAFs during the fixed capture
+    // span. Observe ink settlement and return orientation before hand-over.
+    await page.waitForFunction(() => window.pft.res?.settled, undefined, { timeout: 120000 });
+    await page.waitForFunction((own) => {
+      const p = window.pft;
+      return p.res?.settled && Math.abs(Math.atan2(Math.sin(p.cam.tgt.rot - own), Math.cos(p.cam.tgt.rot - own))) < 0.01;
+    }, own, { timeout: 120000 });
+    samples.push(await page.evaluate((id) => { const s = window.pft.s.soldiers[id], c = window.pft.cam; return { settled: !!window.pft.res?.settled, rot: c.tgt.rot, cur: c.cur.rot, m: c.cur.m, x: c.toScreen(s.x, s.y).x }; }, me.id));
+  }
   const running = samples.filter((x) => !x.settled), landed = samples.filter((x) => x.settled);
   check(running.length > 3 && running.every((x) => Math.abs(wrap(x.rot - aimed.rot)) < 0.01), "  and holds it while the ink runs", `${running.length} samples, rot ${running.map((x) => deg(x.rot)).slice(-2).join(", ")}`);
   check(landed.length > 0 && Math.abs(wrap(landed[landed.length - 1].rot - own)) < 0.01, "  then turns back to face its player once the ink has landed", `${landed.length} samples, rot ${landed.map((x) => deg(x.rot)).join(" ")}`);

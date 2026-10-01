@@ -2682,12 +2682,12 @@ function currentFrame(): Frame {
       f.sendArrow = { from, to: arrowTo, ok: w !== undefined && w !== sending.from && !canSend(c0, sending.from, w, 1) };
     }
   }
-  if (c0 && c0.phase === "play" && (!res || it >= res.dur) && (screen === "game" || screen === "replay" || screen === "view")) {
+  if (c0 && c0.phase === "play" && (screen === "game" || screen === "replay" || screen === "view")) {
     // a side in its last stand keeps its survivors marked; a lunger owed another lunge is ringed with his link count
-    const held = ([0, 1] as Player[]).filter((p) => c0.stand[p] > 0);
+    const held = ([0, 1] as Player[]).filter((p) => c0.stand[p] > 0 && (!res || it >= res.dur || !res.o.stood.includes(p)));
     if (held.length) f.stand = c0.soldiers.filter((x) => x.alive && held.includes(x.owner)).map((x) => ({ ...displayedAt(x.id), id: x.id }));
     const owed = c0.chain && c0.soldiers[c0.chain.soldier];
-    if (owed?.alive) f.chain = { at: owed, link: c0.chain!.link };
+    if ((!res || it >= res.dur) && owed?.alive) f.chain = { at: owed, link: c0.chain!.link };
   }
   if (lapse) {
     const p = Math.min(1, Math.max(0, (T - lapse.t0) / lapse.dur));
