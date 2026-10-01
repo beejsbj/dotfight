@@ -16,7 +16,15 @@ if (!scenario) throw new Error("usage: node scripts/playtest.mjs <scenario> [url
 const url = process.argv[3] ?? "http://localhost:5173/";
 const out = process.argv[4] ?? (hostname().split(".")[0] === "bjslab" ? "/mnt/server-ssd/t3-test-artifacts/dotfight" : join(tmpdir(), "pft-playtest"));
 mkdirSync(out, { recursive: true });
-const T = await phone({ url, w: +(process.env.W ?? 390), h: +(process.env.H ?? 844), dpr: +(process.env.DPR ?? 3), taught: process.env.TAUGHT !== "0" });
+// Explicit software ANGLE avoids CPU-throttling SIGUSR2 repeatedly interrupting /dev/shm fallocate on Linux 6.8.
+const T = await phone({
+  url,
+  w: +(process.env.W ?? 390),
+  h: +(process.env.H ?? 844),
+  dpr: +(process.env.DPR ?? 3),
+  taught: process.env.TAUGHT !== "0",
+  args: scenario === "perf" ? ["--use-angle=swiftshader"] : [],
+});
 try {
   const mod = await import(`./scenarios/${scenario}.mjs`);
   await mod.default(T, out);
