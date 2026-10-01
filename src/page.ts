@@ -469,10 +469,11 @@ export class PageLayer {
    * Bring the page up to date. `hold` is what stays off the page for now: a
    * soldier riding his ink, and whatever is boiling. Something held that is
    * already on the page (a camp manned again) can't be rubbed out, so the
-   * page is drawn afresh.
+   * page is drawn afresh. `source` keeps a pending presentation snapshot on
+   * the same sheet as its engine state; switching back does not rebuild it.
    */
-  sync(s: GameState, ink: Ink, S: number, epoch: number, sig?: Signature, hold?: Hold) {
-    let fresh = !this.c || this.src !== s || this.S !== S || this.epoch !== epoch || this.themeId !== theme.id || s.marks.length < this.marks.filter(Boolean).length;
+  sync(s: GameState, ink: Ink, S: number, epoch: number, sig?: Signature, hold?: Hold, source = s) {
+    let fresh = !this.c || this.src !== source || this.S !== S || this.epoch !== epoch || this.themeId !== theme.id || s.marks.length < this.marks.filter(Boolean).length;
     // nothing new since last time: most frames stop here
     const acts = s.v === 1 ? s.flicks.length : s.actions.length;
     const stamp = `${s.marks.length}|${s.bases.length}|${s.turn}|${acts}|${[...ink.live].join()}|${hold?.sig}|${!!sig}`;
@@ -486,7 +487,7 @@ export class PageLayer {
       const keys = new Set(spots.map((d) => d.key));
       for (const k of this.dots) if (!keys.has(k)) { fresh = true; break; }
     }
-    if (fresh) this.rebuild(s, S, epoch);
+    if (fresh) { this.rebuild(s, S, epoch); this.src = source; }
     const added: ((g: Ctx) => void)[] = [];
     for (const b of s.bases) {
       if (!this.bases.has(b.id) && !ink.live.has(`b${b.id}`) && !hold?.bases.has(b.id)) { added.push((g) => drawBase(g, b)); this.bases.add(b.id); }
