@@ -2893,7 +2893,16 @@ if (import.meta.env.DEV) {
       renderNow();
       const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, field: field.c, streak: streakLayer.c, rings: boil.parts[0].c, rest: boil.parts[1].c, ...Object.fromEntries([...standRays].map(([id, p]) => [`rays${id}`, p.c])) };
 
-      const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => [k, c.width && c.height && c.style.visibility !== "hidden" ? c.getContext("2d")!.getImageData(0, 0, c.width, c.height) : null]));
+      // Read a copy: repeated reads of the drawing context make Chrome switch
+      // raster backends, changing antialiasing between the two snapshots.
+      const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => {
+        if (!c.width || !c.height || c.style.visibility === "hidden") return [k, null];
+        const copy = document.createElement("canvas");
+        copy.width = c.width; copy.height = c.height;
+        const g = copy.getContext("2d", { willReadFrequently: true })!;
+        g.drawImage(c, 0, 0);
+        return [k, g.getImageData(0, 0, c.width, c.height)];
+      }));
       renderNow();
       const a = grab();
       forgetDrawn();
