@@ -936,7 +936,7 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
   if (bo?.grade) {
     const end = o.path[o.path.length - 1];
     speakBotch(bo.grade, f.soldier, end, wall + arrive + 260, seed + 5);
-    if (bo.grade >= 2) botchBack = { who: shooter, turn: s.turn };
+    if (bo.grade >= 2) botchBack = { who: shooter, turn: o.handover ? s.turn - 1 : s.turn }; // the turn he flicked in (a miss hands the pen over)
   }
   if (st.ended >= 3 && s.phase !== "over") {
     const foe = other(shooter), me = s.soldiers[f.soldier];
@@ -2338,13 +2338,14 @@ function frame(now: number) {
       const c0 = core();
       let kind = strayKind(seeded(s.seed, s.turn, Math.floor(wall / 1000), 3), { lead, waited, inBase, heat: noteContext(me.owner).heat });
       if (kind === "chant" && c0 && inLastStand(c0, me.owner)) kind = "chantLast";
-      if (back) { kind = "botchBack"; botchBack = null; }
+      if (back) kind = "botchBack";
       // an exchange wants a comrade near enough to talk to, but not so near their two dots read as one from above
       const near = comrades(s, me.owner, me, RULES.baseRadius * 2.5, me.id);
       const far = (x: Soldier) => Math.abs(Math.hypot(x.x - me.x, x.y - me.y) - RULES.baseRadius * 1.3);
       const mate = (near.filter((x) => Math.hypot(x.x - me.x, x.y - me.y) >= RULES.soldierRadius * 6).sort((a, b) => far(a) - far(b))[0] ?? near[0])?.id;
       if (ANCHOR[kind] === "base") { const camp = campOf(me.id); if (camp !== undefined) speak(kind, camp); }
       else speak(kind, me.id, wall, undefined, mate);
+      if (back && bubbles.cur?.kind === "botchBack") botchBack = null; // said: once is enough (not said yet: the next window tries again)
     }
   }
   if (active || dirty) {

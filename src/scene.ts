@@ -714,14 +714,17 @@ function drawBaseNote(g: Ctx, f: Frame, b: Note, box: Box) {
     // the sides in order of choice: the top, the bottom, left and right, then the diagonals
     [-Math.PI / 2, Math.PI / 2, 0, Math.PI, -Math.PI / 4, (-3 * Math.PI) / 4, Math.PI / 4, (3 * Math.PI) / 4].forEach((m, i) => {
       // the run's ends and middle: how far off the page (or under the HUD) they'd be, plus a preference for the top
+      // (a shout's marks fly out past the letters, and a little past the run's ends)
       let miss = 0;
-      for (const a of [m - half, m - half / 2, m, m + half / 2, m + half]) {
-        const p = toPage(Math.cos(a) * (rr + size), Math.sin(a) * (rr + size));
+      const out = rr + size * (M.spiky ? 1.35 : 1), ends = M.spiky ? 0.3 : 0.08;
+      for (let j = 0; j <= 8; j++) {
+        const a = m - half - ends + ((half + ends) * 2 * j) / 8;
+        const p = toPage(Math.cos(a) * out, Math.sin(a) * out);
         miss += Math.max(0, B.x0 - p.x, p.x - B.x1) + Math.max(0, B.y0 - p.y, p.y - B.y1);
       }
       if (miss + i * size * 0.4 < bestCost) { bestCost = miss + i * size * 0.4; mid = m; off = miss; }
     });
-    if (off <= size * 0.2) break; // on the page
+    if (off <= 1) break; // on the page
   }
   const lw = Math.max(2.2, size * 0.065);
   // a chant comes in beats: a word at a time; the rest letter by letter

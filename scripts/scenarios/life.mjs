@@ -695,7 +695,7 @@ export default async function (T, out) {
     const clear = async () => { await page.evaluate(() => window.pft.bubbles.reset()); await step(300, 100); };
     const overview = async () => { await page.evaluate(() => { window.pft.cam.overview(); window.pft.cam.snap(); window.pft.poke(); }); await step(0, 150); };
     for (const theme of (process.env.THEMES ?? "lamplight,blueprint").split(",")) {
-      await page.evaluate((id) => window.pft.theme?.apply(id), theme);
+      await page.evaluate((id) => { window.pft.theme?.apply(id); window.__mildSaid = false; }, theme);
       await war(7, 12);
       await overview();
       const camp = await fullest("mine");
@@ -732,14 +732,16 @@ export default async function (T, out) {
         await clear();
       }
       // a real botch, through the game: search the engine for a flick of each grade, fire it, and let the game's hook grade it
-      for (const want of [2, 1]) {
+      const tried = [];
+      for (const want of [2, 1, 1, 1, 1]) {
+        if (want === 1 && await page.evaluate(() => !!window.__mildSaid)) break;
         await overview();
-        const f = await page.evaluate(async (want) => {
+        const f = await page.evaluate(async ({ want, tried }) => {
           const g = await import("/src/game.ts");
           const p = window.pft, s = p.s, foe = 1 - s.current;
           const foes = s.soldiers.filter((x) => x.alive && x.owner === foe), own = s.bases.filter((b) => b.owner === s.current);
           for (const x of s.soldiers.filter((y) => y.alive && y.owner === s.current)) {
-            if (!g.canFlick(s, x.id, "snipe")) continue;
+            if (!g.canFlick(s, x.id, "snipe") || tried.includes(x.id)) continue;
             for (let a = 0; a < 360; a += 6) for (const len of want === 2 ? [70, 90] : [200, 260, 320]) {
               const f = { soldier: x.id, kind: "snipe", angle: (a * Math.PI) / 180, length: len, bend: 0, wob: 3 };
               const o = g.preview(s, f);
@@ -748,8 +750,9 @@ export default async function (T, out) {
             }
           }
           return null;
-        }, want);
+        }, { want, tried });
         if (!f) { console.log(`real botch ${want}: none found`); continue; }
+        tried.push(f.f.soldier);
         // retry the seed-dependent chance: fire, and if nothing was said, try again on the next turn
         await page.evaluate(() => window.pft.bubbles.reset());
         await page.evaluate((f) => window.pft.flick(f), f.f);
@@ -757,6 +760,7 @@ export default async function (T, out) {
         for (let i = 0; i < 50 && !said; i++) { await step(1000 / 12, 30); said = await page.evaluate(() => { const b = window.pft.bubbles.cur; return b && b.kind.startsWith("botch") && window.pft.wall - b.t0 > 1000 ? `${b.kind} ${b.mood}: ${b.text}` : null; }); }
         console.log(`real botch ${want} (${f.why.join(", ")}, ${f.score.toFixed(2)}):`, said);
         if (said) await page.screenshot({ path: `${out}/botch-${theme}-real-${want}.png` });
+        if (said && want === 1) await page.evaluate(() => { window.__mildSaid = true; });
         for (let i = 0; i < 40 && await page.evaluate(() => window.pft.busy); i++) await step(1000 / 12, 20);
         // the other side's go: wait for the callback
         if (want === 2) {
