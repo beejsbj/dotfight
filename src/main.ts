@@ -1016,9 +1016,9 @@ function startUnitCam(id: number) {
   const face = facing(s, id, lastPull?.id === id ? lastPull.angle : undefined);
   unit = { id, t0: T, back: { ...cam.tgt } };
   const rot = rotFacing(face, cam.cur.rot);
-  if (cam.tiltScale > 0 && !reduced && !slow) cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.m, tilt: UNIT_CAM.tilt, fy: UNIT_CAM.fy, rot };
+  if (cam.tiltScale > 0 && lively()) cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.m, tilt: UNIT_CAM.tilt, fy: UNIT_CAM.fy, rot };
   else cam.tgt = { ...cam.tgt, x: me.x, y: me.y, m: UNIT_CAM.flatM, tilt: 0, fy: 0.55, rot };
-  if (reduced || slow) cam.snap(); // no swoop: just his view
+  if (!lively()) cam.snap(); // no swoop: just his view
   if (LIFE.chosen) life.add(id, { kind: "perk", t0: wall, amp: 1 });
   if (heard()) voice.say("look", id, me.owner, 0.05);
   speak("ready", id);
@@ -1043,7 +1043,7 @@ function stepUnitCam() {
     if (selected === u.id) cam.tgt = { ...u.back };
     else if (selected === undefined) cam.overview(u.back.rot);
     else cam.tgt = { ...cam.tgt, rot: u.back.rot };
-    if (reduced || slow) cam.snap();
+    if (!lively()) cam.snap();
     penDrop = T; // the pen comes back down onto him
     dirty = true; // includes the reduced/slow camera snap and the pen returning
     status();
