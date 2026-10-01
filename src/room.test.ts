@@ -98,6 +98,35 @@ describe("room link rate limit waits", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it.each([403, 404, 413])("finishing stops retrying a final move refused for good (%i)", async (status) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('{"error":"no"}', { status }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const storage = memStorage();
+    const link = new RoomLink(saved("abc234", 0, "test", ["B", "D"]), { api: httpApi("/room", fetcher), storage });
+    link.start();
+    link.push({ winner: 0 });
+    link.finish();
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(readRoom(storage, link.code)?.pending).toEqual([{ winner: 0 }]);
+    warn.mockRestore();
+  });
+
+  it("finishing keeps retrying a final move through a server error", async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('{"error":"down"}', { status: 503 }))
+      .mockResolvedValueOnce(new Response('{"n":1}'));
+    const link = new RoomLink(saved("abc234", 0, "test", ["B", "D"]), { api: httpApi("/room", fetcher), storage: memStorage() });
+    link.start();
+    link.push({ winner: 0 });
+    link.finish();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(link.data.pending).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("retains moves and deduplicates push, poll and wake during a wait", async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(limited())

@@ -7,7 +7,7 @@
 // does (`push()`). The engine is only touched through `room-engine.ts`.
 
 import type { Setup } from "./room-engine";
-import type { Entry, RoomApi, Seat } from "./room-protocol";
+import { RoomHttpError, type Entry, type RoomApi, type Seat } from "./room-protocol";
 
 export interface Saved {
   v: 1;
@@ -63,6 +63,9 @@ export function forgetRoom(storage: Env["storage"], code: string) {
   storage.removeItem(KEY(code));
   storage.setItem(INDEX, JSON.stringify(listRooms(storage).map((r) => r.code).filter((c) => c !== code)));
 }
+
+/** A refusal the server won't change its mind about; 5xx and 408 may pass. */
+const permanent = (e: unknown) => e instanceof RoomHttpError && e.status < 500 && e.status !== 408;
 
 const same = (e: Entry, seat: Seat | null, a: unknown) => e.seat === seat && JSON.stringify(e.a) === JSON.stringify(a);
 
@@ -245,6 +248,14 @@ export class RoomLink {
         this.retry = 0;
       } catch (e) {
         if (signal.aborted) return;
+        if (permanent(e) && this.draining) {
+          // a finished war's last move was refused for good (the page expired, the
+          // seat is wrong, the log is full): retrying can't help, so stop. The move
+          // stays in local storage.
+          console.warn("room: final move refused:", e);
+          this.stop();
+          return;
+        }
         this.netFail(e);
         this.retry = Math.min(4, this.retry + 1);
       } finally {
