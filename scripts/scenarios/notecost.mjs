@@ -6,6 +6,7 @@
 import { idle } from "../lib/phone.mjs";
 export default async function (T) {
   const { page, cdp } = T;
+  const bubblesOn = await page.evaluate(() => { const p = window.pft, on = p.LIFE.bubbles; p.LIFE.bubbles = false; return on; });
   await page.waitForTimeout(1000);
   await page.evaluate(() => window.pft.theme?.apply("lamplight"));
   await page.evaluate(() => { window.pft.slow = false; window.pft.boilOn = true; const r = window.pft.fileWar(7, 12); r.mode = { kind: "pnp" }; window.pft.resumeRecord(r); });
@@ -18,13 +19,35 @@ export default async function (T) {
   const mate = await page.evaluate((id) => { const s = window.pft.s, x = s.soldiers[id]; return s.soldiers.filter((y) => y.alive && y.owner === x.owner && y.id !== id && Math.hypot(y.x - x.x, y.y - x.y) >= 42).sort((a, b) => Math.hypot(a.x - x.x, a.y - x.y) - Math.hypot(b.x - x.x, b.y - x.y))[0]?.id; }, me.id);
   const rows = [];
   const span = async (label, note) => {
-    await page.evaluate(() => window.pft.bubbles.reset());
+    await page.evaluate(() => { window.pft.LIFE.bubbles = false; window.pft.bubbles.reset(); });
     await page.waitForTimeout(400);
     await page.evaluate(() => window.pft.frames(true));
-    if (note === "streak") await page.evaluate(async (id) => { const p = window.pft; p.poke(); for (const [n, v, gap] of [[2, "streakMe", 0], [3, "streakFoe", 1400], [5, "streakCamp", 1400]]) { await new Promise((r) => setTimeout(r, gap)); p.speakStreak(n, id, p.wall, 77 + n); p.poke(); void v; } }, me.id);
-    else if (note === "botch") await page.evaluate((id) => { const p = window.pft, x = p.s.soldiers[id]; let ok = false; for (let k = 0; k < 400 && !ok; k++) { p.bubbles.reset(); ok = !!p.speakBotch(2, id, { x: x.x, y: x.y }, p.wall, 500 + k)?.slow; } for (let k = 0; k < 400 && !ok; k++) { p.bubbles.reset(); ok = !!p.speakBotch(2, id, { x: x.x, y: x.y }, p.wall, 900 + k); } p.poke(); }, me.id);
-    else if (note === "exchange") await page.evaluate(({ id, mate }) => { const p = window.pft; for (let k = 0; k < 4000 && !p.bubbles.cur?.reply; k++) { p.bubbles.reset(); p.speak("chat", id, p.wall, 1000 + k * 7, mate); } p.poke(); }, { id: me.id, mate });
-    else if (note) await page.evaluate((id) => { const p = window.pft; for (let k = 0; k < 400 && !p.bubbles.cur; k++) { p.bubbles.reset(); p.speak("idle", id, p.wall, 1000 + k * 7); } p.poke(); }, me.id);
+    if (note) await page.evaluate(async ({ note, id, mate }) => {
+      const p = window.pft;
+      // Offer synchronously with bubbles enabled; rendering does not need the
+      // switch, and the frame loop must not offer idle chatter between notes.
+      const offer = (say) => { p.LIFE.bubbles = true; try { return say(); } finally { p.LIFE.bubbles = false; } };
+      if (note === "streak") {
+        p.poke();
+        for (const [n, v, gap] of [[2, "streakMe", 0], [3, "streakFoe", 1400], [5, "streakCamp", 1400]]) {
+          await new Promise((r) => setTimeout(r, gap));
+          offer(() => p.speakStreak(n, id, p.wall, 77 + n, v));
+          p.poke();
+        }
+      } else if (note === "botch") {
+        const x = p.s.soldiers[id];
+        let ok = false;
+        for (let k = 0; k < 400 && !ok; k++) { p.bubbles.reset(); ok = !!offer(() => p.speakBotch(2, id, { x: x.x, y: x.y }, p.wall, 500 + k))?.slow; }
+        for (let k = 0; k < 400 && !ok; k++) { p.bubbles.reset(); ok = !!offer(() => p.speakBotch(2, id, { x: x.x, y: x.y }, p.wall, 900 + k)); }
+        p.poke();
+      } else if (note === "exchange") {
+        for (let k = 0; k < 4000 && !p.bubbles.cur?.reply; k++) { p.bubbles.reset(); offer(() => p.speak("chat", id, p.wall, 1000 + k * 7, mate)); }
+        p.poke();
+      } else {
+        for (let k = 0; k < 400 && !p.bubbles.cur; k++) { p.bubbles.reset(); offer(() => p.speak("idle", id, p.wall, 1000 + k * 7)); }
+        p.poke();
+      }
+    }, { note, id: me.id, mate });
     await page.waitForTimeout(note === "exchange" ? 4300 : note === "streak" ? 3600 : note === "botch" ? 5200 : 2600);
     const r = await page.evaluate(() => window.pft.frames());
     rows.push(`${label.padEnd(30)} script p50 ${r.script.p50.toFixed(2)}ms p95 ${r.script.p95.toFixed(2)}ms max ${r.script.max.toFixed(1)}ms | n ${r.script.n}`);
@@ -44,4 +67,5 @@ export default async function (T) {
   if (rate > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
   console.log(`throttle ${rate}x`);
   console.log(rows.join("\n"));
+  await page.evaluate((on) => { window.pft.LIFE.bubbles = on; }, bubblesOn);
 }
