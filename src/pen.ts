@@ -253,3 +253,35 @@ export function shade(hex: string, k: number) {
   const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => Math.round(k >= 0 ? c + (255 - c) * k : c * (1 + k)));
   return `rgb(${ch[0]},${ch[1]},${ch[2]})`;
 }
+
+// --- the pen's own life (LIFE.pen) ------------------------------------------------
+
+/** How long a pen set down on a dot takes to find its balance (ms). */
+export const SETTLE_MS = 650;
+
+/**
+ * A pen set down on its tip finds its balance: a few rocks along one line,
+ * dying away. Signed lean (radians) along `toward`, `t` ms after it lands. Pure.
+ */
+export function settle(t: number) {
+  if (t < 0 || t >= SETTLE_MS) return 0;
+  return 0.085 * Math.exp(-t / 150) * Math.sin(t / 40);
+}
+
+/**
+ * At full pull the pen shivers under the finger: a fine fast tremble on top
+ * of the hand's slow wobble. Radians, 0 below nine tenths of full. Pure.
+ */
+export function shiver(ms: number, power: number) {
+  const k = Math.max(0, (power - 0.9) / 0.1);
+  if (k <= 0) return 0;
+  return 0.011 * k * (Math.sin(ms * 0.21) * 0.6 + Math.sin(ms * 0.37 + 1.1) * 0.4);
+}
+
+/** Put down and lifted off: up and fading, `t` ms after it was lifted (height, alpha), or null when gone. */
+export const LIFT_MS = 220;
+export function lift(t: number) {
+  if (t < 0 || t >= LIFT_MS) return null;
+  const k = t / LIFT_MS;
+  return { h: 110 * k * k, alpha: 1 - k * k };
+}

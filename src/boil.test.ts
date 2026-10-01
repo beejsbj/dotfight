@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { BOIL, BOILS, boilFrame, boldAt, lookAt, planBoil, spotKey, variantAt } from "./boil";
+import { BOIL, BOILS, boilFrame, boldAt, lookAt, lifeOf, planBoil, spotKey, variantAt } from "./boil";
 import { act, alive, newGame, rng, type GameState } from "./game";
 import { CORE, type Size } from "./rules";
 import { redrawn } from "./ink";
-import { SETTLED, type Ink } from "./page";
+import { dotSpots, SETTLED, type Ink } from "./page";
+import { beforeMarch } from "./life";
 
 /** A war past setup and positioning: three camps a side, ten men in each. */
 function setup() {
@@ -213,4 +214,64 @@ describe("the other way round", () => {
     // a living soldier can still die, so even he isn't put on the page
     expect(p.hold.dots.has(spotKey(me))).toBe(true);
   });
+});
+
+
+it("keeps a crashed lunger animated at his destination until the lost cross starts", () => {
+  const s = setup();
+  const me = s.soldiers[0], end = { x: 320, y: 210 };
+  const origin = { ...me };
+  me.alive = false;
+  Object.assign(me, end);
+  s.marks.push({ t: "cross", kind: "moved", owner: me.owner, x: origin.x, y: origin.y, seed: 1, turn: s.turn, id: me.id });
+  s.marks.push({ t: "cross", kind: "lost", owner: me.owner, ...end, seed: 2, turn: s.turn });
+  const key = `m${s.marks.length - 1}`;
+  const before = planBoil(s, drawing({ [key]: 0 }), { on: true });
+  expect(before.dots.some((d) => d.spot.key === spotKey(me) && d.boils)).toBe(true);
+  expect(before.hold.dots.has(spotKey(me))).toBe(true);
+  const riding = planBoil(s, drawing({ [key]: 0 }), { on: true, moving: me.id });
+  expect(riding.hold.dots.has(spotKey(me))).toBe(true);
+  expect(riding.dots.some((d) => d.spot.key === spotKey(me))).toBe(false);
+  expect(planBoil(s, drawing({ [key]: 0.01 }), { on: true }).dots.some((d) => d.spot.key === spotKey(me))).toBe(false);
+});
+
+
+describe("pending convoy presentation", () => {
+  for (const departing of [true, false]) {
+    it(`keeps a pending ${departing ? "departure" : "arrival"} alive at its displayed spot, including without boil`, () => {
+      const s = setup(), b = s.bases[0], x = s.soldiers[0];
+      // Isolate camp membership from the other men still home.
+      for (const man of s.soldiers) man.alive = man.id === x.id;
+      const inside = { x: b.x, y: b.y };
+      const outside = { x: b.x + b.r + 100, y: b.y };
+      const from = departing ? inside : outside, to = departing ? outside : inside;
+      Object.assign(x, to);
+      const first = s.marks.length;
+      s.marks.push({ t: "cross", kind: "moved", owner: x.owner, ...from, id: x.id, seed: 7, turn: s.turn });
+      s.marks.push({ t: "walk", owner: x.owner, a: from, b: to, n: 1, seed: 8, turn: s.turn });
+      const seen = beforeMarch(s, [{ id: x.id, from }]);
+      // Pending frame ink holds the new marks, but releases the standing dot key.
+      const ink = drawing({ [`m${first}`]: 0, [`m${first + 1}`]: 0 });
+      const old = spotKey({ id: x.id, ...from }), dest = spotKey(x);
+      const plan = planBoil(seen, ink, { on: true });
+      expect(plan.dots.find(d => d.spot.key === old)?.boils).toBe(true);
+      expect(plan.dots.some(d => d.spot.key === dest)).toBe(false);
+      expect(lifeOf(seen, ink).bases.has(b.id)).toBe(departing);
+      expect(lifeOf(s, ink).bases.has(b.id)).toBe(!departing);
+      expect(dotSpots(seen).map(d => d.key)).toContain(old);
+      expect(dotSpots(seen).map(d => d.key)).not.toContain(dest);
+      const still = planBoil(seen, ink, { on: false });
+      expect(still.hold.dots.has(old)).toBe(false); // PageLayer can ink the standing dot.
+      expect(ink.live.has(`d${x.id}`)).toBe(false);
+      expect(ink.live.has(`m${first}`)).toBe(true);
+      expect(x).toMatchObject(to); // Presentation never rewinds the real engine.
+      // Starting the march restores its live dot: retain the existing active flow.
+      const moving = planBoil(s, drawing({ [`d${x.id}`]: 0, [`m${first}`]: 0 }), { on: true });
+      expect(moving.dots.some(d => d.spot.id === x.id)).toBe(false);
+      expect(moving.hold.dots.has(dest)).toBe(true);
+      const settled = planBoil(s, SETTLED, { on: true });
+      expect(settled.dots.find(d => d.spot.key === dest)?.boils).toBe(true);
+      expect(settled.hold.dots.has(old)).toBe(false);
+    });
+  }
 });

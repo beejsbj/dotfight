@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   createHaptics, detect, DETENTS, Dial, Gate, IOS_TICK_GAP, iosMode, length, MIN_GAP, pattern, Ratchet, STORAGE_KEY,
-  type Backend, type BackendKind, type HapticEvent, type Pattern,
+  TAPPED, type Backend, type BackendKind, type HapticEvent, type Pattern,
 } from "./haptics";
 
-const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "brink", "dial", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "over"];
+const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "brink", "dial", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "cheer", "flinch", "unitcam", "volley", "over"];
 
 describe("pattern", () => {
+  it("allows the unit-camera second tap to earn an iPhone tick, while drag and timed events cannot", () => {
+    expect(TAPPED).toContain("unitcam");
+    expect(TAPPED).not.toContain("flick");
+    expect(TAPPED).not.toContain("volley");
+  });
+
   it("gives every event a playable pattern on both backends", () => {
     for (const ev of EVENTS) for (const arg of [0, 0.5, 1, 2, 5]) {
       const p = pattern(ev, arg);
@@ -235,6 +241,16 @@ describe("createHaptics", () => {
   });
 });
 
+
+it("life feedback shares the gate and cannot replace a core cross impact", () => {
+  for (const ev of ["cheer", "flinch", "unitcam", "volley"] as HapticEvent[]) {
+    const gate = new Gate(), cross = pattern("kill"), life = pattern(ev);
+    expect(gate.allow(cross.priority, 100, length(cross, "vibrate"))).toBe(true);
+    expect(gate.allow(life.priority, 110, length(life, "vibrate"))).toBe(false);
+    expect(gate.allow(life.priority, 200, length(life, "vibrate"))).toBe(true);
+  }
+});
+
 describe("Dial", () => {
   const S = Dial.STEP;
   const sweep = (d: Dial, from: number, to: number, n = 200) => {
@@ -283,4 +299,5 @@ describe("Dial", () => {
     expect(pattern("dial", 1).android[0]).toBeGreaterThan(pattern("dial", 0).android[0]);
     expect(pattern("dial", 1).priority).toBeLessThanOrEqual(pattern("notch", 0.5).priority);
   });
+
 });

@@ -1,0 +1,109 @@
+== base turns=12 run=1
+page: {"marks":28,"phase":"play","turn":12}
+throttle 6x | boil {"on":true,"ticks":248,"tooDear":false,"living":40}
+idle (boil only)           script p50 2.90ms p95 7.20ms max 8.7ms | frame p50 66.6ms | n 33
+lean in (camera move)      script p50 10.70ms p95 17.60ms max 17.6ms | frame p50 116.8ms | n 11
+aiming (held pull)         script p50 8.60ms p95 15.20ms max 15.2ms | frame p50 100.0ms | n 18
+flick + pull back          script p50 9.60ms p95 13.70ms max 13.7ms | frame p50 183.3ms | n 7
+page turn (pnp)            script p50 12.00ms p95 15.70ms max 15.7ms | frame p50 200.0ms | n 10
+a kill, camps reacting     script p50 8.30ms p95 25.90ms max 26.3ms | frame p50 83.3ms | n 25
+== life turns=12 run=1
+page: {"marks":28,"phase":"play","turn":12}
+throttle 6x | boil {"on":true,"ticks":214,"tooDear":false,"living":40}
+idle (boil only)           script p50 4.30ms p95 8.00ms max 8.0ms | frame p50 66.7ms | n 20
+lean in (camera move)      script p50 14.80ms p95 17.10ms max 17.1ms | frame p50 133.3ms | n 9
+aiming (held pull)         script p50 9.90ms p95 14.40ms max 14.4ms | frame p50 116.6ms | n 13
+flick + pull back          script p50 13.80ms p95 19.40ms max 19.4ms | frame p50 166.7ms | n 7
+page turn (pnp)            script p50 12.60ms p95 17.40ms max 17.4ms | frame p50 116.7ms | n 12
+a kill, camps reacting     script p50 11.40ms p95 17.40ms max 17.4ms | frame p50 166.7ms | n 9
+== base turns=70 run=1
+page: {"marks":124,"phase":"play","turn":70}
+throttle 6x | boil {"on":true,"ticks":243,"tooDear":false,"living":4}
+idle (boil only)           script p50 3.00ms p95 8.00ms max 10.2ms | frame p50 50.1ms | n 34
+lean in (camera move)      script p50 7.70ms p95 12.80ms max 12.8ms | frame p50 100.0ms | n 13
+aiming (held pull)         script p50 7.40ms p95 13.30ms max 13.3ms | frame p50 100.0ms | n 19
+flick + pull back          script p50 8.70ms p95 13.60ms max 13.6ms | frame p50 116.7ms | n 14
+page turn (pnp)            script p50 6.50ms p95 11.50ms max 12.8ms | frame p50 66.7ms | n 24
+a kill, camps reacting     script p50 4.90ms p95 44.40ms max 54.8ms | frame p50 83.3ms | n 26
+== life turns=70 run=1
+page: {"marks":124,"phase":"play","turn":70}
+throttle 6x | boil {"on":true,"ticks":275,"tooDear":false,"living":4}
+idle (boil only)           script p50 2.60ms p95 7.10ms max 7.2ms | frame p50 50.0ms | n 37
+lean in (camera move)      script p50 6.30ms p95 10.80ms max 10.8ms | frame p50 83.3ms | n 15
+aiming (held pull)         script p50 10.70ms p95 15.50ms max 15.5ms | frame p50 116.6ms | n 14
+flick + pull back          script p50 10.50ms p95 12.60ms max 12.6ms | frame p50 166.6ms | n 5
+page turn (pnp)            script p50 11.00ms p95 12.70ms max 12.7ms | frame p50 100.0ms | n 12
+a kill, camps reacting     script p50 9.60ms p95 59.80ms max 59.8ms | frame p50 99.9ms | n 20
+== base turns=12 run=2
+page: {"marks":28,"phase":"play","turn":12}
+throttle 6x | boil {"on":true,"ticks":242,"tooDear":false,"living":40}
+idle (boil only)           script p50 2.70ms p95 6.50ms max 9.3ms | frame p50 66.7ms | n 29
+lean in (camera move)      script p50 10.60ms p95 20.40ms max 20.4ms | frame p50 133.3ms | n 9
+aiming (held pull)         script p50 7.10ms p95 13.60ms max 13.6ms | frame p50 166.7ms | n 12
+flick + pull back          script p50 11.10ms p95 15.20ms max 15.2ms | frame p50 216.7ms | n 7
+page turn (pnp)            script p50 11.30ms p95 15.40ms max 15.4ms | frame p50 116.7ms | n 12
+a kill, camps reacting     script p50 8.20ms p95 17.70ms max 27.3ms | frame p50 99.9ms | n 23
+== life turns=12 run=2
+page: {"marks":28,"phase":"play","turn":12}
+throttle 6x | boil {"on":true,"ticks":268,"tooDear":false,"living":40}
+idle (boil only)           script p50 4.40ms p95 6.60ms max 7.0ms | frame p50 66.6ms | n 31
+lean in (camera move)      script p50 12.30ms p95 18.70ms max 18.7ms | frame p50 100.0ms | n 12
+aiming (held pull)         script p50 11.20ms p95 32.30ms max 32.3ms | frame p50 116.6ms | n 19
+flick + pull back          script p50 10.90ms p95 18.40ms max 18.4ms | frame p50 116.7ms | n 13
+page turn (pnp)            script p50 5.80ms p95 15.20ms max 15.7ms | frame p50 66.7ms | n 25
+a kill, camps reacting     script p50 9.10ms p95 19.80ms max 23.9ms | frame p50 99.9ms | n 23
+== base turns=70 run=2
+page: {"marks":124,"phase":"play","turn":70}
+throttle 6x | boil {"on":true,"ticks":227,"tooDear":false,"living":4}
+idle (boil only)           script p50 1.50ms p95 14.30ms max 19.5ms | frame p50 66.7ms | n 30
+lean in (camera move)      script p50 8.50ms p95 21.00ms max 21.0ms | frame p50 116.6ms | n 11
+aiming (held pull)         script p50 7.70ms p95 13.00ms max 13.0ms | frame p50 100.0ms | n 20
+flick + pull back          script p50 7.60ms p95 13.00ms max 13.0ms | frame p50 116.6ms | n 12
+page turn (pnp)            script p50 8.10ms p95 14.60ms max 14.6ms | frame p50 99.9ms | n 20
+a kill, camps reacting     script p50 6.60ms p95 67.40ms max 67.4ms | frame p50 116.7ms | n 15
+== life turns=70 run=2
+page: {"marks":124,"phase":"play","turn":70}
+throttle 6x | boil {"on":true,"ticks":277,"tooDear":false,"living":4}
+idle (boil only)           script p50 3.00ms p95 5.30ms max 6.3ms | frame p50 50.0ms | n 38
+lean in (camera move)      script p50 6.20ms p95 15.80ms max 15.8ms | frame p50 83.3ms | n 15
+aiming (held pull)         script p50 9.60ms p95 13.40ms max 32.8ms | frame p50 100.0ms | n 21
+flick + pull back          script p50 11.30ms p95 16.40ms max 16.4ms | frame p50 116.6ms | n 13
+page turn (pnp)            script p50 6.90ms p95 10.60ms max 12.5ms | frame p50 66.7ms | n 26
+a kill, camps reacting     script p50 7.50ms p95 48.20ms max 61.8ms | frame p50 83.4ms | n 22
+== base turns=12 run=3
+page: {"marks":28,"phase":"play","turn":12}
+throttle 6x | boil {"on":true,"ticks":255,"tooDear":false,"living":38}
+idle (boil only)           script p50 2.70ms p95 5.90ms max 6.1ms | frame p50 66.6ms | n 31
+lean in (camera move)      script p50 7.90ms p95 13.40ms max 13.4ms | frame p50 100.0ms | n 12
+aiming (held pull)         script p50 8.80ms p95 12.50ms max 12.5ms | frame p50 100.1ms | n 18
+flick + pull back          script p50 14.40ms p95 23.20ms max 23.2ms | frame p50 150.0ms | n 10
+page turn (pnp)            script p50 6.70ms p95 15.20ms max 15.2ms | frame p50 116.6ms | n 11
+a kill, camps reacting     script p50 9.00ms p95 41.90ms max 46.4ms | frame p50 99.9ms | n 24
+== life turns=12 run=3
+page: {"marks":28,"phase":"play","turn":12}
+throttle 6x | boil {"on":true,"ticks":141,"tooDear":true,"living":40}
+idle (boil only)           script p50 4.00ms p95 6.40ms max 11.9ms | frame p50 66.6ms | n 30
+lean in (camera move)      script p50 8.80ms p95 14.70ms max 14.7ms | frame p50 83.4ms | n 14
+aiming (held pull)         script p50 4.90ms p95 7.80ms max 8.3ms | frame p50 83.3ms | n 27
+flick + pull back          script p50 6.10ms p95 11.80ms max 11.8ms | frame p50 83.4ms | n 17
+page turn (pnp)            script p50 3.50ms p95 5.90ms max 6.4ms | frame p50 50.0ms | n 38
+a kill, camps reacting     script p50 4.40ms p95 8.00ms max 10.2ms | frame p50 50.1ms | n 39
+== base turns=70 run=3
+page: {"marks":124,"phase":"play","turn":70}
+throttle 6x | boil {"on":true,"ticks":247,"tooDear":false,"living":3}
+idle (boil only)           script p50 2.70ms p95 8.70ms max 9.0ms | frame p50 50.1ms | n 34
+lean in (camera move)      script p50 9.30ms p95 12.20ms max 12.2ms | frame p50 100.0ms | n 13
+aiming (held pull)         script p50 6.80ms p95 9.20ms max 10.3ms | frame p50 83.4ms | n 21
+flick + pull back          script p50 8.80ms p95 13.30ms max 13.3ms | frame p50 99.9ms | n 17
+page turn (pnp)            script p50 6.60ms p95 10.00ms max 13.2ms | frame p50 66.6ms | n 27
+a kill, camps reacting     script p50 7.40ms p95 45.80ms max 53.3ms | frame p50 83.3ms | n 24
+== life turns=70 run=3
+page: {"marks":124,"phase":"play","turn":70}
+throttle 6x | boil {"on":true,"ticks":242,"tooDear":false,"living":4}
+idle (boil only)           script p50 2.30ms p95 8.60ms max 9.7ms | frame p50 50.0ms | n 36
+lean in (camera move)      script p50 9.40ms p95 10.90ms max 10.9ms | frame p50 100.0ms | n 13
+aiming (held pull)         script p50 8.90ms p95 13.20ms max 13.2ms | frame p50 116.6ms | n 14
+flick + pull back          script p50 8.80ms p95 16.30ms max 16.3ms | frame p50 116.7ms | n 11
+page turn (pnp)            script p50 10.00ms p95 14.90ms max 14.9ms | frame p50 100.1ms | n 10
+a kill, camps reacting     script p50 8.00ms p95 31.20ms max 64.7ms | frame p50 83.3ms | n 24
+ALLDONE
