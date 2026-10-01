@@ -125,7 +125,7 @@ let lastPull: { id: number; angle: number } | null = null;
 // Convoys between turns: the engine moves them the moment the pen changes
 // hands; the page holds their new dots back and shows the march as a quick
 // time-lapse before the next go (see holdLapse / runLapse).
-interface Walk { id: number; from: Pt; to: Pt; departing?: boolean }
+interface Walk { id: number; from: Pt; to: Pt; departing?: boolean; convoy?: number }
 let lapseDue: { walkers: Walk[]; marks: number[]; out: number; home: number; seen?: AnyState } | null = null;
 let lapse: { walkers: Walk[]; t0: number; dur: number } | null = null;
 
@@ -596,7 +596,7 @@ function holdLapse(o: Outcome, before: Pt[], first: number) {
     for (const id of c.ids) {
       const x = c0.soldiers[id], b = before[id];
       if (!x.alive || (b.x === x.x && b.y === x.y)) continue;
-      walkers.push({ id, from: b, to: { x: x.x, y: x.y }, departing: o.walked.includes(c.id) });
+      walkers.push({ id, from: b, to: { x: x.x, y: x.y }, departing: o.walked.includes(c.id), convoy: c.id });
       if (o.walked.includes(c.id)) out++; else home++;
     }
   }
@@ -2702,7 +2702,7 @@ function currentFrame(): Frame {
     const out = c0.convoys.flatMap((c) => {
       const dir = Math.atan2(c.road[1].y - c.road[0].y, c.road[1].x - c.road[0].x);
       return c.ids.filter((id) => {
-        const w = pending.get(id);
+        const walk = pending.get(id), w = walk?.convoy === c.id ? walk : undefined;
         // Departures still stand at home; arrivals still stand on the road.
         const onRoad = w ? !w.departing : c.state === "road";
         return onRoad && c0.soldiers[id].alive && !marching.has(id);
