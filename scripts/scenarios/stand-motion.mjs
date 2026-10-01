@@ -27,6 +27,11 @@ export default async function(T){
  await page.evaluate(()=>{window.pft.speed=1;window.pft.hand(true);});
  const shot=await page.evaluate(async()=>{const p=window.pft,g=await import('/src/game.ts');for(const x of p.s.soldiers.filter(x=>x.alive&&x.owner===p.s.current))for(const y of p.s.soldiers.filter(x=>x.alive&&p.s.stand[x.owner]&&x.owner!==p.s.current)){const f={t:'flick',soldier:x.id,kind:'snipe',angle:Math.atan2(y.y-x.y,y.x-x.x),length:1800,bend:0,wob:0};const o=g.preview(p.s,f),id=o.killed.find(id=>p.standRays.has(id));if(id!==undefined){p.act(f);p.renderNow();return {id,dead:!p.s.soldiers[id].alive,ray:p.standRays.has(id),at:p.res.kills.find(k=>p.s.marks[k.i].x===p.s.soldiers[id].x&&p.s.marks[k.i].y===p.s.soldiers[id].y).at};}}throw Error('no seeded stand-victim snipe');});
  assert.equal(shot.dead,true);assert.equal(shot.ray,true);
- for(let i=0;i<100&&await page.evaluate(id=>window.pft.standRays.has(id),shot.id);i++)await step(50);
+ for(let i=0;i<100;i++){
+  const state=await page.evaluate(id=>{const p=window.pft,k=p.res?.kills.find(k=>p.s.marks[k.i].x===p.s.soldiers[id].x&&p.s.marks[k.i].y===p.s.soldiers[id].y);return {ray:p.standRays.has(id),hit:!!k?.hit,cross:k?p.fx.p('m'+k.i,p.T):1};},shot.id);
+  if(!state.ray){assert.equal(state.hit,true,'ray cannot disappear before ink arrives');assert.ok(state.cross>0,'ray must remain until cross actually begins');break;}
+  if(!state.hit||state.cross===0)assert.equal(state.ray,true);
+  await step(50);
+ }
  assert.equal(await page.evaluate(id=>window.pft.standRays.has(id),shot.id),false);console.log('stand victim ray retained before crossing and removed on arrival',JSON.stringify(shot));
 }
