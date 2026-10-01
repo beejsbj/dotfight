@@ -18,7 +18,7 @@ import { inkTime, wallTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
-import { drawPaper, drawYellow, PageLayer, SETTLED, type Ink } from "./page";
+import { drawPaper, drawYellow, CLARITY, PageLayer, SETTLED, type Ink } from "./page";
 import { LIFT_MS, SETTLE_MS, leaning, lift, PEN, settle, shiver, type PenPose } from "./pen";
 import { gunPull, tip, type Pose as Held } from "./motion";
 import * as motion from "./motion-input";
@@ -32,7 +32,7 @@ import * as voice from "./voice";
 import { ANCHOR, BUBBLE, Bubbles, botchOf, botchVoices, bubbleAt, heatOf, replyAt, strayKind, streakVoices, type BotchKind, type BubbleKind, type Context, type StreakKind } from "./bubble";
 import { feel, setFeel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
-import { boil, boilSeen, boilTick, forgetDrawn, life, NOTE, noteSpotNow, noteSpotsNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { boil, boilSeen, boilTick, field, streak as streakLayer, forgetDrawn, life, NOTE, noteSpotNow, noteSpotsNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
 import { keepIcon, paperIcon, tearIcon } from "./icons";
@@ -136,7 +136,7 @@ let arrowTo: Pt | null = null; // the pencil end of a send being drawn
 
 const $ = <T extends HTMLElement>(q: string) => document.querySelector(q) as T;
 const els: Els = {
-  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), live: $<HTMLCanvasElement>("#live"), talk: $<HTMLCanvasElement>("#talk"),
+  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), fieldHost: $("#field-host"), streakHost: $("#streak-host"), live: $<HTMLCanvasElement>("#live"), talk: $<HTMLCanvasElement>("#talk"),
   light: $<HTMLCanvasElement>("#light"), haze: $<HTMLCanvasElement>("#haze"),
 };
 const over = $<HTMLCanvasElement>("#over");
@@ -2672,6 +2672,13 @@ function currentFrame(): Frame {
     // sends ordered this turn wait in pencil until the pen changes hands
     const orders = c0.convoys.filter((c) => c.state === "ordered");
     if (orders.length) f.orders = orders.map((c) => ({ a: c.road[0], b: c.road[1], at: c.ids.map((id) => c0.soldiers[id]) }));
+    // soldiers out on the road, where a lunger could catch them
+    const marching = new Set(lapse?.walkers.map((w) => w.id));
+    const out = c0.convoys.filter((c) => c.state === "road").flatMap((c) => {
+      const dir = Math.atan2(c.road[1].y - c.road[0].y, c.road[1].x - c.road[0].x);
+      return c.ids.filter((id) => c0.soldiers[id].alive && !marching.has(id)).map((id) => ({ at: c0.soldiers[id] as Pt, dir }));
+    });
+    if (out.length) f.road = out;
     if (sending?.from !== undefined && arrowTo) {
       const from = c0.bases[sending.from];
       const w = sending.to ?? ownBaseAt(arrowTo);
@@ -2849,7 +2856,7 @@ if (import.meta.env.DEV) {
      * frame: per layer, how many pixels differ by more than antialiasing, and where.
      */
     redrawCheck: () => {
-      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, rings: boil.parts[0].c, rest: boil.parts[1].c };
+      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, field: field.c, streak: streakLayer.c, rings: boil.parts[0].c, rest: boil.parts[1].c };
       const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => [k, c.width && c.height && c.style.visibility !== "hidden" ? c.getContext("2d")!.getImageData(0, 0, c.width, c.height) : null]));
       renderNow();
       const a = grab();
@@ -2877,7 +2884,7 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    stageStats, boil, life, LIFE, NOTE, noteSpot: noteSpotNow, noteSpots: noteSpotsNow, set hour(h: number | undefined) { devHour = h; }, set heat(h: number | undefined) { devHeat = h; }, set waitedSince(ms: number) { lastMoveWall = ms; }, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
+    stageStats, boil, life, LIFE, CLARITY, NOTE, noteSpot: noteSpotNow, noteSpots: noteSpotsNow, set hour(h: number | undefined) { devHour = h; }, set heat(h: number | undefined) { devHeat = h; }, set waitedSince(ms: number) { lastMoveWall = ms; }, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
     set boilClock(ms: number | undefined) { boilClock = ms; },
     /** Frame-exact captures: `pft.hand(true)`, then `pft.step(ms)` moves the game and the boil on together. */
     hand: (on: boolean) => { handClock = on ? { due: 0 } : null; if (on) boilClock ??= wall; else boilClock = undefined; },

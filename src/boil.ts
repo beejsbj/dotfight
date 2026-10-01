@@ -18,8 +18,8 @@
 import type { Soldier } from "./game";
 import type { AnyState as GameState } from "./record";
 import { inBase } from "./hand";
-import { inkOp } from "./ink";
-import { dotSpots, drawBase, drawDot, drawMark, type Ink, type Spot } from "./page";
+import { INK, inkCircle, inkOp } from "./ink";
+import { CLARITY, dotSpots, drawBase, drawDot, drawMark, wentTo, type Ink, type Spot } from "./page";
 import { FPS as LIFE_FPS, FRAME as LIFE_FRAME, LIFE_BOX, type Life, type Pose } from "./life";
 import { theme } from "./theme";
 import { RULES } from "./rules";
@@ -98,6 +98,8 @@ export interface Hold {
   dots: Set<string>;
   bases: Set<number>;
   marks: Set<number>;
+  /** The boil is on: a dot released from hold was alive until then, and goes on the page spent (page.ts CLARITY). */
+  ghost?: boolean;
   sig: string;
 }
 
@@ -138,7 +140,7 @@ export const spotKey = (x: Pick<Soldier, "id" | "x" | "y">) => `${x.id}@${x.x},$
  */
 export function planBoil(s: GameState, ink: Ink, o: { on: boolean; side?: "living" | "dead"; moving?: number }): Plan {
   const side = o.side ?? BOILS;
-  const hold: Hold = { dots: new Set(), bases: new Set(), marks: new Set(), sig: "" };
+  const hold: Hold = { dots: new Set(), bases: new Set(), marks: new Set(), ghost: o.on && side === "living", sig: "" };
   const plan: Plan = { hold, dots: [], bases: [], marks: [], sig: "" };
   const mover = o.moving !== undefined ? s.soldiers[o.moving] : undefined;
   const life = o.on || mover ? lifeOf(s, ink) : undefined;
@@ -325,7 +327,11 @@ class BoilCanvas {
     for (const { spot, boils } of rings ? [] : plan.dots) {
       const x = s.soldiers[spot.id];
       const sbox = { x0: spot.x - R, y0: spot.y - R, x1: spot.x + R, y1: spot.y + R };
-      const paint = (g: Ctx, w: number, amp: number) => drawDot(g, x, 1, 1, spot, w, amp);
+      const paint = (g: Ctx, w: number, amp: number) => {
+        drawDot(g, x, 1, 1, spot, w, amp);
+        // the living wear a ring (it boils with him); the dead and gone don't
+        if (boils && CLARITY.ring && !CLARITY.hollow) inkCircle(g, spot.x, spot.y, RULES.soldierRadius + 4, INK.pens[x.owner], x.id * 131 + 91, 1.3 * theme.ink.width, 1, 1, w, amp);
+      };
       if (!boils || !life) { things.push({ key: spot.key, boils, ...sbox, paint }); continue; }
       // a living soldier with a life: room round his spot to move in, drawn in his
       // pose; his heartbeat is how fast his drawings swap (racing, or held still)
@@ -363,10 +369,10 @@ class BoilCanvas {
         x0 = Math.min(...pts.map((p) => p.x)) - e; x1 = Math.max(...pts.map((p) => p.x)) + e;
         y0 = Math.min(...pts.map((p) => p.y)) - e; y1 = Math.max(...pts.map((p) => p.y)) + e;
       } else if (m.t === "cross") {
-        const r = RULES.soldierRadius * 3.2 + pad;
+        const r = RULES.soldierRadius * 4.4 + pad;
         x0 = m.x - r; y0 = m.y - r; x1 = m.x + r; y1 = m.y + r;
       } else continue;
-      things.push({ key: `m${i}@${m.seed}`, boils, x0, y0, x1, y1, paint: (g, w) => drawMark(g, m, 1, w) });
+      things.push({ key: `m${i}@${m.seed}`, boils, x0, y0, x1, y1, paint: (g, w) => drawMark(g, m, 1, w, wentTo(s, i)) });
     }
     this.things = things;
     this.poses = [];

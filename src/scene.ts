@@ -19,8 +19,9 @@ import { rng, type Pt } from "./game";
 import type { AnyState as GameState } from "./record";
 import { INK, arcText, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilStroke, rubOut } from "./ink";
 import { Life } from "./life";
+import { PencilLayer } from "./pencil-layer";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
-import { drawBase, drawDot, drawMark, drawSignature, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
+import { drawBase, drawDot, drawMark, drawSignature, wentTo, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
 import { cssMatrix, layerMatrix, project, stageCss, toLocal, unproject, type View } from "./projection";
 import { RULES } from "./rules";
@@ -74,6 +75,8 @@ export interface Frame {
   sendArrow?: { from: Pt; to: Pt; ok: boolean };
   /** Sends ordered this turn: the road in pencil, the ones going ringed. */
   orders?: { a: Pt; b: Pt; at: Pt[] }[];
+  /** Soldiers out on the open road between camps (a convoy in transit), marked in pencil as marching and exposed: where he stands and the way he faces. */
+  road?: { at: Pt; dir: number }[];
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
   danger?: { x: number; y: number; r: number }[];
   /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
@@ -104,7 +107,9 @@ export interface Note {
 
 export const page = new PageLayer();
 export const pageState = { epoch: 0, S: 1.6 };
-export const stageStats = { live: 0, air: 0, frames: 0, boil: 0 };
+export const stageStats = { live: 0, air: 0, frames: 0, boil: 0, field: 0, streak: 0 };
+export const field = new PencilLayer();
+export const streak = new PencilLayer();
 export const boil = new BoilLayer();
 /** What the living are feeling (life.ts): the boil draws each soldier in his pose. */
 export const life = new Life();
@@ -114,6 +119,8 @@ export interface Els {
   desk: HTMLCanvasElement;
   pageHost: HTMLElement;
   boilHost: HTMLElement;
+  fieldHost: HTMLElement;
+  streakHost: HTMLElement;
   live: HTMLCanvasElement;
   /** Notes: pencil on the same sheet, the theme's blend like the live layer; its own dirty box, hidden when no one's talking. */
   talk: HTMLCanvasElement;
@@ -138,7 +145,7 @@ class Box {
   get empty() { return this.x0 > this.x1; }
 }
 
-let lastCss = { desk: "", page: "", live: "", talk: "", boil: ["", ""] };
+let lastCss = { field: "", streak: "", desk: "", page: "", live: "", talk: "", boil: ["", ""] };
 let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
 let talkDirty: { x: number; y: number; w: number; h: number } | null = null;
 let airKey = "";
@@ -174,6 +181,14 @@ function place(els: Els, f: Frame) {
     const bm = cssMatrix(layerMatrix(v, page.S, p.ox, p.oy));
     if (bm !== lastCss.boil[i]) { b.style.transform = bm; lastCss.boil[i] = bm; }
   });
+  for (const [name, layer, host] of [["field", field, els.fieldHost], ["streak", streak, els.streakHost]] as const) {
+    if (layer.c.parentElement !== host) { host.replaceChildren(layer.c); lastCss[name] = ""; }
+    layer.c.style.visibility = layer.empty ? "hidden" : "";
+    if (!layer.empty) {
+      const m = cssMatrix(layerMatrix(v, layer.S, layer.ox, layer.oy));
+      if (m !== lastCss[name]) { layer.c.style.transform = m; lastCss[name] = m; }
+    }
+  }
   const lc = stageCss(v);
   const lk = lc.transform + lc.origin;
   if (lk !== lastCss.live) { els.live.style.transform = lc.transform; els.live.style.transformOrigin = lc.origin; lastCss.live = lk; }
@@ -186,6 +201,16 @@ export function renderStage(els: Els, f: Frame) {
   const plan = boilPlan(f, ink);
   page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold, f.pageSource);
   boil.set(plan, s, pageState.S);
+  const road = f.road ?? [];
+  const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road]);
+  if (field.draw(key, road.map((q) => q.at), pageState.S, 42, (g) => {
+    for (const q of road) drawRoad(g, q.at, q.dir, 3, s.soldiers.length + Math.round(q.at.x));
+  })) stageStats.field++;
+  const mover = f.mover && (f.mover.stretch ?? 1) > 1.04 ? f.mover : undefined;
+  const speedKey = JSON.stringify([theme.id, pageState.epoch, pageState.S, mover]);
+  if (streak.draw(speedKey, mover ? [mover.at] : [], pageState.S, 80, (g) => {
+    drawSpeed(g, mover!.at, mover!.angle ?? 0, mover!.stretch ?? 1, 3, mover!.id);
+  })) stageStats.streak++;
   place(els, f);
   seen = onScreen(f);
   bold = f.boil?.bold ?? 0;
@@ -227,6 +252,7 @@ function onScreen(f: Frame) {
 export const boilSeen = () => seen;
 
 export function forgetDrawn() {
+  field.key = ""; streak.key = "";
   liveDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   talkDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   inked = { x: 0, y: 0, w: 1e6, h: 1e6 };
@@ -257,11 +283,11 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
   s.marks.forEach((m, i) => {
     const k = `m${i}`;
     if (page.has(k) || !ink.live.has(k)) return;
-    drawMark(g, m, ink.p(k));
+    drawMark(g, m, ink.p(k), 0, wentTo(s, i));
     if (m.t === "stroke") for (const p of m.pts) box.add(p.x, p.y, 8);
     else if (m.t === "walk") { box.add(m.a.x, m.a.y, 10); box.add(m.b.x, m.b.y, 10); }
     else if (m.t === "stand") for (const p of m.at) box.add(p.x, p.y, 24);
-    else box.add(m.x, m.y, 20);
+    else box.add(m.x, m.y, 34);
   });
   const walking = new Set(f.walkers?.map((w) => w.id));
   for (const x of s.soldiers) {
@@ -410,6 +436,38 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
   }
   if (f.teach) { drawTeach(g, f.teach); box.add(f.teach.at.x, f.teach.at.y, 420); }
   if (f.aim) { drawAim(g, s, f.aim, px); box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + (f.aim.sight !== undefined ? 90 : 24)); }
+}
+
+/**
+ * A soldier out on the open road: a broken pencil ring round him (nobody's
+ * camp is round him now, so he's out in the open) and a pair of chevrons ahead
+ * of him, marching. Pencil, so it's the paper's remark on the page, never ink history.
+ */
+function drawRoad(g: Ctx, at: Pt, dir: number, px: number, seed: number) {
+  const r = RULES.soldierRadius + 8, w = Math.max(2.4, px * 1.9);
+  const n = 10;
+  for (let i = 0; i < n; i += 2) {
+    const a0 = (i / n) * Math.PI * 2 + 0.2, a1 = ((i + 1.2) / n) * Math.PI * 2 + 0.2;
+    pencilLine(g, { x: at.x + Math.cos(a0) * r, y: at.y + Math.sin(a0) * r }, { x: at.x + Math.cos(a1) * r, y: at.y + Math.sin(a1) * r }, w, seed + i, false);
+  }
+  const ux = Math.cos(dir), uy = Math.sin(dir);
+  for (const d of [r + 5, r + 12]) {
+    const cx = at.x + ux * d, cy = at.y + uy * d, s = 6.5;
+    pencilLine(g, { x: cx - ux * s - uy * s, y: cy - uy * s + ux * s }, { x: cx, y: cy }, w, seed + 40 + d, false);
+    pencilLine(g, { x: cx - ux * s + uy * s, y: cy - uy * s - ux * s }, { x: cx, y: cy }, w, seed + 50 + d, false);
+  }
+}
+
+/** A lunger at speed: three short pencil streaks trailing from him, the way a kid draws a fast thing. */
+function drawSpeed(g: Ctx, at: Pt, angle: number, stretch: number, px: number, seed: number) {
+  const ux = Math.cos(angle), uy = Math.sin(angle), w = Math.max(1.4, px * 1.1);
+  const len = 14 + (stretch - 1) * 60;
+  [-1, 0, 1].forEach((k, i) => {
+    const gap = 10 + Math.abs(k) * 2, lat = k * 6;
+    const a = { x: at.x - ux * gap - uy * lat, y: at.y - uy * gap + ux * lat };
+    const b = { x: a.x - ux * len * (k ? 0.65 : 1), y: a.y - uy * len * (k ? 0.65 : 1) };
+    pencilLine(g, a, b, w, seed * 7 + i, false);
+  });
 }
 
 function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
@@ -580,7 +638,7 @@ function noteSpot(f: Frame, b: Note, fits: Fit[], angK = 1) {
   const key = `${b.seed}|${b.text}|${f.s.seed}|${b.anchor}|${b.owner}${NOTE.angle === undefined ? "" : `|${NOTE.angle}`}`;
   const had = spots.find((m) => m.key === key);
   if (had) {
-    // Reuse the page offset; the speaker's moving anchor also guides replies.
+    // Keep the chosen page offset as the speaker moves; no new clutter search.
     had.at = { x: b.at.x, y: b.at.y };
     return had;
   }

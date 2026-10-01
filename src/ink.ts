@@ -247,6 +247,74 @@ export function inkCross(ctx: Ctx, x: number, y: number, size: number, color: st
   ctx.globalAlpha = 1;
 }
 
+// A scribble-out: the pen goes back and forth over a soldier until he's
+// blotted, the way a kid finishes off a figure. Heavier than a cross and
+// bigger, so a dead man reads as a dark finished smudge from bird's-eye.
+// `upTo` (0..1) draws it on, zig by zig.
+export function inkScribble(ctx: Ctx, x: number, y: number, r: number, color: string, seed: number, width = 2.4, alpha = 1, upTo = 1) {
+  if (upTo <= 0) return;
+  const rand = rng(seed);
+  const rot = (rand() - 0.5) * 1.2 - 0.5; // the hatching leans
+  const ux = Math.cos(rot), uy = Math.sin(rot);
+  const n = 9;
+  const pts: Pt[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n * 2 - 1; // across the blot
+    const side = i % 2 ? 1 : -1;
+    const half = r * Math.sqrt(Math.max(0.08, 1 - t * t * 0.7)) * (0.85 + rand() * 0.3);
+    // along the hatch axis by `t`, and up and down its normal by `side`
+    pts.push({ x: x + ux * t * r * 0.9 - uy * side * half, y: y + uy * t * r * 0.9 + ux * side * half });
+  }
+  ctx.strokeStyle = paint(ctx, color);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = width;
+  ctx.globalAlpha = 0.85 * alpha;
+  const head = n * Math.min(1, upTo);
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i <= Math.ceil(head); i++) {
+    const f = Math.min(1, head - (i - 1));
+    ctx.lineTo(pts[i - 1].x + (pts[i].x - pts[i - 1].x) * f, pts[i - 1].y + (pts[i].y - pts[i - 1].y) * f);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// A little ink arrow leaving a dot toward `to`: "he went that way". Light and
+// small, nothing like a cross.
+export function inkLeft(ctx: Ctx, x: number, y: number, to: Pt, color: string, seed: number, start: number, len: number, width = 1.7, alpha = 0.8, upTo = 1) {
+  const dx = to.x - x, dy = to.y - y, l = Math.hypot(dx, dy);
+  if (l < 2 || upTo <= 0) return;
+  const rand = rng(seed);
+  const ux = dx / l, uy = dy / l;
+  const bow = (rand() - 0.5) * len * 0.25;
+  const a = { x: x + ux * start, y: y + uy * start };
+  const b = { x: x + ux * (start + len), y: y + uy * (start + len) };
+  const q = { x: (a.x + b.x) / 2 - uy * bow, y: (a.y + b.y) / 2 + ux * bow };
+  ctx.strokeStyle = paint(ctx, color);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = width;
+  ctx.globalAlpha = alpha;
+  const f = Math.min(1, upTo / 0.7);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.quadraticCurveTo(a.x + (q.x - a.x) * f, a.y + (q.y - a.y) * f, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f);
+  ctx.stroke();
+  if (upTo > 0.7) {
+    const h = len * 0.34, s = 0.55;
+    ctx.beginPath();
+    for (const sg of [-1, 1]) {
+      const ca = Math.cos(sg * s), sa = Math.sin(sg * s);
+      ctx.moveTo(b.x, b.y);
+      ctx.lineTo(b.x - (ux * ca - uy * sa) * h, b.y - (uy * ca + ux * sa) * h);
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
 // A flicked ballpoint line. Heavy where the pen was resting, thinning and
 // skipping as it lifts off. `upTo` (0..1) draws only the first part, for animation.
 export function inkFlick(ctx: Ctx, pts: Pt[], color: string, seed: number, width: number, upTo = 1, alpha = 1, wob = 0) {

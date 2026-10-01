@@ -413,6 +413,7 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 /* the hand-off card is one big button (a haptic tap target on iPhone) */
 .handoff-tap { all: unset; display: block; width: 100%; cursor: pointer; }
 
+#field-host canvas, #streak-host canvas { position: fixed; display: block; transform-origin: 0 0; mix-blend-mode: var(--live-blend); will-change: transform; }
 /* the start mark: where the pull began, with the dead zone faint round it; firms up when the thumb is back inside */
 #cancel-ring {
   position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; box-sizing: border-box;
