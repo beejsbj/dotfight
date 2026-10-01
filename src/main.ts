@@ -766,7 +766,11 @@ function speak(kind: BubbleKind, id: number, t0 = wall, seed?: number, mate?: nu
   const pos = base ? at : displayedAt(id);
   const p = cam.toScreen(pos.x, pos.y);
   if (p.x < 20 || p.x > W - 20 || p.y < 60 || p.y > H - 120) return; // off screen, or under the HUD
-  if (bubbles.offer(kind, id, t0, seed ?? Math.floor(seeded(s.seed, s.turn, id, kind.length) * 2 ** 31), noteContext(at.owner), mate)) dirty = true;
+  const b = bubbles.offer(kind, id, t0, seed ?? Math.floor(seeded(s.seed, s.turn, id, kind.length) * 2 ** 31), noteContext(at.owner), mate);
+  if (b) {
+    if (kind === "send") b.at = { x: pos.x, y: pos.y };
+    dirty = true;
+  }
 }
 
 /**
@@ -2410,10 +2414,10 @@ function currentFrame(): Frame {
     const bs = bubbleAt(bb, wall, reduced);
     if (bs) {
       if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
-      else { const x = s.soldiers[bb.id]; if (x?.alive) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: displayedAt(x.id), p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && s.soldiers[bb.reply.id] }; }
+      else { const x = s.soldiers[bb.id]; if (x?.alive) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: bb.at ?? x, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && s.soldiers[bb.reply.id] }; }
     }
     const rs = replyAt(bb, wall, reduced), rx = bb.reply && s.soldiers[bb.reply.id];
-    if (rs && rx?.alive) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: displayedAt(rx.id), p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: s.soldiers[bb.id], answers: `${bb.seed}|${bb.text}` };
+    if (rs && rx?.alive) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rx, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: s.soldiers[bb.id], answers: `${bb.seed}|${bb.text}` };
   }
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one

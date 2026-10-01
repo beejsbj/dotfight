@@ -408,6 +408,8 @@ export interface Bubble {
   /** The man (anchor "man"), or the camp's base (anchor "base"). */
   id: number;
   anchor: Anchor;
+  /** A departure line stays beside the displayed position where it was offered. */
+  at?: { x: number; y: number };
   text: string;
   mood: Mood;
   /** Wall ms it starts being written. */
