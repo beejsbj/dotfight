@@ -5,10 +5,10 @@
 import { browserOpts } from "./guarded-browser.mjs";
 import { chromium } from "playwright-core";
 
-export async function phone({ url = "http://localhost:5191/", w = 390, h = 844, dpr = 3, clear = true, taught = true, browser: shared, context } = {}) {
+export async function phone({ url = "http://localhost:5191/", w = 390, h = 844, dpr = 3, clear = true, taught = true, browser: shared, context, args: launchArgs = [] } = {}) {
   // pass `browser` to put several phones (separate contexts, separate storage) in one Chrome,
   // and `context` to open another page on the same phone (same storage): a reopened app
-  const browser = shared ?? await chromium.launch({ ...browserOpts, executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox", ...(process.env.PFT_ARGS ? process.env.PFT_ARGS.split(" ") : [])] });
+  const browser = shared ?? await chromium.launch({ ...browserOpts, executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox", ...launchArgs, ...(process.env.PFT_ARGS ? process.env.PFT_ARGS.split(" ") : [])] });
   try {
     const ctx = context ?? await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr, hasTouch: true, isMobile: true });
     const page = await ctx.newPage();
