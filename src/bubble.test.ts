@@ -291,3 +291,15 @@ it.each([-1, 0, 50])("urgent notes interrupt exchanges at reply begin %i ms", (o
     expect(urgent.t0).toBeGreaterThanOrEqual(reply.t0 + BUBBLE.timing[reply.mood].writeMs + 120 + BUBBLE.timing[reply.mood].eraseMs);
   }
 });
+
+
+it("the bot callback follows the preceding botch erase without waiting for the ordinary note gap", () => {
+  const b = new Bubbles();
+  const original = b.urgent("botchMe", 1, 1000, 5, { ...ctx, botch: 2 })!;
+  const callback = b.urgent("botchBack", 2, 1700, 8, ctx)!;
+  expect(callback.t0).toBe(original.t0 + showOf(original));
+  expect(callback.t0).toBeLessThan(original.t0 + BUBBLE.gapMs);
+  expect(b.showing(callback.t0 - 1)).toBe(original);
+  expect(b.showing(callback.t0)).toBe(callback);
+  expect(b.next).toBeNull();
+});

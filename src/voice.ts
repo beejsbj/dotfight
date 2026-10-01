@@ -140,9 +140,8 @@ export const SPACING = 0.35;
 
 // --- playing --------------------------------------------------------------------
 
-let busyUntil: number[] = [];
-const lastSaid = new Map<string, number>();
-let lastAny: number | undefined;
+export interface ScheduledVoice { what: Say; start: number; end: number }
+let scheduled: ScheduledVoice[] = [];
 let n = 0;
 let chain: { ac: AudioContext; bus: AudioNode; out: GainNode } | null = null;
 
@@ -151,9 +150,7 @@ export function reset() {
   chain?.out.disconnect();
   chain?.bus.disconnect();
   chain = null;
-  busyUntil = [];
-  lastSaid.clear();
-  lastAny = undefined;
+  scheduled = [];
   n = 0;
 }
 
@@ -168,6 +165,14 @@ export function allowed(now: number, busy: number[], last: number | undefined, g
 }
 /** How long before the same word is said again (s): long, so a word stays a small event. */
 export const GAP: Record<Say, number> = { phew: 6, jab: 8, hup: 5, look: 4, murmur: 14, eep: 3, gasp: 2.5, oh: 6, cheer: 6, wheee: 5, land: 5, uhoh: 30 };
+
+/** Playback reservations may arrive out of order (a volley is planned before its flick). */
+export function allowedScheduled(candidate: ScheduledVoice, booked: readonly ScheduledVoice[]) {
+  if (booked.some((v) => Math.abs(candidate.start - v.start) < (v.what === candidate.what ? GAP[candidate.what] : SPACING))) return false;
+  // Check every point at which concurrency can increase within the new phrase.
+  const starts = [candidate.start, ...booked.filter((v) => v.start > candidate.start && v.start < candidate.end).map((v) => v.start)];
+  return starts.every((at) => booked.filter((v) => v.start <= at && v.end > at).length < MAX_VOICES);
+}
 
 /** What a moment's voices are worth: the one that speaks is the one that matters most. */
 const WORTH: Record<Say, number> = { gasp: 9, eep: 8, cheer: 7, uhoh: 7, oh: 6, phew: 5, jab: 4, hup: 4, look: 4, wheee: 3, land: 2, murmur: 1 };
@@ -209,14 +214,13 @@ export function say(what: Say, id: number, owner: 0 | 1, delay = 0, gain = 1, le
   }
   chain.out.gain.value = level;
   const t = ac.currentTime + Math.max(0, delay);
-  busyUntil = busyUntil.filter((x) => x > ac.currentTime);
-  const key = `${what}`;
-  if (!allowed(t, busyUntil, lastSaid.get(key), GAP[what], lastAny)) return;
-  lastSaid.set(key, t);
-  lastAny = t;
-  const syl = phrase(what, voicePitch(id, owner), id * 7919 + n++, len);
+  scheduled = scheduled.filter((v) => v.end > ac.currentTime || v.start + GAP[v.what] > ac.currentTime);
+  const syl = phrase(what, voicePitch(id, owner), id * 7919 + n, len);
   const end = Math.max(...syl.map((s) => s.at + s.dur));
-  busyUntil.push(t + end);
+  const reservation = { what, start: t, end: t + end };
+  if (!allowedScheduled(reservation, scheduled)) return;
+  n++;
+  scheduled.push(reservation);
   for (const s of syl) syllable(ac, noise, chain.bus, t + s.at, s, gain);
 }
 

@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   createHaptics, detect, DETENTS, Dial, Gate, IOS_TICK_GAP, iosMode, length, MIN_GAP, pattern, Ratchet, STORAGE_KEY,
-  type Backend, type BackendKind, type HapticEvent, type Pattern,
+  TAPPED, type Backend, type BackendKind, type HapticEvent, type Pattern,
 } from "./haptics";
 
 const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "brink", "dial", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "cheer", "flinch", "unitcam", "volley", "over"];
 
 describe("pattern", () => {
+  it("allows the unit-camera second tap to earn an iPhone tick, while drag and timed events cannot", () => {
+    expect(TAPPED).toContain("unitcam");
+    expect(TAPPED).not.toContain("flick");
+    expect(TAPPED).not.toContain("volley");
+  });
+
   it("gives every event a playable pattern on both backends", () => {
     for (const ev of EVENTS) for (const arg of [0, 0.5, 1, 2, 5]) {
       const p = pattern(ev, arg);
