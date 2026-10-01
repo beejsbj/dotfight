@@ -206,7 +206,8 @@ new ResizeObserver(() => resize()).observe($("#bottom"));
 new ResizeObserver(() => resize()).observe($("#top"));
 for (const ev of ["touchend", "click", "keydown"]) window.addEventListener(ev, sfx.unlock, { passive: true });
 // Reduced motion cuts the vestibular kind (camera zooms, spins, swoops, tilt). Ink drawing on is
-// the game's content, and its timing drives the sound and haptics, so draw-on durations stay as they are.
+// the game's content, and its timing drives the sound and haptics, so a flick's ink draws on at full
+// length. (A few other beats, like the lapse's footprint march, still shorten; this is about the ink.)
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 /** The pen's and a moving man's own motion (LIFE.pen, the ride's smear): not with reduced motion. */
 const lively = () => !reduced && !slow && !boil.tooDear;

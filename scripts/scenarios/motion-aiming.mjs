@@ -115,8 +115,8 @@ export default async function (T, out) {
     return ev(() => window.pft.s.soldiers[window.pft.selected]);
   }
 
-  // The full pull in screen px: the game's own FEEL.maxPullPx (exposed on the dev hook), so a
-  // retuned rule can't leave "full power" short. 240 is the rules-v2 value, for builds without it.
+  // The full pull in screen px: the game's own FEEL.maxPullPx when the dev hook exposes it (PR #28),
+  // so a retuned rule can't leave "full power" short; otherwise 240, the rules-v2 value.
   const fullPull = () => ev(() => window.pft.FEEL?.maxPullPx ?? 240);
 
   // Start a pull (thumb held down) that points world angle `ang` with `px` of pull. The thumb does
