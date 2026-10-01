@@ -2896,7 +2896,11 @@ if (import.meta.env.DEV) {
      * frame: per layer, how many pixels differ by more than antialiasing, and where.
      */
     redrawCheck: () => {
-      renderNow();
+      const f = currentFrame();
+      seeLife(f);
+      // Presentation observers run once; both sides draw the exact same frame.
+      const draw = () => { renderStage(els, f); renderOverlay(og, f, W, H, dpr); };
+      draw();
       const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, field: field.c, streak: streakLayer.c, rings: boil.parts[0].c, rest: boil.parts[1].c, ...Object.fromEntries([...standRays].map(([id, p]) => [`rays${id}`, p.c])) };
 
       // Read a copy: repeated reads of the drawing context make Chrome switch
@@ -2909,10 +2913,10 @@ if (import.meta.env.DEV) {
         g.drawImage(c, 0, 0);
         return [k, g.getImageData(0, 0, c.width, c.height)];
       }));
-      renderNow();
+      draw();
       const a = grab();
       forgetDrawn();
-      renderNow(); renderNow(); // the boil draws one of its two canvases a render
+      draw(); draw(); // the boil draws one of its two canvases a render
       const b = grab();
       // the boil leaves what's off screen at its last look until it comes into view: compare what's on it
       const on = boilSeen(), S = pageState.S;
