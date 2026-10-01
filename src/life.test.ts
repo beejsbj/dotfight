@@ -396,3 +396,30 @@ it("plans a pending convoy at its visible departure without mutating rule state"
   expect(planVolley(s, b.id, target)!.jabs.map(j => j.id)).toContain(x.id);
   expect(beforeMarch(s, [])).toBe(s);
 });
+
+it("mourns a lost shooter at the delayed volley cross, keeping other kill times", () => {
+  const s = setup();
+  const me = s.soldiers.find(x => x.owner === 0)!;
+  const target = s.soldiers.find(x => x.owner === 1)!;
+  const o = { path: [{ x: me.x, y: me.y }, { x: target.x, y: target.y }], killed: [target.id], lost: true };
+  const when = (i: number) => 100 + i * 20;
+  const arrive = 900, death = 1600;
+  const normal = planFlick(s, o, me.id, "move", when, arrive);
+  expect(planFlick(s, o, me.id, "move", when, arrive, arrive)).toEqual(normal);
+  const delayed = planFlick(s, o, me.id, "move", when, arrive, death);
+  const home = s.bases.find(b => b.owner === me.owner && Math.hypot(b.x - me.x, b.y - me.y) <= b.r * 1.05)!;
+  expect(normal.hush.find(h => h.base === home.id)!.at).toBe(arrive);
+  expect(delayed.hush.find(h => h.base === home.id)!.at).toBe(death);
+  const mourners = delayed.acts.filter(a => a.r.kind === "mourn" && s.soldiers[a.id].owner === me.owner);
+  expect(mourners.length).toBeGreaterThan(0);
+  for (const a of mourners) {
+    expect(a.r.t0).toBeGreaterThanOrEqual(death);
+    const before = normal.acts.find(b => b.id === a.id && b.r.kind === "mourn")!;
+    expect(a.r.t0 - before.r.t0).toBe(death - arrive);
+  }
+  const ownOh = delayed.cues.filter(c => c.say === "oh" && s.soldiers[c.id].owner === me.owner);
+  expect(ownOh.length).toBeGreaterThan(0);
+  for (const c of ownOh) expect(c.at).toBeGreaterThanOrEqual(death);
+  expect(delayed.acts.filter(a => s.soldiers[a.id].owner !== me.owner)).toEqual(normal.acts.filter(a => s.soldiers[a.id].owner !== me.owner));
+  expect(delayed.hush.filter(h => h.base !== home.id)).toEqual(normal.hush.filter(h => h.base !== home.id));
+});
