@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  createHaptics, detect, DETENTS, Gate, IOS_TICK_GAP, iosMode, length, MIN_GAP, pattern, Ratchet, STORAGE_KEY,
+  createHaptics, detect, DETENTS, Dial, Gate, IOS_TICK_GAP, iosMode, length, MIN_GAP, pattern, Ratchet, STORAGE_KEY,
   type Backend, type BackendKind, type HapticEvent, type Pattern,
 } from "./haptics";
 
-const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "brink", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "over"];
+const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "brink", "dial", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "over"];
 
 describe("pattern", () => {
   it("gives every event a playable pattern on both backends", () => {
@@ -232,5 +232,55 @@ describe("createHaptics", () => {
   it("reports whether there's anything to feel", () => {
     expect(rig("none").h.supported).toBe(false);
     expect(rig("switch").h.supported).toBe(true);
+  });
+});
+
+describe("Dial", () => {
+  const S = Dial.STEP;
+  const sweep = (d: Dial, from: number, to: number, n = 200) => {
+    const out: number[] = [];
+    for (let i = 1; i <= n; i++) { const k = d.step(from + ((to - from) * i) / n); if (k !== null) out.push(k); }
+    return out;
+  };
+
+  it("clicks every 30 degrees from where the aim began, both ways, twelve to the turn", () => {
+    const d = new Dial();
+    expect(sweep(d, 0, Math.PI * 2 + 0.1)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(Dial.home(12)).toBe(true);
+    const e = new Dial();
+    expect(sweep(e, 0, -S * 3 - 0.1)).toEqual([-1, -2, -3]);
+  });
+
+  it("straight ahead is a click on the way back, not at the start", () => {
+    const d = new Dial();
+    expect(d.step(0)).toBeNull();
+    expect(d.step(0.01)).toBeNull();
+    expect(d.step(-0.01)).toBeNull();
+    expect(sweep(d, -0.01, S * 2.5)).toEqual([1, 2]);
+    expect(sweep(d, S * 2.5, -0.1)).toEqual([1, 0]);
+    expect(Dial.home(0)).toBe(true);
+    expect(Dial.home(1)).toBe(false);
+  });
+
+  it("doesn't chatter when a thumb rests on a line", () => {
+    const d = new Dial();
+    expect(d.step(S + 0.05)).toBe(1);
+    expect(d.step(S - 0.02)).toBeNull();
+    expect(d.step(S + 0.02)).toBeNull();
+    expect(d.step(S - 0.02)).toBeNull();
+    // clearly back under the line and past the next: one click
+    expect(d.step(0 - 0.05)).toBe(0);
+  });
+
+  it("reports only the furthest line when a fast sweep skips several", () => {
+    const d = new Dial();
+    expect(d.step(S * 4.5)).toBe(4);
+    expect(d.step(S * 4.6)).toBeNull();
+  });
+
+  it("a click is the lightest thing felt; straight ahead is firmer", () => {
+    expect(pattern("dial", 0).android[0]).toBeLessThan(pattern("brink").android[0]);
+    expect(pattern("dial", 1).android[0]).toBeGreaterThan(pattern("dial", 0).android[0]);
+    expect(pattern("dial", 1).priority).toBeLessThanOrEqual(pattern("notch", 0.5).priority);
   });
 });

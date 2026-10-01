@@ -424,3 +424,10 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 }
 #cancel-ring.in { border-style: solid; border-color: rgba(var(--desk-rgb), .95); background: rgba(var(--desk-rgb), .16); }
 #cancel-ring[hidden] { display: none; }
+/* the pull's rule: a faint pencil line from the ring down to full power, drawn over as far as the thumb has pulled,
+   with a notch at each detent you can feel and a bar at the end. Heights are set from script; no transitions, so it never lags the thumb */
+#cancel-ring .rule, #cancel-ring .drawn { position: absolute; left: 50%; top: 100%; width: 0; margin-left: -1px; border-left: 2px dashed rgba(var(--desk-rgb), .3); box-sizing: border-box; }
+#cancel-ring .drawn { border-left-style: solid; border-left-color: rgba(var(--desk-rgb), .62); }
+#cancel-ring .tick { position: absolute; left: 50%; width: 8px; height: 0; margin-left: -4px; border-top: 1.5px solid rgba(var(--desk-rgb), .38); }
+#cancel-ring .stop { position: absolute; left: 50%; width: 16px; height: 0; margin-left: -8px; border-top: 2.5px solid rgba(var(--desk-rgb), .55); transform: rotate(-3deg); }
+#cancel-ring.in .rule, #cancel-ring.in .drawn, #cancel-ring.in .tick, #cancel-ring.in .stop { visibility: hidden; }

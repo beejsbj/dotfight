@@ -66,3 +66,55 @@ describe("aiming turns the page so the shot goes up the screen", () => {
     expect(c.tgt.m).toBe(2.1);
   });
 });
+
+describe("standing up after a shot on a turned page", () => {
+  for (const rot of [Math.PI / 3, -Math.PI / 3, 2 * Math.PI / 3, -2 * Math.PI / 3]) {
+    for (const me of [{ x: 40, y: 40 }, { x: 960, y: 40 }, { x: 40, y: 1660 }, { x: 960, y: 1660 }]) {
+      it(`keeps corner ${me.x},${me.y} clear of both HUD bars at rotation ${rot}`, () => {
+        const c = cam();
+        c.overview(rot, me);
+        c.snap();
+        const p = project(c.view(), me.x, me.y);
+        expect(p.x).toBeGreaterThanOrEqual(89.9);
+        expect(p.x).toBeLessThanOrEqual(300.1);
+        expect(p.y).toBeGreaterThanOrEqual(c.top + 31.9);
+        expect(p.y).toBeLessThanOrEqual(c.H - c.bottom - 31.9);
+      });
+    }
+  }
+
+  it("a forward shot, even from the margin: the page sits centred, as ever (it all fits)", () => {
+    const c = cam();
+    c.sit({ x: 80, y: 1500 }, 2.1, 0.55, 0.74);
+    c.aimUp(-Math.PI / 2);
+    c.overview(undefined, { x: 80, y: 1500 });
+    expect(c.tgt.x).toBeCloseTo(500, 6);
+    expect(c.tgt.y).toBeCloseTo(850, 6);
+    expect(c.tgt.m).toBe(1);
+    expect(c.tgt.tilt).toBe(0);
+  });
+
+  for (const [a, me] of [[0, { x: 300, y: 1550 }], [Math.PI, { x: 700, y: 150 }], [0.4, { x: 900, y: 1650 }], [-2.6, { x: 100, y: 60 }]] as const) {
+    it(`a sideways shot (angle ${a}) from the page's far end: the soldier and his line stay on screen`, () => {
+      const c = cam();
+      c.sit(me, 2.1, 0.55, 0.74);
+      c.aimUp(a);
+      c.overview(undefined, me);
+      c.snap();
+      const p0 = project(c.view(), me.x, me.y);
+      const p1 = project(c.view(), me.x + Math.cos(a) * 300, me.y + Math.sin(a) * 300);
+      expect(p0.x).toBeGreaterThanOrEqual(89.9);
+      expect(p0.x).toBeLessThanOrEqual(390 - 89.9);
+      // still straight up the screen from him
+      expect(Math.abs(p1.x - p0.x)).toBeLessThan(0.01);
+      expect(p1.y).toBeLessThan(p0.y);
+      // and without the keep, he'd have been off the side
+      const d = cam();
+      d.aimUp(a);
+      d.overview();
+      d.snap();
+      const q = project(d.view(), me.x, me.y);
+      expect(q.x < 90 || q.x > 300).toBe(true);
+    });
+  }
+});

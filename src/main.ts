@@ -13,7 +13,7 @@ import {
   type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
-import { haptic, haptics, Ratchet } from "./haptics";
+import { DETENTS, Dial, haptic, haptics, Ratchet } from "./haptics";
 import { inkTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
@@ -287,13 +287,24 @@ function canSendAny(c0: GameState) {
 // downward pull left after a real pull, the ring firms up (and ticks): let go
 // and the aim is dropped, nothing fired. One small fixed DOM element in screen
 // space, so no page or canvas layer is touched.
+// Under the ring hangs the pull's rule: a faint pencil line down to full power
+// with a notch at each detent (the ones the ratchet clicks), drawn over as far
+// as the thumb has pulled. The guide on the page is under the pen; this is
+// where the thumb is, so how hard you're pulling, of how hard you can, reads
+// at a glance.
 let ringOn = false; // the thumb is inside the ring
 let markOn = false;
 let thumbX = 0; // where the thumb is across the screen
 const ringEl = document.createElement("div");
 ringEl.id = "cancel-ring";
 ringEl.hidden = true;
-ringEl.innerHTML = "<i></i>";
+{
+  const r = FEEL.minPullPx, span = FEEL.maxPullPx - r;
+  ringEl.innerHTML = `<i></i><b class="rule" style="height:${span}px"></b><b class="drawn"></b>` +
+    DETENTS.slice(1, -1).map((d) => `<b class="tick" style="top:${r + r + d * span}px"></b>`).join("") +
+    `<b class="stop" style="top:${r + FEEL.maxPullPx}px"></b>`;
+}
+const drawnEl = () => ringEl.querySelector<HTMLElement>(".drawn")!;
 document.body.append(ringEl);
 function syncRing() {
   const shown = !!aim && g.t === "aim";
@@ -302,6 +313,7 @@ function syncRing() {
     ringEl.style.transform = `translate(${thumbX - r}px, ${g.sy - r}px)`;
     ringEl.style.width = ringEl.style.height = `${r * 2}px`;
     (ringEl.firstElementChild as HTMLElement).style.transform = `translate(${g.sx - thumbX}px, 0)`; // the dot stays where the thumb began
+    drawnEl().style.height = `${Math.max(0, Math.min(FEEL.maxPullPx, byThumb.dist) - r)}px`;
   }
   if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
   const on = shown && !!aim && aim.charged && !pull(aim).live;
@@ -714,8 +726,17 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
       runLapse(() => handOver());
     },
   };
-  // straight back up to a bird's-eye view to watch the ink land
-  if (opts.cam ?? true) { cam.face(rotFor(who), reduced); cam.overview(); }
+  // straight back up to a bird's-eye view to watch the ink land. The page stays
+  // turned the way it was aimed, so the ink runs straight up the screen (slid
+  // across if that would leave the soldier off the side); once the ink has
+  // landed and the pen has fallen, it turns back to face whoever flicked (the
+  // state has already moved on to the next player) and settles centred, so the
+  // turn is done about as the pen is lifted.
+  if (live) {
+    const home = rotFor(who);
+    cam.overview(undefined, before[f.soldier]);
+    moments.push({ at: dur + 350 * quick, fn: () => { cam.face(home, reduced); cam.overview(); } });
+  }
   sfx.slip(power);
   sfx.stroke(dur / 1000 / speed + 0.05, f.kind === "snipe" ? 0.6 : 0.45);
   hud();
@@ -1831,6 +1852,7 @@ over.addEventListener("pointermove", (e) => {
       aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
       aimFrom = forwardAngle();
       ratchet.reset();
+      dial.reset();
       acts();
       nudgeFrom = motion.held();
     }
@@ -1856,8 +1878,12 @@ function updateAim(x: number, y: number) {
   if (p.live && !aim.charged) { aim.charged = true; aim.t0 = T; }
   // a ratchet: detents as power builds, tightening toward full
   if (ratchet.step(p.power, p.live) !== null) haptic("notch", p.power);
+  // and a dial: the page clicks past every 30 degrees of turn, firmer passing straight ahead. Felt, never snapped to.
+  const k = dial.step(eff * turnK());
+  if (k !== null) { const home = Dial.home(k); haptic("dial", home ? 1 : 0); sfx.dial(home); }
 }
 const ratchet = new Ratchet();
+const dial = new Dial();
 
 // The thumb sets the aim; with the motion levels on, the phone's tilt trims it
 // and the hand's tremor sets the wobble. Either way it ends up in the pull, so
@@ -1958,10 +1984,10 @@ function up(e: PointerEvent) {
     const tapped = Math.hypot(p.x - g.sx, p.y - g.sy) < TAP;
     if (aim && e.type === "pointerup") {
       updateAim(p.x, p.y);
-      faceForward();
       if (aim.charged && !pull(aim).live) {
         // thumb back at the start: a cancel, quietly. He stays picked up.
         aim = null;
+        faceForward();
         sfx.creak(0);
         g = { t: "none" };
         acts();
@@ -1983,6 +2009,7 @@ function up(e: PointerEvent) {
       standUp(); // tap on empty paper puts the pen down
     } else if (tapped) raiseGun();
     aim = null;
+    // a fired shot keeps the page turned its way until the ink lands (fire() turns it back); anything else faces forward now
     if (!res) faceForward();
     sfx.creak(0);
     g = { t: "none" };

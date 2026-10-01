@@ -18,8 +18,13 @@ export interface Pose {
 }
 
 // how quickly each part of the pose catches up (per second)
-/** While aiming the page follows the thumb closely (per second). */
-export const AIM_ROT_RATE = 16;
+/**
+ * While aiming the page follows the thumb closely (per second). The lag behind
+ * a moving thumb is about 1/rate: at 28/s a brisk sweep (300 px/s, 5 rad/s on a
+ * phone) trails by ~10 degrees and catches up in ~35 ms, so the page reads as
+ * under the thumb, and an exponential ease never overshoots.
+ */
+export const AIM_ROT_RATE = 28;
 const RATE = { pos: 8, m: 7, rot: 5.5, tilt: 7, fy: 7 };
 
 export class Camera {
@@ -78,12 +83,28 @@ export class Camera {
 
   // --- where to look -------------------------------------------------------
 
-  /** Stand up: the whole page, flat. */
-  overview(rot = this.tgt.rot) {
+  /**
+   * Stand up: the whole page, flat. With `keep`, a page still turned for a shot
+   * (it hangs off the sides of a phone) slides across so that point, and the
+   * line running straight up from it, stays on screen.
+   */
+  overview(rot = this.tgt.rot, keep?: Pt) {
     // the same facing, reached the short way round from wherever we are
     const TAU = Math.PI * 2;
     const r = rot + Math.round((this.cur.rot - rot) / TAU) * TAU;
     this.tgt = { x: RULES.pageW / 2, y: RULES.pageH / 2, m: 1, rot: r, tilt: 0, fy: this.fitFy };
+    if (!keep) return;
+    const z = this.fitZ, c = Math.cos(r), s = Math.sin(r);
+    const p = project(this.view(this.tgt), keep.x, keep.y);
+    const edge = Math.min(90, this.W * 0.25);
+    const fitsX = (Math.abs(c) * RULES.pageW + Math.abs(s) * RULES.pageH) * z <= this.W;
+    const overX = fitsX ? 0 : p.x < edge ? p.x - edge : p.x > this.W - edge ? p.x - (this.W - edge) : 0;
+    const padY = Math.min(32, Math.max(0, this.H - this.top - this.bottom) / 4);
+    const top = this.top + padY, bottom = this.H - this.bottom - padY;
+    const overY = p.y < top ? p.y - top : p.y > bottom ? p.y - bottom : 0;
+    // Slide along both screen axes, keeping corner soldiers clear of the HUD.
+    this.tgt.x += (c * overX + s * overY) / z;
+    this.tgt.y += (-s * overX + c * overY) / z;
   }
   /** Sit down behind a soldier: low, close, the page running away from you. */
   sit(at: Pt, m = 2.3, tilt = 0.62, fy = 0.66) {
