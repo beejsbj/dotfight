@@ -684,7 +684,7 @@ export const noteSpotsNow = () => spots.slice();
 /** A spot is close if it's in the first ring round him, on the page as found, over nothing heavier than a few lines. */
 const CLOSE = { miss: 0.5, clutter: 8 };
 function noteSpot(f: Frame, b: Note, fits: Fit[], angK = 1) {
-  const key = `${f.s.seed}|${b.seed}|${b.text}|${b.anchor}|${b.owner}${NOTE.angle === undefined ? "" : `|${NOTE.angle}`}`;
+  const key = `${b.seed}|${b.text}|${f.s.seed}|${b.anchor}|${b.owner}${NOTE.angle === undefined ? "" : `|${NOTE.angle}`}`;
   const had = spots.find((m) => m.key === key);
   if (had) {
     // Keep the chosen page offset as the speaker moves; no new clutter search.
