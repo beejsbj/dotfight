@@ -12,6 +12,7 @@ export let muted = typeof localStorage !== "undefined" && localStorage.getItem("
 
 export function setMuted(m: boolean) {
   muted = m;
+  if (out && ac) out.gain.setValueAtTime(m ? 0 : 0.9, ac.currentTime);
   localStorage.setItem("pft:muted", m ? "1" : "0");
   if (m) creak(0);
 }
@@ -27,7 +28,7 @@ export function unlock() {
     comp.threshold.value = -14;
     comp.ratio.value = 4;
     out = ac.createGain();
-    out.gain.value = 0.9;
+    out.gain.value = muted ? 0 : 0.9;
     out.connect(comp).connect(ac.destination);
   }
   if (ac.state === "suspended") ac.resume();
