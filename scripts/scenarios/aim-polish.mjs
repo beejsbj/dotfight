@@ -118,6 +118,7 @@ export default async function (T, out) {
   await page.evaluate(async (id) => {
     const p = window.pft, { inkTime } = await import("/src/inkclock.ts");
     window.returnTrace = [];
+    window.traceSoldier = id;
     window.originalFace = p.cam.face;
     p.cam.face = function (...args) {
       const r = p.res, result = window.originalFace.apply(this, args), s = p.s.soldiers[id];
@@ -145,7 +146,8 @@ export default async function (T, out) {
   await page.waitForFunction((own) => !window.pft.res || window.returnTrace.some((x) =>
     x.settled && x.resActive && Math.abs(Math.atan2(Math.sin(x.rot-own),Math.cos(x.rot-own))) < .01), own, { timeout: 120000 });
   const returned = await page.evaluate((own) => window.returnTrace.filter((x) =>
-    x.settled && x.resActive && Math.abs(Math.atan2(Math.sin(x.rot-own),Math.cos(x.rot-own))) < .01), own);
+    x.owner === window.pft.s.soldiers[window.traceSoldier].owner && x.settled && x.resActive && Math.abs(Math.atan2(Math.sin(x.rot-own),Math.cos(x.rot-own))) < .01), own);
+  check(returned.length > 0, "  recorded the original-player return during settled ink before hand-over", `${returned.length} return operations`);
   samples.push(...returned);
   await page.evaluate(() => { window.pft.cam.face = window.originalFace; });
   const running = samples.filter((x) => !x.settled), landed = samples.filter((x) => x.settled);

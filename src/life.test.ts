@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, newGame, preview, type Flick, type GameState } from "./game";
 import { CORE, type Size } from "./rules";
 import {
-  AMP, FRAME, KEYS, LAST_STAND, LIFE, LIFE_BOX, Life, MOURN, REACH, comrades, inLine, keyAt, lastStand, passes, planFlick, planVolley, span,
+  beforeMarch, AMP, FRAME, KEYS, LAST_STAND, LIFE, LIFE_BOX, Life, MOURN, REACH, comrades, inLine, keyAt, lastStand, passes, planFlick, planVolley, span,
   type Reaction, type Scene,
 } from "./life";
 import { RULES } from "./rules";
@@ -382,4 +382,17 @@ describe("soldier life regression checks", () => {
     expect(life.pose(0, 7000).rate).toBe(1);
     expect(life.reactions(0)).toEqual([]);
   });
+});
+
+it("plans a pending convoy at its visible departure without mutating rule state", () => {
+  const s = setup(), b = s.bases[0], x = s.soldiers.find(x => x.owner === b.owner)!;
+  const from = { x: b.x + b.r + 100, y: b.y };
+  const seen = beforeMarch(s, [{ id: x.id, from }]);
+  expect(seen.soldiers[x.id]).toMatchObject(from);
+  expect(s.soldiers[x.id]).not.toMatchObject(from);
+  expect(seen.soldiers[x.id].alive).toBe(x.alive);
+  const target = s.soldiers.find(x => x.owner !== b.owner)!;
+  expect(planVolley(seen, b.id, target)!.jabs.map(j => j.id)).not.toContain(x.id);
+  expect(planVolley(s, b.id, target)!.jabs.map(j => j.id)).toContain(x.id);
+  expect(beforeMarch(s, [])).toBe(s);
 });
