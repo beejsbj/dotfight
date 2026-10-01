@@ -25,7 +25,7 @@ export const canPlaceBase = (s: AnyState, x: number, y: number) => (isLegacy(s) 
 /** Soldiers a new base is jotted with. */
 export const perBase = (s: AnyState) => (isLegacy(s) ? 10 : s.size.soldiers);
 
-/** How long a flick of this kind and power is. */
+/** How long a flick of this power is (snipe and lunge reach alike; the legacy game had its own). */
 export const lengthFor = (s: AnyState, k: Kind, power: number) => (isLegacy(s) ? legacy.legacyReach(toLegacy(k), power) : core.reachOf(s.rules, power));
 
 /** How steady this soldier's hand is right now (a last stand, a lunge chain). */
