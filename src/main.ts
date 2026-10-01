@@ -32,7 +32,7 @@ import * as voice from "./voice";
 import { ANCHOR, BUBBLE, Bubbles, botchOf, botchVoices, bubbleAt, heatOf, replyAt, strayKind, streakVoices, type BotchKind, type BubbleKind, type Context, type StreakKind, type Mood } from "./bubble";
 import { feel, setFeel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
-import { boil, boilSeen, boilTick, field, streak as streakLayer, forgetDrawn, life, NOTE, noteSpotNow, noteSpotsNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { boil, boilSeen, boilTick, field, standRays, streak as streakLayer, forgetDrawn, life, NOTE, noteSpotNow, noteSpotsNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
@@ -136,7 +136,7 @@ let arrowTo: Pt | null = null; // the pencil end of a send being drawn
 
 const $ = <T extends HTMLElement>(q: string) => document.querySelector(q) as T;
 const els: Els = {
-  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), fieldHost: $("#field-host"), streakHost: $("#streak-host"), live: $<HTMLCanvasElement>("#live"), talk: $<HTMLCanvasElement>("#talk"),
+  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), fieldHost: $("#field-host"), streakHost: $("#streak-host"), raysHost: $("#rays-host"), live: $<HTMLCanvasElement>("#live"), talk: $<HTMLCanvasElement>("#talk"),
 
   light: $<HTMLCanvasElement>("#light"), haze: $<HTMLCanvasElement>("#haze"),
 };
@@ -885,13 +885,20 @@ function announce(kind: BubbleKind, id: number, text: string, delay = 120, mood:
   dirty = true;
 }
 function flushMoments() {
+  // Keep later announcements outside Bubbles until they can actually start.
+  // Their camera wait begins after the previous mandatory note finishes.
+  bubbles.showing(wall);
+  if (bubbles.cur?.important) {
+    if (momentQ.length) momentQ[0].since = Math.max(momentQ[0].since, wall + 150);
+    return;
+  }
   while (momentQ.length && wall >= momentQ[0].since && (cam.settled || wall - momentQ[0].since > 1500)) {
     const m = momentQ.shift()!;
     if (!heard() || slow || boil.tooDear) continue;
     const speaker = s.soldiers[m.id];
     if (!speaker) continue;
     if (!speaker.alive && m.kind === "stand") m.id = turn.aliveOf(s, speaker.owner)[0]?.id ?? m.id;
-    if (bubbles.moment(m.kind, m.id, wall, Math.floor(seeded(s.seed, s.turn, m.id, m.kind.length, m.text.length) * 2 ** 31), m.text, m.mood)) dirty = true;
+    if (bubbles.moment(m.kind, m.id, wall, Math.floor(seeded(s.seed, s.turn, m.id, m.kind.length, m.text.length) * 2 ** 31), m.text, m.mood)) { dirty = true; return; }
   }
 }
 
@@ -2561,7 +2568,7 @@ function currentFrame(): Frame {
   if (c0 && c0.phase === "play" && (!res || it >= res.dur) && (screen === "game" || screen === "replay" || screen === "view")) {
     // a side in its last stand keeps its survivors marked; a lunger owed another lunge is ringed with his link count
     const held = ([0, 1] as Player[]).filter((p) => c0.stand[p] > 0);
-    if (held.length) f.stand = c0.soldiers.filter((x) => x.alive && held.includes(x.owner)).map((x) => displayedAt(x.id));
+    if (held.length) f.stand = c0.soldiers.filter((x) => x.alive && held.includes(x.owner)).map((x) => ({ ...displayedAt(x.id), id: x.id }));
     const owed = c0.chain && c0.soldiers[c0.chain.soldier];
     if (owed?.alive) f.chain = { at: owed, link: c0.chain!.link };
   }
@@ -2734,7 +2741,8 @@ if (import.meta.env.DEV) {
      * frame: per layer, how many pixels differ by more than antialiasing, and where.
      */
     redrawCheck: () => {
-      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, field: field.c, streak: streakLayer.c, rings: boil.parts[0].c, rest: boil.parts[1].c };
+      renderNow();
+      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, field: field.c, streak: streakLayer.c, rings: boil.parts[0].c, rest: boil.parts[1].c, ...Object.fromEntries([...standRays].map(([id, p]) => [`rays${id}`, p.c])) };
 
       const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => [k, c.width && c.height && c.style.visibility !== "hidden" ? c.getContext("2d")!.getImageData(0, 0, c.width, c.height) : null]));
       renderNow();
@@ -2763,7 +2771,7 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    stageStats, boil, life, LIFE, CLARITY, NOTE, noteSpot: noteSpotNow, noteSpots: noteSpotsNow, set hour(h: number | undefined) { devHour = h; }, set heat(h: number | undefined) { devHeat = h; }, set waitedSince(ms: number) { lastMoveWall = ms; }, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
+    stageStats, boil, life, LIFE, CLARITY, NOTE, standRays, noteSpot: noteSpotNow, noteSpots: noteSpotsNow, set hour(h: number | undefined) { devHour = h; }, set heat(h: number | undefined) { devHeat = h; }, set waitedSince(ms: number) { lastMoveWall = ms; }, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
     set boilClock(ms: number | undefined) { boilClock = ms; },
     /** Frame-exact captures: `pft.hand(true)`, then `pft.step(ms)` moves the game and the boil on together. */
     hand: (on: boolean) => { handClock = on ? { due: 0 } : null; if (on) boilClock ??= wall; else boilClock = undefined; },

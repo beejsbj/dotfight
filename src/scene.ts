@@ -75,7 +75,7 @@ export interface Frame {
   /** Soldiers out on the open road between camps (a convoy in transit), marked in pencil as marching and exposed: where he stands and the way he faces. */
   road?: { at: Pt; dir: number }[];
   /** A side in its last stand: its survivors, kept marked in pencil for the rest of the war. */
-  stand?: Pt[];
+  stand?: (Pt & { id: number })[];
   /** A lunger owed another lunge: ringed twice, with what he's owed and how many links. */
   chain?: { at: Pt; link: number };
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
@@ -111,6 +111,8 @@ export const pageState = { epoch: 0, S: 1.6 };
 export const stageStats = { live: 0, air: 0, frames: 0, boil: 0, field: 0, streak: 0 };
 export const field = new PencilLayer();
 export const streak = new PencilLayer();
+/** Each survivor carries one small, cached sprite; marching only changes its CSS placement. */
+export const standRays = new Map<number, PencilLayer>();
 
 export const boil = new BoilLayer();
 /** What the living are feeling (life.ts): the boil draws each soldier in his pose. */
@@ -123,6 +125,7 @@ export interface Els {
   boilHost: HTMLElement;
   fieldHost: HTMLElement;
   streakHost: HTMLElement;
+  raysHost: HTMLElement;
 
   live: HTMLCanvasElement;
   /** Notes: pencil on the same sheet, the theme's blend like the live layer; its own dirty box, hidden when no one's talking. */
@@ -194,6 +197,11 @@ function place(els: Els, f: Frame) {
     }
 
   }
+  for (const layer of standRays.values()) {
+    if (layer.c.parentElement !== els.raysHost) els.raysHost.append(layer.c);
+    const m = cssMatrix(layerMatrix(v, layer.S, layer.ox, layer.oy));
+    if (layer.c.style.transform !== m) layer.c.style.transform = m;
+  }
   const lc = stageCss(v);
   const lk = lc.transform + lc.origin;
   if (lk !== lastCss.live) { els.live.style.transform = lc.transform; els.live.style.transformOrigin = lc.origin; lastCss.live = lk; }
@@ -207,13 +215,21 @@ export function renderStage(els: Els, f: Frame) {
   page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold);
   boil.set(plan, s, pageState.S);
   const road = f.road ?? [];
-  const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road, f.stand, f.chain]);
-  const marks = [...road.map((q) => q.at), ...(f.stand ?? []), ...(f.chain ? [f.chain.at] : [])];
+  const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road, f.chain]);
+  const marks = [...road.map((q) => q.at), ...(f.chain ? [f.chain.at] : [])];
   if (field.draw(key, marks, pageState.S, 42, (g) => {
     for (const q of road) drawRoad(g, q.at, q.dir, 3, s.soldiers.length + Math.round(q.at.x));
-    for (const q of f.stand ?? []) drawRays(g, q, 3, 5 + Math.round(q.x + q.y));
     if (f.chain) drawChain(g, f.chain, 3, new Box());
   })) stageStats.field++;
+  const survivors = new Set((f.stand ?? []).map((q) => q.id));
+  for (const [id, layer] of standRays) if (!survivors.has(id)) { layer.c.remove(); standRays.delete(id); }
+  for (const q of f.stand ?? []) {
+    let layer = standRays.get(q.id);
+    if (!layer) { layer = new PencilLayer(); standRays.set(q.id, layer); }
+    const rayKey = `${theme.id}|${pageState.epoch}|${pageState.S}|${q.id}`;
+    if (layer.draw(rayKey, [{ x: 0, y: 0 }], pageState.S, 42, (g) => drawRays(g, { x: 0, y: 0 }, 3, q.id + 5))) stageStats.field++;
+    layer.ox = q.x - 42; layer.oy = q.y - 42;
+  }
   const mover = f.mover && (f.mover.stretch ?? 1) > 1.04 ? f.mover : undefined;
   const speedKey = JSON.stringify([theme.id, pageState.epoch, pageState.S, mover]);
   if (streak.draw(speedKey, mover ? [mover.at] : [], pageState.S, 80, (g) => {
@@ -262,6 +278,7 @@ export const boilSeen = () => seen;
 
 export function forgetDrawn() {
   field.key = ""; streak.key = "";
+  for (const layer of standRays.values()) layer.key = "";
 
   liveDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   talkDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
