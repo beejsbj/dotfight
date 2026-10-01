@@ -41,7 +41,7 @@ import { orderGames, type GameLine } from "./games";
 import { forgetRoom, listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
 import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
-import { Timeline, reachFraction, walkerAt } from "./timeline";
+import { Timeline, reachFraction, signable, walkerAt } from "./timeline";
 import * as turn from "./turn";
 
 setFeel((ev) => haptic(ev));
@@ -72,6 +72,8 @@ let lastNote = "";
 let gen = 0; // bumps on every new/resumed game so stale callbacks stand down
 let screen: "title" | "game" | "view" | "replay" = "title";
 let viewing: Filed | null = null; // a page out of the drawer
+/** The finale has begun to write the signature (a won page is signed by its finale, not by the winning flick). */
+let signing = false;
 
 // time: T is the game's own clock (ms). `speed` slows or speeds everything, for playtests.
 let T = 0;
@@ -166,7 +168,6 @@ const load = () => readSave(localStorage.getItem("pft:save"));
 /** The paper a page was started on (pages from before themes were Lamplight). */
 const paperOf = (p?: GameState["page"]) => themeOf(p?.theme).id;
 const drawer = () => readDrawer(localStorage.getItem("pft:drawer"));
-
 /**
  * A page that was won but never filed (the app closed between the winning flick
  * and the finale): file it in the drawer and clear the save, as finish() would.
@@ -399,6 +400,7 @@ const learn = (k: string) => localStorage.setItem(`pft:taught:${k}`, "1");
 
 function reset() {
   gen++;
+  signing = false;
   later = later.filter((l) => l.g === ROOM);
   busy = false;
   res = null;
@@ -467,7 +469,7 @@ function resume(v: Save) {
   cam.overview(rotFor(s.current));
   dawn.set(s.phase === "over" ? 1 : 0);
   hud();
-  if (s.phase === "over") { viewBar(); return void after(400, showOver); }
+  if (s.phase === "over") { signing = true; viewBar(); return void after(400, showOver); }
   next();
 }
 
@@ -1274,7 +1276,7 @@ function finish() {
     dawn.go(1, 2600);
     sfx.birds();
   });
-  after(1500, () => { fx.add("sign", T, 0, 1500, "linear"); sfx.stroke(1.2, 0.3, 2800); });
+  after(1500, () => { signing = true; fx.add("sign", T, 0, 1500, "linear"); sfx.stroke(1.2, 0.3, 2800); });
   after(3400, () => { busy = false; if (screen === "game") { viewBar(); showOver(); } });
   void w;
 }
@@ -1700,7 +1702,7 @@ function replayNext() {
   if (screen !== "replay") return;
   const st = replayQueue.shift();
   if (!st) {
-    after(300, () => { dawn.go(1, 1600); sfx.birds(); fx.add("sign", T, 400, 1200, "linear"); });
+    after(300, () => { dawn.go(1, 1600); sfx.birds(); signing = true; fx.add("sign", T, 400, 1200, "linear"); });
     after(2200, () => { if (screen === "replay" && viewing) { screen = "view"; hud(); viewBar(); } });
     return;
   }
@@ -1797,7 +1799,7 @@ function enterRoom(d: RoomSaved) {
   save();
   l.start();
   hud();
-  if (s.phase === "over" && !l.queued) { viewBar(); return void after(400, showOver); }
+  if (s.phase === "over" && !l.queued) { signing = true; viewBar(); return void after(400, showOver); }
   after(300, next);
 }
 
@@ -2727,7 +2729,7 @@ function currentFrame(): Frame {
   }
   const f: Frame = {
     s: pendingState(), pageSource: s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
-    selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
+    selected, ghost, sig: signable(screen, signing) ? signatureFor(s, mode) : undefined, lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
   const bb = heard() && !slow && !boil.tooDear ? bubbles.showing(wall) : null;
   if (bb) {
