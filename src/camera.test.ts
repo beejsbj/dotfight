@@ -44,4 +44,25 @@ describe("aiming turns the page so the shot goes up the screen", () => {
     expect(Math.abs(c.tgt.rot)).toBeLessThan(0.01);
     expect(c.rotRate).toBeUndefined();
   });
+
+  it("returns from the visible pose when a fast sweep's target crosses pi", () => {
+    const c = cam();
+    c.cur.rot = 1;
+    c.tgt.rot = Math.PI + 0.2;
+    c.face(0);
+    expect(c.tgt.rot).toBe(0);
+    expect(Math.abs(c.tgt.rot - c.cur.rot)).toBeLessThan(Math.PI);
+  });
+
+  it("snaps only the return rotation for reduced motion", () => {
+    const c = cam();
+    c.cur.rot = 1.4;
+    c.tgt.rot = 1.8;
+    c.tgt.m = 2.1;
+    c.face(0, true);
+    expect(c.cur.rot).toBe(c.tgt.rot);
+    expect(c.cur.rot).toBe(0);
+    expect(c.cur.m).toBe(1);
+    expect(c.tgt.m).toBe(2.1);
+  });
 });

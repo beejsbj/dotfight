@@ -112,10 +112,11 @@ export class Camera {
     this.rotRate = rate;
   }
   /** Back to facing `rot` (the player's own way up), eased the short way. */
-  face(rot: number) {
+  face(rot: number, snap = false) {
     const TAU = Math.PI * 2;
-    this.tgt.rot = rot + Math.round((this.tgt.rot - rot) / TAU) * TAU;
+    this.tgt.rot = rot + Math.round((this.cur.rot - rot) / TAU) * TAU;
     this.rotRate = undefined;
+    if (snap) this.cur.rot = this.tgt.rot;
   }
   snap() {
     this.cur = { ...this.tgt };

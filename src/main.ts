@@ -591,7 +591,7 @@ const turnK = () => (Math.PI * 2) / Math.max(200, cam.W - TURN_DEAD * 2);
 /** Straight up the screen for this player, as a world angle. */
 const forwardAngle = () => -(Math.PI / 2 + rotFor(s.current));
 /** Nothing is being aimed: the page goes back to facing its player. */
-function faceForward() { cam.face(rotFor(s.current)); }
+function faceForward() { cam.face(rotFor(s.current), reduced); }
 
 // Lean in low to the pen to aim. Everything else is watched from above.
 function sitOn(p: Pt, fy = AIM_FY) {
@@ -1698,7 +1698,7 @@ function leanedIn(id: number | undefined) {
 function standUp() {
   selected = undefined;
   motion.lower();
-  cam.face(rotFor(s.current));
+  faceForward();
   cam.overview();
   dirty = true;
   acts();
