@@ -32,7 +32,7 @@ import * as voice from "./voice";
 import { Bubbles, bubbleAt, type BubbleKind, type Mood } from "./bubble";
 import { feel } from "./feel";
 import { UNIT_CAM, facing, phaseAt, rotFacing } from "./unitcam";
-import { boil, boilSeen, boilTick, forgetDrawn, life, NOTE, noteSpotNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
+import { boil, boilSeen, boilTick, field, forgetDrawn, life, NOTE, noteSpotNow, page, pageState, stageStats, renderOverlay, renderStage, worldTransform, type Els, type Frame } from "./scene";
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
 import { listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
@@ -128,7 +128,7 @@ let arrowTo: Pt | null = null; // the pencil end of a send being drawn
 
 const $ = <T extends HTMLElement>(q: string) => document.querySelector(q) as T;
 const els: Els = {
-  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), live: $<HTMLCanvasElement>("#live"), talk: $<HTMLCanvasElement>("#talk"),
+  desk: $<HTMLCanvasElement>("#desk"), pageHost: $("#page-host"), boilHost: $("#boil-host"), fieldHost: $("#field-host"), live: $<HTMLCanvasElement>("#live"), talk: $<HTMLCanvasElement>("#talk"),
   light: $<HTMLCanvasElement>("#light"), haze: $<HTMLCanvasElement>("#haze"),
 };
 const over = $<HTMLCanvasElement>("#over");
@@ -353,6 +353,9 @@ function reset() {
   unit = null;
   penLift = null;
   lastPull = null;
+  momentQ.length = 0;
+  earnedBy = null;
+  bubbles.reset();
   // a different page is about to be on the desk: draw it even if nothing moves
   dirty = true;
 }
@@ -737,7 +740,10 @@ function announce(kind: BubbleKind, id: number, text: string, delay = 120, mood:
 function flushMoments() {
   while (momentQ.length && wall >= momentQ[0].since && (cam.settled || wall - momentQ[0].since > 1500)) {
     const m = momentQ.shift()!;
-    if (!heard() || !s.soldiers[m.id]?.alive) continue;
+    if (!heard()) continue;
+    const speaker = s.soldiers[m.id];
+    if (!speaker) continue;
+    if (!speaker.alive && m.kind === "stand") m.id = turn.aliveOf(s, speaker.owner)[0]?.id ?? m.id;
     if (bubbles.moment(m.kind, m.id, wall, Math.floor(seeded(s.seed, s.turn, m.id, m.kind.length, m.text.length) * 2 ** 31), m.text, m.mood)) dirty = true;
   }
 }
@@ -2266,8 +2272,13 @@ function currentFrame(): Frame {
     s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
     selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
-  const bb = heard() ? bubbles.showing(wall) : null, bs = bb && bubbleAt(bb, wall, reduced), bx = bb && s.soldiers[bb.id];
-  if (bb && bs && bx?.alive) { f.hud = { h: H, top: cam.top, bottom: cam.bottom }; f.bubble = { text: bb.text, mood: bb.mood, at: bx, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: bx.owner }; }
+  const bb = heard() ? bubbles.showing(wall) : null, bs = bb && bubbleAt(bb, wall, reduced);
+  let bx = bb && s.soldiers[bb.id];
+  if (bb?.important && bx && !bx.alive && bb.kind === "stand") {
+    const survivor = turn.aliveOf(s, bx.owner)[0];
+    if (survivor) { bb.id = survivor.id; bx = survivor; }
+  }
+  if (bb && bs && bx && (bx.alive || bb.important)) { f.hud = { h: H, top: cam.top, bottom: cam.bottom }; f.bubble = { text: bb.text, mood: bb.mood, at: bx, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: bx.owner }; }
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
   if (ghost) {
@@ -2304,10 +2315,15 @@ function currentFrame(): Frame {
       f.sendArrow = { from, to: arrowTo, ok: w !== undefined && w !== sending.from && !canSend(c0, sending.from, w, 1) };
     }
   }
-  if (c0 && c0.phase === "play" && !res && (screen === "game" || screen === "replay" || screen === "view")) {
+  if (c0 && c0.phase === "play" && (!res || it >= res.dur) && (screen === "game" || screen === "replay" || screen === "view")) {
     // a side in its last stand keeps its survivors marked; a lunger owed another lunge is ringed with his link count
     const held = ([0, 1] as Player[]).filter((p) => c0.stand[p] > 0);
-    if (held.length) f.stand = c0.soldiers.filter((x) => x.alive && held.includes(x.owner)).map((x) => ({ x: x.x, y: x.y }));
+    if (held.length) f.stand = c0.soldiers.filter((x) => x.alive && held.includes(x.owner)).map((x) => {
+      const w = lapse?.walkers.find((w) => w.id === x.id);
+      if (!w) return { x: x.x, y: x.y };
+      const p = Math.min(1, Math.max(0.001, (T - lapse!.t0) / lapse!.dur));
+      return { x: w.from.x + (w.to.x - w.from.x) * p, y: w.from.y + (w.to.y - w.from.y) * p };
+    });
     const owed = c0.chain && c0.soldiers[c0.chain.soldier];
     if (owed?.alive) f.chain = { at: owed, link: c0.chain!.link };
   }
@@ -2475,7 +2491,7 @@ if (import.meta.env.DEV) {
      * frame: per layer, how many pixels differ by more than antialiasing, and where.
      */
     redrawCheck: () => {
-      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, rings: boil.parts[0].c, rest: boil.parts[1].c };
+      const layers: Record<string, HTMLCanvasElement> = { over, live: els.live, talk: els.talk, field: field.c, rings: boil.parts[0].c, rest: boil.parts[1].c };
       const grab = () => Object.fromEntries(Object.entries(layers).map(([k, c]) => [k, c.width && c.height && c.style.visibility !== "hidden" ? c.getContext("2d")!.getImageData(0, 0, c.width, c.height) : null]));
       renderNow();
       const a = grab();

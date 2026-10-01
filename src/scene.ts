@@ -94,7 +94,7 @@ export interface Frame {
 
 export const page = new PageLayer();
 export const pageState = { epoch: 0, S: 1.6 };
-export const stageStats = { live: 0, air: 0, frames: 0, boil: 0 };
+export const stageStats = { live: 0, air: 0, frames: 0, boil: 0, field: 0 };
 export const boil = new BoilLayer();
 /** What the living are feeling (life.ts): the boil draws each soldier in his pose. */
 export const life = new Life();
@@ -104,6 +104,7 @@ export interface Els {
   desk: HTMLCanvasElement;
   pageHost: HTMLElement;
   boilHost: HTMLElement;
+  fieldHost: HTMLElement;
   live: HTMLCanvasElement;
   /** Notes: pencil on the same sheet, the theme's blend like the live layer; its own dirty box, hidden when no one's talking. */
   talk: HTMLCanvasElement;
@@ -128,7 +129,7 @@ class Box {
   get empty() { return this.x0 > this.x1; }
 }
 
-let lastCss = { desk: "", page: "", live: "", talk: "", boil: ["", ""] };
+let lastCss = { field: "", desk: "", page: "", live: "", talk: "", boil: ["", ""] };
 let liveDirty: { x: number; y: number; w: number; h: number } | null = null;
 let talkDirty: { x: number; y: number; w: number; h: number } | null = null;
 let airKey = "";
@@ -164,6 +165,12 @@ function place(els: Els, f: Frame) {
     const bm = cssMatrix(layerMatrix(v, page.S, p.ox, p.oy));
     if (bm !== lastCss.boil[i]) { b.style.transform = bm; lastCss.boil[i] = bm; }
   });
+  if (field.c.parentElement !== els.fieldHost) { els.fieldHost.replaceChildren(field.c); lastCss.field = ""; }
+  field.c.style.visibility = field.empty ? "hidden" : "";
+  if (!field.empty) {
+    const fm = cssMatrix(layerMatrix(v, field.S, field.ox, field.oy));
+    if (fm !== lastCss.field) { field.c.style.transform = fm; lastCss.field = fm; }
+  }
   const lc = stageCss(v);
   const lk = lc.transform + lc.origin;
   if (lk !== lastCss.live) { els.live.style.transform = lc.transform; els.live.style.transformOrigin = lc.origin; lastCss.live = lk; }
@@ -176,6 +183,7 @@ export function renderStage(els: Els, f: Frame) {
   const plan = boilPlan(f, ink);
   page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold);
   boil.set(plan, s, pageState.S);
+  field.draw(f);
   place(els, f);
   seen = onScreen(f);
   bold = f.boil?.bold ?? 0;
@@ -217,6 +225,7 @@ function onScreen(f: Frame) {
 export const boilSeen = () => seen;
 
 export function forgetDrawn() {
+  field.key = "";
   liveDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   talkDirty = { x: 0, y: 0, w: 1e6, h: 1e6 };
   inked = { x: 0, y: 0, w: 1e6, h: 1e6 };
@@ -385,8 +394,6 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
     for (const k of f.keepOut) { pencilHatchRing(g, k.x, k.y, k.r, px); box.add(k.x, k.y, k.r + 6); }
   }
   for (const q of f.road ?? []) { drawRoad(g, q.at, q.dir, px, s.soldiers.length + Math.round(q.at.x)); box.add(q.at.x, q.at.y, 34); }
-  for (const q of f.stand ?? []) { drawRays(g, q, px, 5 + Math.round(q.x + q.y)); box.add(q.x, q.y, 36); }
-  if (f.chain) { drawChain(g, f.chain, px, box); }
   if (f.hint) for (const b of f.hint.bases) { pencilLoop(g, b.x, b.y, b.r + 12, 900 + b.id * 17, Math.max(1.6, px * 1.1), f.hint.p, 0.75); box.add(b.x, b.y, b.r + 24); }
   if (f.selected !== undefined && !f.aim && !f.mover) {
     const x = s.soldiers[f.selected];
@@ -427,6 +434,31 @@ function drawRoad(g: Ctx, at: Pt, dir: number, px: number, seed: number) {
     pencilLine(g, { x: cx - ux * s + uy * s, y: cy - uy * s - ux * s }, { x: cx, y: cy }, w, seed + 50 + d, false);
   }
 }
+
+/** Persistent field marks have their own cropped page-space canvas. Camera and
+ * pen frames only place it; it is rasterized when its marks or paper change. */
+export const field = {
+  c: document.createElement("canvas"), key: "", empty: true, S: 1, ox: 0, oy: 0,
+  draw(f: Frame) {
+    const pts = [...(f.stand ?? []), ...(f.chain ? [f.chain.at] : [])];
+    const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, f.stand, f.chain]);
+    if (key === this.key) return;
+    this.key = key;
+    this.empty = !pts.length;
+    if (this.empty) return;
+    this.S = pageState.S;
+    this.ox = Math.floor(Math.min(...pts.map((p) => p.x)) - 42);
+    this.oy = Math.floor(Math.min(...pts.map((p) => p.y)) - 42);
+    this.c.width = Math.ceil((Math.max(...pts.map((p) => p.x)) + 42 - this.ox) * this.S);
+    this.c.height = Math.ceil((Math.max(...pts.map((p) => p.y)) + 42 - this.oy) * this.S);
+    this.c.style.width = `${this.c.width}px`; this.c.style.height = `${this.c.height}px`;
+    const g = this.c.getContext("2d")!;
+    g.setTransform(this.S, 0, 0, this.S, -this.ox * this.S, -this.oy * this.S);
+    for (const q of f.stand ?? []) drawRays(g, q, 1, 5 + Math.round(q.x + q.y));
+    if (f.chain) drawChain(g, f.chain, 1, new Box());
+    stageStats.field++;
+  },
+};
 
 /** The last few: short pencil rays all round each one, the way a kid draws something shining, or shouting. */
 function drawRays(g: Ctx, at: Pt, px: number, seed: number) {
