@@ -2423,7 +2423,7 @@ function up(e: PointerEvent) {
     }
     aim = null;
     // a fired shot keeps the page turned its way until the ink lands (fire() turns it back); anything else faces forward now
-    if (!res) faceForward();
+    if (!res && !unit) faceForward();
     sfx.creak(0);
     g = { t: "none" };
     acts();
