@@ -1172,6 +1172,7 @@ function stepResolve() {
 function resolvePen(r: Resolve, it: number): PenPose | undefined {
   if (!r.pen) return undefined;
   const p = Math.min(1, it / r.dur);
+  const e = 1 - Math.pow(1 - p, 2);
   const h = resolveHead(r, it);
   const ink = inkLeft(r.owner);
   if (it < r.dur) {
