@@ -41,6 +41,8 @@ export class Camera {
   tiltScale = 1;
   /** Slow devices: every move settles in fewer frames. */
   quick = 1;
+  /** Reduced motion: a move lands at once, with no easing (zoom, slide, page turn). */
+  cut = false;
   cur: Pose = { x: RULES.pageW / 2, y: RULES.pageH / 2, m: 1, rot: 0, tilt: 0, fy: 0.5 };
   tgt: Pose = { ...this.cur };
   /** How fast the page's turn catches up (per second); unset = the easy default. Aiming sets a snappier one. */
@@ -164,6 +166,12 @@ export class Camera {
       return false;
     }
     const s = dt / 1000;
+    if (this.cut) {
+      this.cur = { ...this.tgt };
+      this.shakeT += dt;
+      this.shakeAmp *= Math.exp(-s * 14);
+      return true;
+    }
     const k = (r: number) => 1 - Math.exp(-r * this.quick * s);
     const a = this.cur, b = this.tgt;
     a.x += (b.x - a.x) * k(RATE.pos);

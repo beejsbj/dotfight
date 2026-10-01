@@ -77,6 +77,12 @@ export default async function (T, out) {
   const camps = (await felt(T)).filter((f) => f.ev === "settle").length;
   if (camps !== 3) fail(`expected a settle for each of our 3 camps, felt ${camps}`);
 
+  // the Core rules stop to arrange the camps before the first turn: take them as drawn
+  await T.wait(() => window.pft.s.phase === "position", undefined, 60000);
+  await idle(T, 60000);
+  await page.click("[data-act=ready]");
+  await T.wait(() => window.pft.s.phase === "play", undefined, 60000);
+
   let seq = null, tries = 0;
   while (!seq && tries < 8) {
     await idle(T, 60000);
@@ -95,19 +101,32 @@ export default async function (T, out) {
     });
     const mark = (await felt(T)).length;
     const marks = (await T.state()).marks;
-    await page.evaluate(() => document.querySelector('#kind [data-kind="shoot"]')?.click());
+    await page.evaluate(() => document.querySelector('#kind [data-kind="snipe"]')?.click());
     const a = await T.world(pick.me.x, pick.me.y);
     await T.tap(a.x, a.y, 40);
     await T.wait(() => window.pft.cam.settled, undefined, 5000);
-    const b = await T.world(pick.me.x, pick.me.y), t = await T.world(pick.them.x, pick.them.y);
-    const ang = Math.atan2(t.y - b.y, t.x - b.x);
-    // pull back through every detent to full, hold until the hand shakes, ease to a soft shot, let go
-    const sx = 195, sy = 700, at = (px) => [sx - Math.cos(ang) * px, sy - Math.sin(ang) * px];
+    // The thumb does two things (main.ts updateAim): sliding sideways turns the page to the aim,
+    // pulling straight down sets the power. Turn to the nearest enemy, then pull through every
+    // detent to the game's own full pull (FEEL.maxPullPx, so a retuned rule can't leave this short
+    // of the last one), hold until the hand shakes, and ease to a soft shot that still reaches him.
+    const plan = await page.evaluate(({ me, them, d }) => {
+      const { FEEL, cam, s } = window.pft;
+      const TAU = Math.PI * 2, fwd = -Math.PI / 2; // bot war: our page is never turned
+      let delta = Math.atan2(them.y - me.y, them.x - me.x) - fwd;
+      delta -= TAU * Math.round(delta / TAU);
+      const eff = delta / (TAU / Math.max(200, cam.W - 16));
+      const { min, max, curve } = s.rules.reach;
+      const power = Math.pow(Math.min(1, Math.max(0, (d + 80 - min) / (max - min))), 1 / curve);
+      return { dx: eff + Math.sign(eff || 1) * 8, full: FEEL.maxPullPx, soft: FEEL.minPullPx + Math.max(0.2, power) * (FEEL.maxPullPx - FEEL.minPullPx) };
+    }, pick);
+    const sx = 195, sy = 480; // room below to pull the full distance on a 390x844 phone
     await T.touch("touchStart", [[sx, sy]]);
     await page.waitForTimeout(60);
-    for (let i = 1; i <= 16; i++) { await T.touch("touchMove", [at(i * 10)]); await page.waitForTimeout(60); }
+    for (let i = 1; i <= 6; i++) { await T.touch("touchMove", [[sx + (plan.dx * i) / 6, sy]]); await page.waitForTimeout(30); }
+    const at = (px) => [sx + plan.dx, sy + px];
+    for (let i = 1; i <= 16; i++) { await T.touch("touchMove", [at((i * plan.full) / 16)]); await page.waitForTimeout(60); }
     await page.waitForTimeout(700);
-    for (let i = 1; i <= 8; i++) { await T.touch("touchMove", [at(160 - i * 16)]); await page.waitForTimeout(20); }
+    for (let i = 1; i <= 8; i++) { await T.touch("touchMove", [at(plan.full - (i * (plan.full - plan.soft)) / 8)]); await page.waitForTimeout(20); }
     await T.touch("touchEnd", []);
     await T.wait(() => !window.pft.res, undefined, 15000);
     const s = await page.evaluate((n) => window.pft.s.marks.slice(n).filter((m) => m.t === "cross" && m.kind === "kill").length, marks);
@@ -140,7 +159,8 @@ export default async function (T, out) {
   // the knock lands with the cross being drawn, well after the release
   const flickT = seq.felt[idx("flick")].t;
   if (kills[0].t - flickT < 100) fail(`the first knock came ${kills[0].t - flickT}ms after release: before the ink could reach anyone`);
-  if (evs.at(-1) !== "land" && evs.at(-1) !== "over" && evs.at(-1) !== "turn") fail(`the line's end wasn't felt: ${evs.join(" ")}`);
+  // the line ends on its landing, or (a kill) on the camp's cheer that follows the last cross
+  if (!["land", "over", "turn", "cheer"].includes(evs.at(-1))) fail(`the line's end wasn't felt: ${evs.join(" ")}`);
   // nothing ever closer together than the gate allows, unless it outranks
   const gaps = seq.felt.slice(1).map((f, i) => f.t - seq.felt[i].t);
   console.log(`ok: ${seq.kills} kill(s), ${notches.length} notches, gaps ${gaps.join(",")}ms`);

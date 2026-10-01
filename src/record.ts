@@ -137,6 +137,16 @@ export function readSave(raw: string | null): Save | null {
   }
 }
 
+/**
+ * A save whose war is already over (the app was closed between the winning flick
+ * and the finale that files it): the page goes into the drawer and the save is
+ * cleared, as the finale would have. Anything still being played is left alone.
+ */
+export function settleSave(saved: Save | null, drawer: Filed[], at = Date.now()): { drawer: Filed[]; save: Save | null; filed: boolean } {
+  if (!saved || saved.s.phase !== "over") return { drawer, save: saved, filed: false };
+  return { drawer: addToDrawer(drawer, file(saved.s, saved.mode, at)), save: null, filed: true };
+}
+
 /** The drawer keeps the most recent pages, newest first, one copy of each. */
 export function addToDrawer(drawer: Filed[], r: Filed, cap = 40): Filed[] {
   const same = (a: Filed) => a.seed === r.seed && a.page?.no === r.page?.no;

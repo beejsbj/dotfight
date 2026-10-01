@@ -73,3 +73,11 @@ export function walkerAt(from: { x: number; y: number }, to: { x: number; y: num
     y: from.y + (to.y - from.y) * e - Math.abs(Math.sin(p * Math.PI * 7)) * 2.5 * (1 - p),
   };
 }
+
+/**
+ * May a won page's signature be on the page yet? Not while a war is being played
+ * or replayed until its finale starts writing it: the state turns "over" with the
+ * winning flick, long before the morning, and the page must not sign itself then.
+ * A page just looked at (drawer, kept) is signed already.
+ */
+export const signable = (screen: string, begun: boolean) => begun || (screen !== "game" && screen !== "replay");

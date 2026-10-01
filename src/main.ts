@@ -23,7 +23,7 @@ import { LIFT_MS, SETTLE_MS, leaning, lift, PEN, settle, shiver, type PenPose } 
 import { gunPull, tip, type Pose as Held } from "./motion";
 import * as motion from "./motion-input";
 import { screenDirToWorld } from "./projection";
-import { addToDrawer, apply, blank, file, readDrawer, readSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
+import { addToDrawer, apply, blank, file, readDrawer, readSave, settleSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
 import { CUSTOM, FEEL, RULES, SIZES, type Size } from "./rules";
 import { boldAt, lifeOf } from "./boil";
@@ -41,7 +41,7 @@ import { orderGames, type GameLine } from "./games";
 import { forgetRoom, listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
 import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
-import { Timeline, reachFraction, walkerAt } from "./timeline";
+import { Timeline, reachFraction, signable, walkerAt } from "./timeline";
 import * as turn from "./turn";
 
 setFeel((ev) => haptic(ev));
@@ -72,6 +72,8 @@ let lastNote = "";
 let gen = 0; // bumps on every new/resumed game so stale callbacks stand down
 let screen: "title" | "game" | "view" | "replay" = "title";
 let viewing: Filed | null = null; // a page out of the drawer
+/** The finale has begun to write the signature (a won page is signed by its finale, not by the winning flick). */
+let signing = false;
 
 // time: T is the game's own clock (ms). `speed` slows or speeds everything, for playtests.
 let T = 0;
@@ -166,6 +168,17 @@ const load = () => readSave(localStorage.getItem("pft:save"));
 /** The paper a page was started on (pages from before themes were Lamplight). */
 const paperOf = (p?: GameState["page"]) => themeOf(p?.theme).id;
 const drawer = () => readDrawer(localStorage.getItem("pft:drawer"));
+/**
+ * A page that was won but never filed (the app closed between the winning flick
+ * and the finale): file it in the drawer and clear the save, as finish() would.
+ * Run before the cover reads the save, so it is never stranded.
+ */
+function fileFinishedSave() {
+  const out = settleSave(load(), drawer());
+  if (!out.filed) return;
+  localStorage.setItem("pft:drawer", JSON.stringify(out.drawer));
+  localStorage.removeItem("pft:save");
+}
 
 // --- layout -----------------------------------------------------------------
 
@@ -212,6 +225,7 @@ const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 /** The pen's and a moving man's own motion (LIFE.pen, the ride's smear): not with reduced motion. */
 const lively = () => !reduced && !slow && !boil.tooDear;
 function applyTilt() { cam.tiltScale = settings.tilt && !reduced ? 1 : 0; }
+cam.cut = reduced; // reduced motion: the camera cuts, it doesn't swoop, zoom or spin
 applyTilt();
 
 // The line boil (boil.ts): the living are drawn over and over. Not with reduced
@@ -389,6 +403,7 @@ const learn = (k: string) => localStorage.setItem(`pft:taught:${k}`, "1");
 
 function reset() {
   gen++;
+  signing = false;
   later = later.filter((l) => l.g === ROOM);
   busy = false;
   res = null;
@@ -457,7 +472,7 @@ function resume(v: Save) {
   cam.overview(rotFor(s.current));
   dawn.set(s.phase === "over" ? 1 : 0);
   hud();
-  if (s.phase === "over") { viewBar(); return void after(400, showOver); }
+  if (s.phase === "over") { signing = true; viewBar(); return void after(400, showOver); }
   next();
 }
 
@@ -1264,7 +1279,7 @@ function finish() {
     dawn.go(1, 2600);
     sfx.birds();
   });
-  after(1500, () => { fx.add("sign", T, 0, 1500, "linear"); sfx.stroke(1.2, 0.3, 2800); });
+  after(1500, () => { signing = true; fx.add("sign", T, 0, 1500, "linear"); sfx.stroke(1.2, 0.3, 2800); });
   after(3400, () => { busy = false; if (screen === "game") { viewBar(); showOver(); } });
   void w;
 }
@@ -1321,6 +1336,7 @@ function showTitle() {
 
 // The slip tucked in the cover, and the page on the desk under it.
 function coverMenu() {
+  fileFinishedSave();
   const saved = load();
   const d = drawer();
   titleDesk(saved);
@@ -1689,7 +1705,7 @@ function replayNext() {
   if (screen !== "replay") return;
   const st = replayQueue.shift();
   if (!st) {
-    after(300, () => { dawn.go(1, 1600); sfx.birds(); fx.add("sign", T, 400, 1200, "linear"); });
+    after(300, () => { dawn.go(1, 1600); sfx.birds(); signing = true; fx.add("sign", T, 400, 1200, "linear"); });
     after(2200, () => { if (screen === "replay" && viewing) { screen = "view"; hud(); viewBar(); } });
     return;
   }
@@ -1786,7 +1802,7 @@ function enterRoom(d: RoomSaved) {
   save();
   l.start();
   hud();
-  if (s.phase === "over" && !l.queued) { viewBar(); return void after(400, showOver); }
+  if (s.phase === "over" && !l.queued) { signing = true; viewBar(); return void after(400, showOver); }
   after(300, next);
 }
 
@@ -2716,7 +2732,7 @@ function currentFrame(): Frame {
   }
   const f: Frame = {
     s: pendingState(), pageSource: s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
-    selected, ghost, sig: signatureFor(s, mode), lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
+    selected, ghost, sig: signable(screen, signing) ? signatureFor(s, mode) : undefined, lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
   const bb = heard() && !slow && !boil.tooDear ? bubbles.showing(wall) : null;
   if (bb) {
@@ -3006,7 +3022,7 @@ if (import.meta.env.DEV) {
       if (reset) { frameTimes.length = 0; scriptTimes.length = 0; }
       return r;
     },
-    stageStats, boil, life, LIFE, CLARITY, NOTE, standRays, noteSpot: noteSpotNow, noteSpots: noteSpotsNow, set hour(h: number | undefined) { devHour = h; }, set heat(h: number | undefined) { devHeat = h; }, set waitedSince(ms: number) { lastMoveWall = ms; }, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
+    stageStats, boil, life, LIFE, CLARITY, NOTE, FEEL, standRays, noteSpot: noteSpotNow, noteSpots: noteSpotsNow, set hour(h: number | undefined) { devHour = h; }, set heat(h: number | undefined) { devHeat = h; }, set waitedSince(ms: number) { lastMoveWall = ms; }, get boilOn() { return boilOn(); }, set boilOn(v: boolean | undefined) { boilForce = v; dirty = true; },
     set boilClock(ms: number | undefined) { boilClock = ms; },
     /** Frame-exact captures: `pft.hand(true)`, then `pft.step(ms)` moves the game and the boil on together. */
     hand: (on: boolean) => { handClock = on ? { due: 0 } : null; if (on) boilClock ??= wall; else boilClock = undefined; },
