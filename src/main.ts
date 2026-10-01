@@ -2003,7 +2003,7 @@ over.addEventListener("pointercancel", up);
 over.addEventListener("contextmenu", (e) => e.preventDefault());
 over.addEventListener("wheel", (e) => {
   e.preventDefault();
-  if (selected !== undefined && !busy) { aim = null; standUp(); }
+  if (selected !== undefined && !busy) { aim = null; sfx.creak(0); standUp(); }
   if (cam.cur.tilt > 0.02) { cam.tgt = { ...cam.tgt, tilt: 0, fy: cam.fitFy }; cam.cur = { ...cam.cur, tilt: 0, fy: cam.fitFy }; }
   cam.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.002));
   dirty = true;
