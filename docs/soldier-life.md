@@ -50,10 +50,9 @@ When a lunger lands inside an enemy camp while anyone's home, the men inside tur
 
 It's quick: a full camp is done in well under a second (nine jabs: the cross at about 0.8s). An empty ring does nothing. The jabs are a pen's flick, not a mark: they're drawn on the live layer and gone in half a second. `planVolley()` is pure and tested.
 
-**The rule isn't on this branch.** The lunge death lives on the rules-lab branches (on rules/lab-2 the engine reports `o.crashed = <base>` with a "lost" cross), so here the volley plays by hand: `pft.volley(baseId, soldierId)`. `fire()` already holds the call site. When `o.crashed` arrives, the volley starts as he lands, and the engine's own "lost" cross is held back to land on the last jab (the capture used the hand trigger after flicking a man into the middle of a camp). Two things to finish when the rule lands:
+**Core supplies the rule.** The engine reports `o.crashed = <base>` and writes a "lost" cross. `fire()` starts the volley as the lunger lands and delays that cross until the last jab; its resolution callback supplies the impact sound and lunge-death cue. `lifeOf` and the boil keep the victim visible until the cross starts, separately from the dot riding his line. `pft.volley(baseId, soldierId)` remains a manual dev trigger for captures; it stamps its own cross and supplies its own cross sound.
 
-- `lifeOf` should keep him standing, at the end of his line, until that cross lands.
-- The pen, falling flat at the end of his line, lies over the camp for the first jabs. Lifting it sooner on a crash would clear the view.
+The optional volley is skipped with reduced motion, on slow devices, when the boil exceeds its budget, or with `LIFE.crowd` off. Core's lost cross, impact sound and game cues retain their normal schedule in those cases. When a volley plays, its haptic is checked at the scheduled landing time and felt only for a local player's soldier.
 
 ### Why these, in this order
 

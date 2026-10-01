@@ -574,6 +574,7 @@ function perform(a: Action, then: () => void) {
   const before = c0.soldiers.map((x) => ({ x: x.x, y: x.y }));
   const first = c0.marks.length;
   const o = act(c0, a);
+  if (a.t === "stop") streak = { who: -1, turn: -1, kind: "", n: 0, last: undefined };
   save();
   if (a.t === "send") { sfx.scratch(0.4, 0.3, 1800); cue("send", a.n); }
   holdLapse(o, before, first);
@@ -836,6 +837,13 @@ function displayedAt(id: number): Pt {
   return walkerAt(w.from, w.to, p);
 }
 
+/** Future offers wait for the display camera; immediate offers need a visible anchor. */
+function noteOnScreen(p: Pt, t0 = wall) {
+  if (t0 > wall) return true;
+  const q = cam.toScreen(p.x, p.y);
+  return q.x >= 20 && q.x <= W - 20 && q.y >= 60 && q.y <= H - 120;
+}
+
 /** Offer a line from a man or camp; `mate` is a nearby comrade who replies. */
 function speak(kind: BubbleKind, id: number, t0 = wall, seed?: number, mate?: number) {
   if (!heard() || slow || boil.tooDear || !LIFE.bubbles) return;
@@ -843,8 +851,7 @@ function speak(kind: BubbleKind, id: number, t0 = wall, seed?: number, mate?: nu
   const at = base ? s.bases[id] : s.soldiers[id];
   if (!at || (!base && !(at as Soldier).alive)) return;
   const pos = base ? at : displayedAt(id);
-  const p = cam.toScreen(pos.x, pos.y);
-  if (p.x < 20 || p.x > W - 20 || p.y < 60 || p.y > H - 120) return; // off screen, or under the HUD
+  if (!noteOnScreen(pos, t0)) return; // off screen, or under the HUD when offered now
   const b = bubbles.offer(kind, id, t0, seed ?? Math.floor(seeded(s.seed, s.turn, id, kind.length) * 2 ** 31), noteContext(at.owner), mate);
   if (b) {
     if (kind === "send") b.at = { x: pos.x, y: pos.y };
@@ -871,7 +878,7 @@ function countStreak(o: Outcome, f: Flick, who: Player) {
  * The page reacts to a streak `n` links long (from 2), at wall `t0`: the
  * streaker, the enemy man nearest him, his home camp, or the camp nearest him
  * he's tearing through; picked by a seeded roll, not the one who spoke last,
- * and only someone on screen. It goes up now, rubbing out whatever's there.
+ * and only someone on screen when displayed. It rubs out whatever's there.
  */
 function speakStreak(n: number, id: number, t0: number, seed: number, only?: StreakKind) {
   if (!heard() || slow || boil.tooDear || n < 2) return null;
@@ -879,7 +886,7 @@ function speakStreak(n: number, id: number, t0: number, seed: number, only?: Str
   if (!me) return null;
   const foe = other(me.owner);
   const d = (p: Pt) => Math.hypot(p.x - me.x, p.y - me.y);
-  const onScreen = (p: Pt) => { const q = cam.toScreen(p.x, p.y); return q.x >= 20 && q.x <= W - 20 && q.y >= 60 && q.y <= H - 120; };
+  const onScreen = (p: Pt) => noteOnScreen(p, t0);
   const who = (k: StreakKind): number | undefined => {
     if (k === "streakMe") return me.alive ? id : undefined;
     if (k === "streakFoe") return turn.aliveOf(s, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
@@ -903,7 +910,7 @@ function speakStreak(n: number, id: number, t0: number, seed: number, only?: Str
  * A botch on the page: the shooter's miss, graded (bubble.ts botchOf) and
  * remarked on by the flicker, his own camp, or the enemy man or camp nearest
  * where the ink ended; not the voice that remarked last, only someone on
- * screen, and only if nothing's up (a streak's line comes first). A
+ * screen when displayed, and only if nothing's up (a streak's line comes first). A
  * spectacular one is remembered for a sly callback on the other side's go.
  */
 let botchLast: BotchKind | undefined;
@@ -915,7 +922,7 @@ function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number
   if (!only && seeded(seed, 17) >= BUBBLE.botch.chance[Math.min(2, grade)]) return null;
   const foe = other(me.owner);
   const d = (p: Pt) => Math.hypot(p.x - end.x, p.y - end.y);
-  const onScreen = (p: Pt) => { const q = cam.toScreen(p.x, p.y); return q.x >= 20 && q.x <= W - 20 && q.y >= 60 && q.y <= H - 120; };
+  const onScreen = (p: Pt) => noteOnScreen(p, t0);
   const who = (k: BotchKind): number | undefined => {
     if (k === "botchMe") return me.alive ? id : undefined;
     if (k === "botchCamp") return campOf(id);
@@ -1090,10 +1097,10 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number) 
  * in a ripple round the ring, and he's crossed out. `at`: wall ms he lands.
  * `stamp`: the rules haven't crossed him out, so draw it (the dev hook; with
  * the lunge rule the engine's own cross is held back to land on the last jab).
- * Returns the plan, or null for an empty ring.
+ * Returns the plan, or null for an empty ring or disabled optional motion.
  */
 function startVolley(base: number, target: { id: number; x: number; y: number }, at = wall, stamp = true) {
-  if (!LIFE.crowd) return null;
+  if (!LIFE.crowd || !lively()) return null;
   const plan = planVolley(s, base, target);
   if (!plan) return null;
   volley = { plan, t0: at, stamp };
@@ -1103,7 +1110,7 @@ function startVolley(base: number, target: { id: number; x: number; y: number },
   if (heard()) {
     const lead = Math.max(0, at - wall);
     for (const c of voice.curate(plan.cues, target.id * 17 + base)) voice.say(c.say as voice.Say, c.id, s.soldiers[c.id].owner, (lead + c.at) / 1000, c.gain);
-    after(lead * speed, () => feel("volley"));
+    after(lead * speed, () => { if (heard() && !away(s.soldiers[target.id].owner)) feel("volley"); });
     if (stamp) after((lead + plan.cross) * speed, () => { sfx.snag(false); sfx.cross(0.02, 1); });
     speak("deny", base, at + plan.cross + 260);
   }
@@ -2633,17 +2640,17 @@ function currentFrame(): Frame {
     f.heat = noteContext(s.current).heat;
     const bs = bubbleAt(bb, wall, reduced);
     if (bs) {
-      if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
+      if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k && (bb.important || noteOnScreen(k))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
       else {
         let x = s.soldiers[bb.id];
         if (bb.important && bb.kind === "stand" && x && !x.alive) {
           const next = turn.aliveOf(s, x.owner)[0];
           if (next) { bb.id = next.id; x = next; }
         }
-        if (x && (x.alive || bb.important)) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: bb.at ?? x, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && s.soldiers[bb.reply.id] }; }
+        if (x && (x.alive || bb.important) && (bb.important || noteOnScreen(bb.at ?? x))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "man", at: bb.at ?? x, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: x.owner, with: bb.reply && s.soldiers[bb.reply.id] }; }
     }
     const rs = replyAt(bb, wall, reduced), rx = bb.reply && s.soldiers[bb.reply.id];
-    if (rs && rx?.alive) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rx, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: s.soldiers[bb.id], answers: `${bb.seed}|${bb.text}` };
+    if (rs && rx?.alive && noteOnScreen(rx)) f.reply = { text: bb.reply!.text, mood: bb.reply!.mood, anchor: "man", at: rx, p: rs.p, e: rs.e, side: bb.side, seed: bb.reply!.seed, owner: rx.owner, with: s.soldiers[bb.id], answers: `${bb.seed}|${bb.text}` };
   }
 
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
