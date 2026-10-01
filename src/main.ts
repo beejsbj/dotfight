@@ -118,7 +118,7 @@ let unit: { id: number; t0: number; back: Pose; skip?: number; greeted?: boolean
  * A volley (life.planVolley): a camp turning on an intruder. `t0`: wall ms he
  * landed. `stamp`: draw his cross here, when the rules haven't marked him dead.
  */
-let volley: { plan: VolleyPlan; t0: number; stamp: boolean } | null = null;
+let volley: { plan: VolleyPlan; t0: number; stamp: boolean; ended?: boolean } | null = null;
 /** The last pull on a man that wasn't let go (he looks down it in the unit cam). */
 let lastPull: { id: number; angle: number } | null = null;
 
@@ -2591,6 +2591,11 @@ function frame(now: number) {
   }
   if (motion.gun) { stepGun(); active = true; }
   wall = boilClock ?? now;
+  if (volley && !volley.ended && wall - volley.t0 >= volley.plan.ends) {
+    volley.ended = true;
+    if (!volley.stamp) volley = null; // the actual rule cross is already on the page
+    dirty = true; // erase the final jab pixels once; dev stamps remain permanent
+  }
   const bo = boilOn();
   if (bo !== boilWas) { boilWas = bo; dirty = true; }
   // A callback belongs to the next go; expire an unwritten queued line with it.
@@ -2823,7 +2828,7 @@ function currentFrame(): Frame {
   }
   if (volley) {
     const v = volley, e = wall - v.t0;
-    if (LIFE.crowd && lively()) f.jabs = v.plan.jabs.map((j) => ({
+    if (LIFE.crowd && lively() && e < v.plan.ends) f.jabs = v.plan.jabs.map((j) => ({
       pts: j.pts, owner: j.owner, seed: j.seed,
       p: Math.max(0, Math.min(1, (e - j.at) / j.dur)),
       alpha: Math.max(0, Math.min(1, 1 - (e - j.at - j.dur) / VOLLEY.fade)),
