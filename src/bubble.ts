@@ -524,6 +524,7 @@ export class Bubbles {
         const T = BUBBLE.timing[m], from = Math.max(t0, at + T.writeMs + 120);
         return Math.min(hold, from - at - (T.showMs - T.eraseMs));
       };
+      if (cur.reply && cur.reply.t0 > t0) cur.reply = undefined;
       cur.hold = cut(cur.mood, cur.t0, cur.hold ?? 0);
       if (cur.reply) cur.reply.hold = cut(cur.reply.mood, cur.reply.t0, cur.reply.hold);
       b.t0 = Math.max(t0, cur.t0 + showOf(cur));

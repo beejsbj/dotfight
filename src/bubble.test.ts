@@ -312,3 +312,23 @@ it("reset clears mandatory moments and a streak cannot interrupt one", () => {
   expect(b.pending).toHaveLength(0);
   expect(b.showing(10000)).toBeNull();
 });
+
+it.each([-1, 0, 50])("urgent notes interrupt exchanges at reply begin %i ms", (offset) => {
+  let seed = 0;
+  while (!lineFor("chat", seed, ctx).reply) seed++;
+  const bubbles = new Bubbles();
+  const cur = bubbles.offer("chat", 1, 1000, seed, ctx, 2)!;
+  const reply = cur.reply!;
+  const at = reply.t0 + offset;
+  const urgent = bubbles.urgent("streakMe", 3, at, 5, { ...ctx, streak: 3 })!;
+  expect(urgent.t0).toBe(cur.t0 + showOf(cur));
+  if (offset < 0) {
+    expect(cur.reply).toBeUndefined();
+    expect(replyAt(cur, reply.t0 + 50)).toBeNull();
+    expect(urgent.t0).toBe(at + BUBBLE.timing[cur.mood].eraseMs);
+  } else {
+    expect(cur.reply).toBe(reply);
+    expect(replyAt(cur, reply.t0 + 50)).not.toBeNull();
+    expect(urgent.t0).toBeGreaterThanOrEqual(reply.t0 + BUBBLE.timing[reply.mood].writeMs + 120 + BUBBLE.timing[reply.mood].eraseMs);
+  }
+});
