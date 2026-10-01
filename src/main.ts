@@ -715,7 +715,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     },
   };
   // straight back up to a bird's-eye view to watch the ink land
-  if (opts.cam ?? true) cam.overview();
+  if (opts.cam ?? true) { cam.face(rotFor(who), reduced); cam.overview(); }
   sfx.slip(power);
   sfx.stroke(dur / 1000 / speed + 0.05, f.kind === "snipe" ? 0.6 : 0.45);
   hud();
@@ -1983,7 +1983,7 @@ function up(e: PointerEvent) {
       standUp(); // tap on empty paper puts the pen down
     } else if (tapped) raiseGun();
     aim = null;
-    faceForward();
+    if (!res) faceForward();
     sfx.creak(0);
     g = { t: "none" };
     acts();

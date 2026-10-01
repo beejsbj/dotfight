@@ -13,6 +13,12 @@ const wrap = (a) => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
 export default async function (T, out) {
   const { page } = T;
   page.setDefaultTimeout(120000);
+  const handoff = process.env.HANDOFF === "1";
+  if (handoff) {
+    await page.evaluate(() => localStorage.setItem("pft:handoff", "1"));
+    await page.reload();
+    await page.waitForFunction(() => !!window.pft);
+  }
   await page.evaluate(() => {
     const r = window.pft.fileWar(7, 6);
     r.mode = { kind: "pnp" };
@@ -102,6 +108,11 @@ export default async function (T, out) {
   const done = await read();
   check(done.marks > before.marks && done.busy, "let go: the flick fired", `marks ${before.marks} -> ${done.marks}`);
   await page.evaluate(() => { window.pft.speed = 1; });
+  if (handoff) {
+    await page.waitForSelector(".handoff-tap");
+    check(await page.locator(".handoff-tap").isVisible(), "a fired turn still pauses for the next player");
+    await page.click(".handoff-tap");
+  }
   await idle(T);
   const rot = await page.evaluate(() => window.pft.cam.tgt.rot);
   console.log(`page turn after the hand-over: ${deg(rot)}`);
