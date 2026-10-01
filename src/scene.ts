@@ -11,6 +11,7 @@
 // pen lives on the untilted overlay. A camera move therefore costs a few
 // style writes and a couple of hundred pixels of gradient, not a repaint.
 
+import { inscribedBounds } from "./note-bounds";
 import { walkerAt } from "./timeline";
 import { BoilLayer, planBoil, type Plan } from "./boil";
 import type { Anchor, Mood } from "./bubble";
@@ -490,14 +491,10 @@ function noteBounds(f: Frame): { x0: number; y0: number; x1: number; y1: number 
   if (!hud) return B;
   // the part of the screen clear of the HUD, in page units
   const l = HUD_INSET, r = f.sw - HUD_INSET, t = hud.top + HUD_INSET, bt = hud.h - hud.bottom - HUD_INSET;
-  const pts = [[l, t], [r, t], [l, bt], [r, bt]].map(([x, y]) => unproject(v, x, y));
+  const pts = [[l, t], [r, t], [r, bt], [l, bt]].map(([x, y]) => unproject(v, x, y));
   if (pts.some((p) => !p) || bt - t < 60) return B;
-  const xs = pts.map((p) => p!.x), ys = pts.map((p) => p!.y);
-  // a turned screen is a diamond on the page: shrink to the box it certainly holds
-  const q = 1 + Math.abs(Math.sin(2 * v.rot)) * 0.35;
-  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-  const hw = (Math.max(...xs) - Math.min(...xs)) / 2 / q, hh = (Math.max(...ys) - Math.min(...ys)) / 2 / q;
-  return { x0: Math.max(B.x0, cx - hw), x1: Math.min(B.x1, cx + hw), y0: Math.max(B.y0, cy - hh), y1: Math.min(B.y1, cy + hh) };
+  const visible = inscribedBounds(pts.map((p) => p!));
+  return { x0: Math.max(B.x0, visible.x0), x1: Math.min(B.x1, visible.x1), y0: Math.max(B.y0, visible.y0), y1: Math.min(B.y1, visible.y1) };
 }
 
 /** A polyline with points at least `d` apart (a flick's line is a few hundred points and nearly straight). */

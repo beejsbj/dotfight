@@ -589,6 +589,8 @@ export function planFlick(
   s: GameState,
   o: { path: Pt[]; killed: readonly number[]; lost: boolean; movedTo?: Pt },
   shooter: number, kind: "shoot" | "move", when: (index: number) => number, arrive: number,
+  // Wall ms relative to the flick; only the lost shooter waits for a volley cross.
+  lostDeathAt = arrive,
 ): FlickPlan {
   const plan: FlickPlan = { acts: [], cues: [], hush: [] };
   const me = s.soldiers[shooter];
@@ -633,8 +635,8 @@ export function planFlick(
   }
   // the fallen: his campmates hold still for him, and one of them says so
   const fallen = ps.filter((p) => p.fatal).map((p) => ({ x: s.soldiers[p.id], at: when(p.index) }));
-  // flicked off the page: mourned by the camp he left
-  if (o.lost) fallen.push({ x: { ...me, x: P[0].x, y: P[0].y }, at: arrive });
+  // Lost shooter: mourned by the camp he left when his cross starts.
+  if (o.lost) fallen.push({ x: { ...me, x: P[0].x, y: P[0].y }, at: lostDeathAt });
   let ohs = 0;
   const mourned = new Set<number>();
   for (const f of fallen) {

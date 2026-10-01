@@ -628,7 +628,7 @@ function runLapse(then: () => void) {
     const group = due.walkers.filter((w) => w.departing === !!due.out);
     const w = group[Math.floor(seeded(s.seed, s.turn, 71) * group.length)];
     if (w && due.out) speak("send", w.id);
-    else if (w && due.home) speak("arrive", w.id, wall + dur * speed);
+    else if (w && due.home) speak("arrive", w.id, wall + dur / speed);
   }
   busy = true;
   hud();
@@ -749,7 +749,6 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   }
   snags.sort((a, b) => a.at - b.at);
   const seen = pendingState();
-  feelFlick(o, f, dur, snags, n, seen);
   let volleyHold = 0;
   if (o.crashed !== undefined) {
     // he lands among their men, and they shoot him where he stands: every man
@@ -763,6 +762,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     }
     moments.push({ at: dur + 20 * quick + volleyHold, fn: () => { if (live) { sfx.snag(true); sfx.cross(0.03, 1.1); cam.shake(7); cue("lunge-death", base); } } });
   }
+  feelFlick(o, f, dur, snags, n, seen, volleyHold);
   for (const { i, owner } of stands) {
     const at = dur + Math.max(380 * quick, volleyHold ? volleyHold + VOLLEY.crossMs * speed : 0);
     inkTL.add(`m${i}`, 0, at, 500 * quick);
@@ -1018,10 +1018,10 @@ function skipUnitCam() { if (unit && !unit.rising) unit.skip = T - unit.t0; }
  * clock the boil draws by. Ink time is snagged on each kill; `when` turns a
  * place on the line into the wall ms at which the ink's head gets there.
  */
-function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number, seen: AnyState) {
+function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number, seen: AnyState, volleyHold: number) {
   const when = (i: number) => wallTime(reachFraction(Math.min(n, Math.round(i)), n) * dur, snags) / speed;
   const arrive = wallTime(dur, snags) / speed;
-  const plan = planFlick(seen, o, f.soldier, f.kind === "snipe" ? "shoot" : "move", when, arrive);
+  const plan = planFlick(seen, o, f.soldier, f.kind === "snipe" ? "shoot" : "move", when, arrive, arrive + volleyHold / speed);
   const on = (k: string) => (k === "recoil" || k === "flinch" || k === "gasp" ? LIFE.line : k === "land" ? LIFE.chosen : LIFE.crowd);
   for (const { id, r } of plan.acts) if (on(r.kind)) life.add(id, { ...r, t0: wall + r.t0 });
   if (LIFE.camps) for (const h of plan.hush) life.hold(h.base, wall + h.at, wall + h.at + h.ms);
