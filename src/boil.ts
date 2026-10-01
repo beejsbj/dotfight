@@ -313,7 +313,7 @@ class BoilCanvas {
     // a new paper is new ink: every sprite is drawn again in its pens
     if (theme.id !== this.themeId) { this.forget(() => true); this.themeId = theme.id; this.sig = ""; this.shown = null; }
     if (sig === this.sig && S === this.S) return;
-    const was = S === this.S && this.shown ? new Map(this.things.map((t, i) => [`${t.key}|${+t.boils}`, { t, look: this.shown![i] }])) : null;
+    const was = S === this.S && this.shown ? new Map(this.things.map((t, i) => [`${t.key}|${+t.boils}`, { t, look: this.shown![i], pose: this.poses[i], drawn: this.drawn[i] }])) : null;
     const geometry = [this.ox, this.oy, this.c.width, this.c.height].join();
     if (S !== this.S) this.forget(() => true);
     this.sig = sig;
@@ -385,6 +385,9 @@ class BoilCanvas {
       // the canvas stays: what carries on keeps its look, what's new is drawn,
       // and what's gone (a man killed, a camp emptied) is cleared
       this.shown = things.map((t) => was.get(`${t.key}|${+t.boils}`)?.look ?? NaN);
+      // Retained pixels keep their exact pose and dirty bounds across membership changes.
+      this.poses = things.map((t) => was.get(`${t.key}|${+t.boils}`)?.pose);
+      this.drawn = things.map((t) => was.get(`${t.key}|${+t.boils}`)?.drawn);
       const kept = new Set(things.map((t) => `${t.key}|${+t.boils}`));
       for (const [k, { t }] of was) if (!kept.has(k)) this.gone.push([t.x0, t.y0, t.x1, t.y1]);
     } else {
