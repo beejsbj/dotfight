@@ -1367,21 +1367,22 @@ function coverMenu() {
   mark.textContent = d.length ? String(d.length) : "";
   const where = (x: AnyState) => x.phase === "setup" ? "still drawing camps" : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
   const draw = () => {
-    const carry = canResume ? (tearing === "local" ? `
-      <div class="carry tearing">
-        <div class="say"><p class="struck">${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}</p>
-        <p class="ask">tear this page out for good?</p></div>
-        <span class="acts"><button data-a="tear" data-code="local" class="ico rip" aria-label="tear this page out for good">${tearIcon()}</button><button data-a="keep" class="ico" aria-label="keep it">${keepIcon()}</button></span>
-      </div>` : `
+    // "tear it out?" is a bar laid over its row, so asking never moves the rest of the slip
+    const carry = canResume ? `
       <div class="carry">
         <span class="carry-icon">${paperIcon(themeOf(saved!.s.page?.theme).paper, -2)}</span><button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>
-        <button data-a="ask" data-code="local" class="x" aria-label="tear this page out">×</button>
-      </div>`) : "";
+        <button data-a="ask" data-code="local" class="x" aria-label="tear this page out">×</button>${tearing === "local" ? `
+        <div class="tearing">
+          <div class="say"><p class="struck">${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}</p>
+          <p class="ask">tear this page out for good?</p></div>
+          <span class="acts"><button data-a="tear" data-code="local" class="ico rip" aria-label="tear this page out for good">${tearIcon()}</button><button data-a="keep" class="ico" aria-label="keep it">${keepIcon()}</button></span>
+        </div>` : ""}
+      </div>` : "";
     const slip = (rows: number) => `${carry}${friendsList(rows)}
     <h2 class="sect">new game</h2>
     ${sizeRow()}
     <div class="bot">
-      <button data-a="bot" class="ink red">play Dawood-bot<small>${LEVELS[botLevel]}</small></button>
+      <button data-a="bot" class="ink red">play Dawood-bot</button>
       <p class="levels" role="radiogroup" aria-label="How well Dawood-bot flicks">${LEVELS.map((l, i) => `<button data-lvl="${i}" role="radio" aria-checked="${i === botLevel}" aria-label="${l}" class="${i === botLevel ? "on" : ""}">${levelIcon(i as Level)}</button>`).join("")}</p>
     </div>
     <div class="duo">
@@ -1999,21 +2000,23 @@ function friendsList(max: number, drawerList = false) {
     `<span class="acts"><button data-a="tear" data-code="${esc(code)}" class="ico rip" aria-label="${tear}">${tearIcon()}</button><button data-a="keep" class="ico" aria-label="${keep}">${keepIcon()}</button></span>`;
   const row = (g: GameLine) => {
     const r = rooms.get(g.code)!;
-    if (tearing === g.code) return `<li class="game tearing">
-      <div class="say"><p class="struck">${esc(g.foe)}</p>
-      <p class="ask">tear it out of this phone? ${esc(g.foe)} keeps theirs.</p></div>
-      ${acts(g.code, `tear ${esc(g.foe)}'s game out of this phone`, "keep it")}
-    </li>`;
     return `<li class="game ${g.yours ? "yours" : g.running ? "theirs" : "done"}">
       <button data-room="${esc(g.code)}" class="go">${paperIcon(themeOf(r.theme ?? r.setup?.page?.theme).paper, tilt(g.code))}<b>${esc(g.foe)}</b>${g.standing ? `<span>${g.standing}</span>` : ""}${g.turn && g.running ? `<small>turn ${g.turn}</small>` : ""}</button>
-      <button data-a="ask" data-code="${esc(g.code)}" class="x" aria-label="tear ${esc(g.foe)}'s game out of this phone">×</button>
+      <button data-a="ask" data-code="${esc(g.code)}" class="x" aria-label="tear ${esc(g.foe)}'s game out of this phone">×</button>${tearing === g.code ? `
+      <div class="tearing">
+        <div class="say"><p class="struck">${esc(g.foe)}</p>
+        <p class="ask">tear it out of this phone? ${esc(g.foe)} keeps theirs.</p></div>
+        ${acts(g.code, `tear ${esc(g.foe)}'s game out of this phone`, "keep it")}
+      </div>` : ""}
     </li>`;
   };
   if (drawerList) return `<h3>games with friends</h3><ul class="games">${[...running, ...finished].map(row).join("")}</ul>`;
   if (!running.length) return ""; // finished games are in the drawer
   const shown = running.slice(0, max);
   const rest = running.length - shown.length + finished.length;
-  return `<h2 class="sect">games with friends${rest ? `<button data-a="more" class="pencil" aria-label="${rest} more in the drawer">+${rest}</button>` : ""}</h2>
+  // a game waiting on you that didn't fit: the count is circled, like "your go"
+  const waiting = running.slice(shown.length).filter((g) => g.yours).length;
+  return `<h2 class="sect">games with friends${rest ? `<button data-a="more" class="pencil${waiting ? " yours" : ""}" aria-label="${rest} more in the drawer${waiting ? `, ${waiting} of them your go` : ""}">+${rest}</button>` : ""}</h2>
     <ul class="games">${shown.map(row).join("")}</ul>`;
 }
 
