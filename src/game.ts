@@ -8,10 +8,15 @@
 // The June prototype's rules (shoot or move) live on in src/legacy.ts for old
 // saves; `s.v` tells the two apart (1: prototype, 2: core rules).
 //
+// The long war (RULES.md, "Long war rules") is the same reducer with
+// `rules.long` set: shaped bases, and lines that bend, bank and split (see
+// "the long war's ink" below). Every long-war path is behind `rules.long`, so a
+// core game never takes one.
+//
 // (pure, tested)
 
-import { circleHits, dist, flickPath, gauss, pathLen, rng, rotateAbout, type Pt } from "./geom";
-import { CORE, RULES, SIZES, type CoreRules, type Size } from "./rules";
+import { circleHits, dist, flickPath, gauss, insidePoly, pathLen, polygon, rng, rotateAbout, segDist, type Pt } from "./geom";
+import { CORE, RULES, SHAPES, SIZES, type CoreRules, type Shape, type Size } from "./rules";
 
 export { dist, distToPath, flickPath, pathLen, pointAlong, rng, type Pt } from "./geom";
 
@@ -26,6 +31,10 @@ export interface Base {
   y: number;
   r: number;
   seed: number;
+  /** The long war: what shape it was drawn (none: a core game's circle). `r` is then its circumradius. */
+  shape?: Shape;
+  /** A triangle's or hexagon's turn on the page, radians (seeded). */
+  rot?: number;
 }
 
 export interface Soldier {
@@ -72,6 +81,7 @@ export interface Flick {
  *
  * - `base`: setup. The current player draws a base centred here; it is jotted
  *   full of soldiers (seeded). Players alternate until each has drawn theirs.
+ *   In the long war each base names its `shape` (any mix); a core base has none.
  * - `arrange`: positioning. Move one of your soldiers to (x, y): inside his
  *   base or within `rules.positionReach` of its wall. Any number, then `ready`.
  * - `ready`: positioning. Done arranging; the other side arranges (seeing
@@ -83,7 +93,7 @@ export interface Flick {
  * - `stop`: turn down an earned lunge; with none pending, end your turn.
  */
 export type Action =
-  | { t: "base"; x: number; y: number }
+  | { t: "base"; x: number; y: number; shape?: Shape }
   | { t: "arrange"; soldier: number; x: number; y: number }
   | { t: "ready" }
   | ({ t: "flick" } & Flick)
@@ -187,9 +197,12 @@ export function basesLeft(s: GameState, p: Player) {
   return Math.max(0, s.size.bases - s.bases.filter((b) => b.owner === p).length);
 }
 
-export function canPlaceBase(s: GameState, x: number, y: number): string | null {
+/** How big a base of this shape is drawn: its radius (circumradius for a triangle or hexagon). */
+export const radiusOf = (s: GameState, shape?: Shape) => (s.rules.long && shape ? RULES.baseRadius * s.rules.long.shapes[shape].size : RULES.baseRadius);
+
+export function canPlaceBase(s: GameState, x: number, y: number, shape?: Shape): string | null {
   if (s.phase !== "setup") return "not setup";
-  const r = RULES.baseRadius;
+  const r = radiusOf(s, shape);
   if (x - r < RULES.margin + 8 || x + r > RULES.pageW - 16 || y - r < 16 || y + r > RULES.pageH - 16) return "too close to the edge";
   for (const b of s.bases) {
     const gap = b.owner === s.current ? RULES.minBaseGap : RULES.minEnemyBaseGap;
@@ -198,13 +211,18 @@ export function canPlaceBase(s: GameState, x: number, y: number): string | null 
   return null;
 }
 
-function placeBase(s: GameState, x: number, y: number) {
-  const why = canPlaceBase(s, x, y);
+function placeBase(s: GameState, x: number, y: number, shape?: Shape) {
+  const why = canPlaceBase(s, x, y, shape);
   if (why) throw new Error(why);
   const id = s.bases.length;
   const base: Base = { id, owner: s.current, x, y, r: RULES.baseRadius, seed: (s.seed ^ (id * 7919)) >>> 0 };
+  if (s.rules.long && shape) {
+    base.shape = shape;
+    base.r = radiusOf(s, shape);
+    if (shape !== "camp") base.rot = rng(base.seed ^ 0x2545f491)() * 2 * Math.PI;
+  }
   s.bases.push(base);
-  for (const p of scatterIn(base, s.size.soldiers, base.seed)) {
+  for (const p of scatterIn(base, capacity(s, base), base.seed)) {
     s.soldiers.push({ id: s.soldiers.length, owner: base.owner, x: p.x, y: p.y, alive: true, home: id });
   }
   if (basesLeft(s, 0) === 0 && basesLeft(s, 1) === 0) {
@@ -216,12 +234,13 @@ function placeBase(s: GameState, x: number, y: number) {
   }
 }
 
-/** Dots jotted into a circle by hand: spread out, never touching, clear of the wall. */
-export function scatterIn(b: { x: number; y: number; r: number }, n: number, seed: number, avoid: Pt[] = []): Pt[] {
+/** Dots jotted into a base by hand: spread out, never touching, clear of the wall. */
+export function scatterIn(b: { x: number; y: number; r: number; shape?: Shape; rot?: number }, n: number, seed: number, avoid: Pt[] = []): Pt[] {
   const rand = rng(seed);
   const dot = RULES.soldierRadius;
   const pts: Pt[] = [];
   const inner = b.r - dot * 2.2;
+  const vs = corners(b);
   let minD = dot * 3.2;
   let tries = 0;
   while (pts.length < n && tries < 20000) {
@@ -230,10 +249,34 @@ export function scatterIn(b: { x: number; y: number; r: number }, n: number, see
     const a = rand() * Math.PI * 2;
     const d = Math.sqrt(rand()) * inner;
     const p = { x: b.x + Math.cos(a) * d, y: b.y + Math.sin(a) * d };
+    if (vs && !(insidePoly(p, vs) && vs.every((v, i) => segDist(p, v, vs[(i + 1) % vs.length]) >= dot * 2.2))) continue; // a triangle's or hexagon's corners are cut off
     if (pts.every((q) => dist(q, p) >= minD) && avoid.every((q) => dist(q, p) >= minD)) pts.push(p);
   }
   return pts;
 }
+
+// --- shapes -----------------------------------------------------------------
+
+const cornerMemo = new WeakMap<object, Pt[]>();
+
+/** A triangle's or hexagon's corners, in order; null for a circle (a camp, or any core base). */
+export function corners(b: { x: number; y: number; r: number; shape?: Shape; rot?: number }): Pt[] | null {
+  if (b.shape !== "prism" && b.shape !== "cushion") return null;
+  let vs = cornerMemo.get(b);
+  if (!vs) { vs = polygon(b.shape === "prism" ? 3 : 6, b, b.r, b.rot ?? 0); cornerMemo.set(b, vs); }
+  return vs;
+}
+
+/** How far `p` is outside the base's wall (negative: inside). */
+export function wallGap(b: Base, p: Pt) {
+  const vs = corners(b);
+  if (!vs) return dist(b, p) - b.r;
+  const d = Math.min(...vs.map((v, i) => segDist(p, v, vs[(i + 1) % vs.length])));
+  return insidePoly(p, vs) ? -d : d;
+}
+
+/** How many soldiers make this base full: what it was jotted with. */
+export const capacity = (s: GameState, b: Base) => (s.rules.long && b.shape ? s.rules.long.shapes[b.shape].soldiers : s.size.soldiers);
 
 // --- positioning --------------------------------------------------------------
 
@@ -245,9 +288,9 @@ export function canArrange(s: GameState, id: number, x: number, y: number): stri
   const home = s.bases[me.home ?? -1];
   if (!home) return "no home base";
   const p = { x, y };
-  if (dist(home, p) > home.r + s.rules.positionReach) return "too far from his base";
+  if (home.shape ? wallGap(home, p) > s.rules.positionReach : dist(home, p) > home.r + s.rules.positionReach) return "too far from his base";
   if (x < RULES.margin + 8 || x > RULES.pageW - 8 || y < 8 || y > RULES.pageH - 8) return "off the page";
-  for (const b of s.bases) if (b.owner !== me.owner && dist(b, p) <= b.r * 1.1) return "in their base";
+  for (const b of s.bases) if (b.owner !== me.owner && inside(b, p, 1.1)) return "in their base";
   for (const o of s.soldiers) if (o.id !== id && o.alive && dist(o, p) < RULES.soldierRadius * 2.4) return "on top of someone";
   return null;
 }
@@ -261,8 +304,12 @@ export function alive(s: GameState, p: Player) {
 
 const onRoad = (s: GameState, x: Soldier) => x.convoy !== undefined && s.convoys[x.convoy]?.state === "road";
 
-/** Is this point inside the base's wall? Dots drawn on the line count. */
-export const inside = (b: Base, p: Pt, slack = 1.05) => dist(b, p) <= b.r * slack;
+/** Is this point inside the base's wall? Dots drawn on the line count. `slack` scales the wall about its centre. */
+export function inside(b: Base, p: Pt, slack = 1.05) {
+  const vs = corners(b);
+  if (!vs) return dist(b, p) <= b.r * slack;
+  return insidePoly({ x: b.x + (p.x - b.x) / slack, y: b.y + (p.y - b.y) / slack }, vs);
+}
 
 /** The base's own living soldiers standing inside its wall (not out on a road). */
 export function garrison(s: GameState, b: Base) {
@@ -274,8 +321,8 @@ export const isRing = (s: GameState, b: Base) => garrison(s, b).length === 0;
 
 /** The soldiers a send from this base can take: its own men in it or just outside (positioning), not already sent, not owing a lunge. */
 export function sendable(s: GameState, b: Base) {
-  const reach = b.r + s.rules.positionReach + 1;
-  return s.soldiers.filter((x) => x.alive && x.owner === b.owner && x.convoy === undefined && s.chain?.soldier !== x.id && dist(b, x) <= reach);
+  const near = (x: Soldier) => (b.shape ? wallGap(b, x) <= s.rules.positionReach + 1 : dist(b, x) <= b.r + s.rules.positionReach + 1);
+  return s.soldiers.filter((x) => x.alive && x.owner === b.owner && x.convoy === undefined && s.chain?.soldier !== x.id && near(x));
 }
 
 /**
@@ -289,7 +336,7 @@ export function wallStrength(s: GameState, b: Base, gone?: Set<number>, but?: nu
   if (!G) return 1;
   let n = 0;
   for (const x of garrison(s, b)) if (x.id !== but && !gone?.has(x.id)) n++;
-  return Math.pow(Math.min(1, n / Math.max(1, s.size.soldiers)), G.curve);
+  return Math.pow(Math.min(1, n / Math.max(1, capacity(s, b))), G.curve);
 }
 
 /** What crossing this wall costs a line now: a snipe's share of length lost, or a lunger's jolt (radians, 1 sd). */
@@ -510,7 +557,7 @@ export function act(s: GameState, a: Action): Outcome {
   const seed = markSeed(s);
   s.actions.push(structuredClone(a));
   switch (a.t) {
-    case "base": placeBase(s, a.x, a.y); return { ...empty(), again: false };
+    case "base": placeBase(s, a.x, a.y, a.shape); return { ...empty(), again: false };
     case "arrange": { const x = s.soldiers[a.soldier]; x.x = a.x; x.y = a.y; return empty(); }
     case "ready": {
       s.ready[s.current] = true;
@@ -534,7 +581,9 @@ export function act(s: GameState, a: Action): Outcome {
 /** Why an action can't be applied now, or null if it can. */
 export function illegal(s: GameState, a: Action): string | null {
   switch (a.t) {
-    case "base": return canPlaceBase(s, a.x, a.y);
+    case "base":
+      if (s.rules.long ? !SHAPES.includes(a.shape!) : a.shape !== undefined) return s.rules.long ? "pick a shape" : "no shapes in a quick battle";
+      return canPlaceBase(s, a.x, a.y, a.shape);
     case "arrange": return canArrange(s, a.soldier, a.x, a.y);
     case "ready": return s.phase === "position" ? null : "not positioning";
     case "flick": {

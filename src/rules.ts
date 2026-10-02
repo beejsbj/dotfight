@@ -6,7 +6,10 @@
 // - CORE: the core rules (Quick battle, RULES.md). A new game copies these
 //   numbers into its own state, so tuning them later never changes how an
 //   older page replays.
-// - SIZES: the Quick battle sizes.
+// - LONG: the long war's rules (RULES.md, "Long war rules"): CORE plus a
+//   `long` block. Every long-war behaviour hangs off `rules.long`, so a core
+//   game (where it's null) never meets any of it.
+// - SIZES: the Quick battle sizes, and the long war's.
 
 export const RULES = {
   // The page, in world units. A tall pocket-notebook page, to suit a phone.
@@ -108,6 +111,8 @@ export const CORE = {
    * snipe and jolting a lunger 1 rad (1 sd).
    */
   garrison: { snipeLoss: [0.03, 0.85], lungeShake: [0.02, 1.0], curve: 1 } as Garrison | null,
+  /** The long war's rules (`LONG`); null in a core game, and in every record made before the long war. */
+  long: null as Long | null,
 };
 
 /** How a wall's toughness follows its garrison (see `CORE.garrison`). */
@@ -122,16 +127,71 @@ export interface Garrison {
 
 export type CoreRules = typeof CORE;
 
+/** A long war base's shape: a circle (camp), a triangle (prism), a hexagon (cushion). */
+export type Shape = "camp" | "prism" | "cushion";
+export const SHAPES: readonly Shape[] = ["camp", "prism", "cushion"];
+
+/** The long war's numbers (RULES.md, "Long war rules"). All (to test): lab guesses, for round 5 to tune. */
+export interface Long {
+  /** Bumped when a long-war rule's *logic* changes. */
+  version: number;
+  /** Per shape: soldiers jotted in it (also what "full" means for its wall), and its size as a multiple of `RULES.baseRadius` (circumradius for polygons). */
+  shapes: Record<Shape, { soldiers: number; size: number }>;
+  /**
+   * A camp's gravity well. Outside the wall and within `reach` × its radius, a
+   * line turns toward the camp by `pull` × g × w × sin(off) radians a unit, where
+   * g is its garrison over a full camp (at least `floor`: an empty ring's dent in
+   * the paper), w falls from 1 at the wall to 0 at reach as a square, and off is
+   * the angle between the line and the camp's centre. No line turns more than
+   * `maxTurn` in all from wells.
+   */
+  well: { pull: number; reach: number; floor: number; maxTurn: number };
+  /** Your snipe leaving your own prism splits: the halves turn ± `spread` radians. `ownFree`: your own prism's walls cost your lines nothing. */
+  prism: { spread: number; ownFree: boolean };
+  /** A line coming at a cushion's wall more than `glance` radians off square banks off it; at most `maxBanks` a line. */
+  cushion: { glance: number; maxBanks: number };
+  /**
+   * Old ink. Crossing a line steeper than `groove` radians jolts the heading by
+   * `jolt` (1 sd), at most `joltMax` times a line. Within `groove` of parallel and
+   * `grooveReach` units, the pen is pulled into the line's groove (at most
+   * `groovePull` a unit, less the faster it's going); riding it spends
+   * `grooveOwn` (your ink) or `grooveEnemy` (theirs) of the line's length a unit.
+   * Ink within `clear` of where a line starts doesn't count.
+   */
+  ink: { jolt: number; joltMax: number; groove: number; grooveReach: number; groovePull: number; grooveOwn: number; grooveEnemy: number; clear: number };
+  /** How far a convoy walks along its road at each hand-over of the pen. */
+  sendPace: number;
+}
+
+/**
+ * The long war: the core rules, plus shaped bases, wells, grooves and long
+ * roads. Round 2 of the rules lab measured the shapes, ink and pace on its own
+ * engine; the well is new.
+ */
+export const LONG: CoreRules = {
+  ...CORE,
+  long: {
+    version: 1,
+    shapes: { camp: { soldiers: 12, size: 1 }, prism: { soldiers: 6, size: 1.35 }, cushion: { soldiers: 8, size: 1.1 } },
+    well: { pull: 0.004, reach: 3.5, floor: 0.12, maxTurn: 1.2 },
+    prism: { spread: 0.2, ownFree: true },
+    cushion: { glance: 0.6, maxBanks: 3 },
+    ink: { jolt: 0.03, joltMax: 1, groove: 0.12, grooveReach: 12, groovePull: 0.02, grooveOwn: 0.7, grooveEnemy: 1.4, clear: 14 },
+    sendPace: 150,
+  },
+};
+
 /**
  * A game's rule numbers from a saved record, room or save: today's CORE fills
- * any number it lacks, except `garrison`. A record without it was played
- * before garrisoned walls and keeps its flat walls.
+ * any number it lacks, except `garrison` and `long`. A record without
+ * `garrison` was played before garrisoned walls and keeps its flat walls; one
+ * without `long` is a core game.
  */
-export const savedRules = (r: Partial<CoreRules>): CoreRules => ({ ...CORE, ...r, garrison: r.garrison ?? null });
+export const savedRules = (r: Partial<CoreRules>): CoreRules => ({ ...CORE, ...r, garrison: r.garrison ?? null, long: r.long ?? null });
 
-/** A Quick battle's size: bases a side and soldiers in each. */
+/** A war's size: bases a side and soldiers in each (in the long war, each base's shape says how many). */
 export interface Size {
-  name: "quick" | "classic" | "custom";
+  name: "quick" | "classic" | "custom" | "long";
   bases: number;
   soldiers: number;
 }
@@ -141,6 +201,8 @@ export const SIZES = {
   quick: { name: "quick", bases: 3, soldiers: 8 },
   /** Dawood's own. */
   classic: { name: "classic", bases: 5, soldiers: 10 },
+  /** The long war: five shaped bases a side (to test: "bigger armies" is undecided). `soldiers` is a camp's. */
+  long: { name: "long", bases: 5, soldiers: 12 },
 } as const satisfies Record<string, Size>;
 
 /** What Custom lets you pick. */

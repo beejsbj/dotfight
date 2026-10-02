@@ -83,3 +83,50 @@ export function circleHits(a: Pt, b: Pt, c: Pt, r: number, lo = 1e-7): number[] 
   for (const t of [(-B - sq) / (2 * A), (-B + sq) / (2 * A)]) if (t > lo && t <= 1) out.push(t);
   return out;
 }
+
+/** A regular polygon: `n` corners on circumradius `r` round `c`, the first at angle `rot`. */
+export function polygon(n: number, c: Pt, r: number, rot = 0): Pt[] {
+  return Array.from({ length: n }, (_, i) => {
+    const a = rot + (2 * Math.PI * i) / n;
+    return { x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) };
+  });
+}
+
+/** Is `p` inside the convex polygon (corners in order)? Points on an edge count. */
+export function insidePoly(p: Pt, verts: Pt[]): boolean {
+  let sign = 0;
+  for (let i = 0; i < verts.length; i++) {
+    const a = verts[i], b = verts[(i + 1) % verts.length];
+    const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    if (Math.abs(cross) < 1e-9) continue;
+    const s = cross > 0 ? 1 : -1;
+    if (sign && s !== sign) return false;
+    sign = s;
+  }
+  return true;
+}
+
+/** Where segment a→b crosses the polygon's edges, as params in (lo, 1], ascending. A corner counts once (for the edge that starts there). */
+export function polyHits(a: Pt, b: Pt, verts: Pt[], lo = 1e-7): { t: number; edge: number }[] {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const out: { t: number; edge: number }[] = [];
+  for (let i = 0; i < verts.length; i++) {
+    const p = verts[i], q = verts[(i + 1) % verts.length];
+    const ex = q.x - p.x, ey = q.y - p.y;
+    const det = dx * ey - dy * ex;
+    if (Math.abs(det) < 1e-12) continue;
+    const px = p.x - a.x, py = p.y - a.y;
+    const t = (px * ey - py * ex) / det;
+    const u = (px * dy - py * dx) / det;
+    if (t > lo && t <= 1 && u >= 0 && u < 1) out.push({ t, edge: i });
+  }
+  return out.sort((m, n) => m.t - n.t);
+}
+
+/** Distance from `p` to segment a–b. */
+export function segDist(p: Pt, a: Pt, b: Pt) {
+  const vx = b.x - a.x, vy = b.y - a.y;
+  const l2 = vx * vx + vy * vy || 1;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / l2));
+  return Math.hypot(p.x - (a.x + vx * t), p.y - (a.y + vy * t));
+}
