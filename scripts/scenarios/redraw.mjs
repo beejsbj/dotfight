@@ -3,7 +3,7 @@
 // full redraw of the same frame, pixel for pixel apart from antialiasing.
 // It sweeps the aim back and forth (the phone bug: stale pencil streaks were
 // left beside the camps) and checks between moves. Exits non-zero on a mismatch.
-//   node scripts/playtest.mjs redraw <url> <outdir>      (SEED, TURNS)
+//   node scripts/playtest.mjs redraw <url> <outdir>      (SEED, TURNS, SIZE: quick, classic or long)
 import { idle } from "../lib/phone.mjs";
 
 export default async function (T, out) {
@@ -12,13 +12,13 @@ export default async function (T, out) {
   // one paper, not whichever the load drew: THEME=<id> (lamplight by default)
   await page.evaluate((id) => window.pft.theme?.apply(id), process.env.THEME ?? "lamplight");
   await page.waitForTimeout(1000);
-  await page.evaluate(({ seed, turns }) => {
+  await page.evaluate(({ seed, turns, size }) => {
     window.pft.slow = false;
     window.pft.boilOn = true;
-    const r = window.pft.fileWar(seed, turns);
+    const r = window.pft.fileWar(seed, turns, size);
     r.mode = { kind: "pnp" };
     window.pft.resumeRecord(r);
-  }, { seed: +(process.env.SEED ?? 7), turns: +(process.env.TURNS ?? 6) });
+  }, { seed: +(process.env.SEED ?? 7), turns: +(process.env.TURNS ?? 6), size: process.env.SIZE ?? "quick" });
   await idle(T);
   await page.waitForFunction(() => window.pft.boil?.settled !== false, undefined, { timeout: 30000 });
   const fails = [];
