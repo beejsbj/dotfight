@@ -326,14 +326,19 @@ function canSendAny(c0: GameState) {
 // downward pull left after a real pull, the ring firms up (and ticks): let go
 // and the aim is dropped, nothing fired. One small fixed DOM element in screen
 // space, so no page or canvas layer is touched. How hard you're pulling shows
-// in the pen itself: its refill fills with the pull (pen.ts, `charge`).
+// in the pen itself: its refill fills with the pull (pen.ts, `charge`). The
+// ring is in the side's ink, and once the thumb has pulled away an arrow runs
+// from it back up to the ring, labelled, so where to go to stop is never lost.
 let ringOn = false; // the thumb is inside the ring
+/** The arrow back to the ring: px clear of the ring, px left for the fingertip, shortest worth drawing, and where its label flips sides. */
+const BACK_GAP = 4, BACK_FINGER = 26, BACK_MIN = 28, BACK_FLIP = 150;
 let markOn = false;
 let thumbX = 0; // where the thumb is across the screen
 const ringEl = document.createElement("div");
 ringEl.id = "cancel-ring";
 ringEl.hidden = true;
-ringEl.innerHTML = "<i></i>";
+ringEl.innerHTML = `<i></i><b class="back"><span>back here to stop</span></b>`;
+const backEl = ringEl.querySelector<HTMLElement>(".back")!;
 document.body.append(ringEl);
 function syncRing() {
   const shown = !!aim && g.t === "aim";
@@ -342,6 +347,11 @@ function syncRing() {
     ringEl.style.transform = `translate(${thumbX - r}px, ${g.sy - r}px)`;
     ringEl.style.width = ringEl.style.height = `${r * 2}px`;
     (ringEl.firstElementChild as HTMLElement).style.transform = `translate(${g.sx - thumbX}px, 0)`; // the dot stays where the thumb began
+    // the arrow back: from just above the fingertip up to the ring's edge
+    const len = byThumb.dist - r - BACK_GAP - BACK_FINGER;
+    backEl.style.height = `${Math.max(0, len)}px`;
+    backEl.classList.toggle("on", len > BACK_MIN);
+    backEl.classList.toggle("flip", thumbX < BACK_FLIP); // near the left edge, the label goes on the right
   }
   if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
   const on = shown && !!aim && aim.charged && !pull(aim).live;

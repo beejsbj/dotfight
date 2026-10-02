@@ -414,16 +414,34 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .handoff-tap { all: unset; display: block; width: 100%; cursor: pointer; }
 
 #field-host canvas, #streak-host canvas, #rays-host canvas { position: fixed; display: block; transform-origin: 0 0; mix-blend-mode: var(--live-blend); will-change: transform; }
-/* the start mark: where the pull began, with the dead zone faint round it; firms up when the thumb is back inside */
+/* the start mark: where the pull began, in the side's ink with a paper halo, the dead zone round it; firms up when the thumb is back inside */
 #cancel-ring {
   position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; box-sizing: border-box;
-  border: 2px dashed rgba(var(--desk-rgb), .6); border-radius: 48% 52% 46% 54% / 54% 46% 52% 48%;
-  filter: drop-shadow(0 0 1px rgba(0, 0, 0, .7)); /* plain over the paper and the pen alike */
+  border: 3px dashed var(--ink); border-radius: 48% 52% 46% 54% / 54% 46% 52% 48%;
+  box-shadow: 0 0 0 2px rgba(var(--desk-rgb), .55), inset 0 0 0 2px rgba(var(--desk-rgb), .55);
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, .6)); /* plain over the paper, the pen and the dark desk alike */
   transition: border-color .12s, background-color .12s;
 }
 #cancel-ring i {
-  position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%;
-  background: rgba(var(--desk-rgb), .85);
+  position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%;
+  background: var(--ink); box-shadow: 0 0 0 1.5px rgba(var(--desk-rgb), .85);
 }
-#cancel-ring.in { border-style: solid; border-color: rgba(var(--desk-rgb), .95); background: rgba(var(--desk-rgb), .16); }
+#cancel-ring.in { border-style: solid; background: color-mix(in srgb, var(--ink) 28%, transparent); }
+/* the arrow back to the ring, from just above the fingertip, labelled; height set from script */
+#cancel-ring .back {
+  position: absolute; left: 50%; top: calc(100% + 4px); width: 3px; margin-left: -1.5px; display: none;
+  background: var(--ink); border-radius: 2px; box-shadow: 0 0 0 1.5px rgba(var(--desk-rgb), .55);
+}
+#cancel-ring .back.on { display: block; }
+#cancel-ring .back::before {
+  content: ""; position: absolute; left: 50%; top: -2px; width: 11px; height: 11px; margin-left: -5.5px;
+  border-left: 3px solid var(--ink); border-top: 3px solid var(--ink); transform: rotate(45deg); transform-origin: center;
+}
+#cancel-ring .back span {
+  position: absolute; right: 12px; top: 6px; transform: rotate(-4deg); white-space: nowrap;
+  font-family: var(--hand); font-weight: 700; font-size: 18px; line-height: 1; color: rgb(var(--desk-rgb));
+  padding: 3px 8px 4px; border-radius: 9px; background: rgba(20, 16, 12, .78); border: 1.5px solid var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+}
+#cancel-ring .back.flip span { right: auto; left: 12px; transform: rotate(4deg); }
+#cancel-ring.in .back { display: none; }
 #cancel-ring[hidden] { display: none; }
