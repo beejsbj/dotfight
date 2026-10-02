@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { act, canArrange, capacity, corners, illegal, inside, newGame, wallGap, wallStrength, type Base, type GameState, type Player } from "./game";
-import { insidePoly, polyHits, polygon } from "./geom";
+import { act, canArrange, capacity, corners, illegal, inside, newGame, preview, scatterIn, trace, wallGap, wallStrength, type Base, type Flick, type GameState, type Player } from "./game";
+import { dist, insidePoly, pathLen, polyHits, polygon, type Pt } from "./geom";
 import { LONG, RULES, SIZES, type Shape } from "./rules";
 
 const L = LONG.long!;
@@ -86,5 +86,165 @@ describe("long war setup", () => {
     s.current = 1;
     const foe = man(s, 1, 500, 400, 1);
     expect(canArrange(s, foe, 500, 400 + 30)).toBeNull();
+  });
+});
+
+/** Fill a base with its own men, as jotted. */
+function fill(s: GameState, base: number, n = capacity(s, s.bases[base])) {
+  const b = s.bases[base];
+  for (const p of scatterIn(b, n, 77 + base)) man(s, b.owner, p.x, p.y, base);
+}
+
+const shot = (soldier: number, angle: number, length: number, kind: Flick["kind"] = "snipe", wob = 1): Flick => ({ soldier, kind, angle, length, bend: 0, wob });
+const heading = (pts: Pt[]) => { const a = pts[pts.length - 2], b = pts[pts.length - 1]; return Math.atan2(b.y - a.y, b.x - a.x); };
+const stroke = (s: GameState, owner: Player, pts: Pt[]) => s.marks.push({ t: "stroke", kind: "snipe", owner, pts, seed: 1, turn: 0 });
+
+describe("a camp's well", () => {
+  // a snipe along y = 1000, passing 110 units above a camp's centre (48 outside its wall)
+  const page = (men: number) => {
+    const s = field([["camp", 1, 500, 1110]]);
+    fill(s, 0, men);
+    return { s, me: man(s, 0, 150, 1000) };
+  };
+
+  it("bends a passing line toward the camp, harder the fuller it is", () => {
+    const full = page(12), thin = page(4), empty = page(0);
+    const bend = ({ s, me }: { s: GameState; me: number }) => heading(trace(s, shot(me, 0, 700)).pts);
+    expect(bend(full)).toBeGreaterThan(bend(thin));
+    expect(bend(thin)).toBeGreaterThan(bend(empty));
+    expect(bend(empty)).toBeGreaterThan(0); // an empty ring keeps the dent in the paper
+    expect(bend(full)).toBeLessThan(LONG.long!.well.maxTurn + 1e-9);
+  });
+
+  it("never turns a line more than maxTurn in all", () => {
+    const { s, me } = page(12);
+    s.rules.long!.well.pull = 1;
+    const tr = trace(s, shot(me, 0, 1100));
+    expect(Math.abs(heading(tr.pts))).toBeLessThanOrEqual(LONG.long!.well.maxTurn + 1e-9);
+  });
+
+  it("doesn't pull a line still leaving its own camp, nor one inside a camp's wall", () => {
+    const s = field([["camp", 0, 500, 1000]]);
+    const me = man(s, 0, 500, 1000, 0);
+    fill(s, 0);
+    const tr = trace(s, shot(me, 0, 300));
+    expect(heading(tr.pts)).toBeCloseTo(0, 9);
+  });
+});
+
+describe("a cushion", () => {
+  // a hexagon at (500, 800) with a flat wall facing +x at x = 500 + r·cos 30°
+  const page = () => {
+    const s = field([["cushion", 1, 500, 800, Math.PI / 6]]);
+    return { s, me: man(s, 0, 800, 800), wallX: 500 + s.bases[0].r * Math.cos(Math.PI / 6) };
+  };
+
+  it("banks a glancing line, and lets a square one in", () => {
+    const { s, me, wallX } = page();
+    // aim at the wall's middle from above-right, 0.9 rad off square
+    const from = { x: 800, y: 800 - (800 - wallX) * Math.tan(0.9) };
+    s.soldiers[me].x = from.x; s.soldiers[me].y = from.y;
+    const g = trace(s, shot(me, Math.PI - 0.9, 600));
+    expect(g.events.map((e) => e.kind)).toEqual(["bank"]);
+    expect(heading(g.pts)).toBeCloseTo(0.9, 6); // mirrored off a vertical wall, heading back out to the right
+    s.soldiers[me].x = 800; s.soldiers[me].y = 800;
+    const sq = trace(s, shot(me, Math.PI, 600));
+    expect(sq.events[0]).toMatchObject({ kind: "wall", base: 0 });
+    expect(sq.pts[sq.pts.length - 1].x).toBeLessThan(500);
+  });
+
+  it("banks at most maxBanks times a line", () => {
+    const { s, me } = page();
+    s.rules.long!.cushion.maxBanks = 0;
+    s.soldiers[me].y = 800 - (800 - (500 + s.bases[0].r * Math.cos(Math.PI / 6))) * Math.tan(0.9);
+    expect(trace(s, shot(me, Math.PI - 0.9, 600)).events.some((e) => e.kind === "bank")).toBe(false);
+  });
+});
+
+describe("a prism", () => {
+  const page = () => {
+    const s = field([["prism", 0, 500, 1300, Math.PI / 2], ["camp", 1, 500, 300]]); // a corner down, a flat side facing up the page
+    const me = man(s, 0, 500, 1300, 0);
+    return { s, me };
+  };
+
+  it("splits your snipe leaving it, and both halves cross out", () => {
+    const { s, me } = page();
+    const first = trace(s, shot(me, -Math.PI / 2, 800));
+    const split = first.events.find((e) => e.kind === "split")!;
+    expect(split).toMatchObject({ base: 0 });
+    expect(first.branches).toHaveLength(1);
+    const sp = LONG.long!.prism.spread;
+    expect(heading(first.pts)).toBeCloseTo(-Math.PI / 2 + sp, 6);
+    expect(heading(first.branches![0])).toBeCloseTo(-Math.PI / 2 - sp, 6);
+    // a man on each half's line
+    const a = man(s, 1, split.at.x + Math.cos(-Math.PI / 2 + sp) * 300, split.at.y + Math.sin(-Math.PI / 2 + sp) * 300);
+    const b = man(s, 1, split.at.x + Math.cos(-Math.PI / 2 - sp) * 300, split.at.y + Math.sin(-Math.PI / 2 - sp) * 300);
+    const o = preview(s, shot(me, -Math.PI / 2, 800));
+    expect(o.killed.sort()).toEqual([a, b].sort());
+    expect(o.branches).toHaveLength(1);
+  });
+
+  it("doesn't split a lunge, or an enemy's line", () => {
+    const { s, me } = page();
+    expect(trace(s, shot(me, -Math.PI / 2, 800, "lunge")).branches).toBeUndefined();
+    s.current = 1;
+    const foe = man(s, 1, 500, 1500);
+    expect(trace(s, shot(foe, -Math.PI / 2, 800)).branches).toBeUndefined();
+  });
+
+  it("files both halves as strokes", () => {
+    const { s, me } = page();
+    act(s, { t: "flick", ...shot(me, -Math.PI / 2, 800) });
+    expect(s.marks.filter((m) => m.t === "stroke")).toHaveLength(2);
+  });
+});
+
+describe("old ink", () => {
+  it("a steep crossing jolts the line, at most joltMax times", () => {
+    const s = field([]);
+    const me = man(s, 0, 150, 1000);
+    stroke(s, 1, [{ x: 400, y: 900 }, { x: 400, y: 1100 }]);
+    stroke(s, 1, [{ x: 600, y: 900 }, { x: 600, y: 1100 }]);
+    const tr = trace(s, shot(me, 0, 700, "snipe", 12345));
+    const jolts = tr.events.filter((e) => e.kind === "ink");
+    expect(jolts).toHaveLength(LONG.long!.ink.joltMax);
+    expect(jolts[0].at.x).toBeCloseTo(400, 6);
+    expect(jolts[0].jolt).not.toBe(0);
+    expect(heading(tr.pts)).toBeCloseTo(jolts[0].jolt!, 9);
+  });
+
+  it("riding your own groove carries a line further; theirs cuts it short", () => {
+    const run = (owner: Player) => {
+      const s = field([]);
+      const me = man(s, 0, 150, 1000);
+      stroke(s, owner, [{ x: 150, y: 1002 }, { x: 1000, y: 1002 }]);
+      return pathLen(trace(s, shot(me, 0, 600)).pts);
+    };
+    const bare = (() => { const s = field([]); return pathLen(trace(s, shot(man(s, 0, 150, 1000), 0, 600)).pts); })();
+    expect(bare).toBeCloseTo(600, 6);
+    expect(run(0)).toBeGreaterThan(bare + 50);
+    expect(run(1)).toBeLessThan(bare - 50);
+  });
+});
+
+describe("long war lines keep the core's walls and kills", () => {
+  it("a snipe through a full enemy camp loses what a core one would", () => {
+    const s = field([["camp", 1, 500, 1000]]);
+    fill(s, 0);
+    const me = man(s, 0, 150, 1000);
+    const tr = trace(s, shot(me, 0, 1000));
+    const wall = tr.events.find((e) => e.kind === "wall")!;
+    expect(wall.cost).toBeCloseTo(LONG.garrison!.snipeLoss[1], 9);
+    expect(tr.hits.length).toBeGreaterThan(0);
+    expect(dist(tr.pts[0], s.soldiers[me])).toBe(0);
+  });
+
+  it("a lunger landing inside a manned enemy triangle is shot", () => {
+    const s = field([["prism", 1, 500, 1000, 0]]);
+    fill(s, 0);
+    const me = man(s, 0, 150, 1000);
+    const o = preview(s, shot(me, 0, 340, "lunge"));
+    expect(o.crashed).toBe(0);
   });
 });

@@ -15,7 +15,8 @@
 //
 // (pure, tested)
 
-import { circleHits, dist, flickPath, gauss, insidePoly, pathLen, polygon, rng, rotateAbout, segDist, type Pt } from "./geom";
+import { circleHits, dist, flickPath, gauss, insidePoly, pathLen, polygon, polyHits, rng, rotateAbout, segDist, type Pt } from "./geom";
+import { inkOf, segT, wrap, type Run } from "./inkgrid";
 import { CORE, RULES, SHAPES, SIZES, type CoreRules, type Shape, type Size } from "./rules";
 
 export { dist, distToPath, flickPath, pathLen, pointAlong, rng, type Pt } from "./geom";
@@ -115,7 +116,8 @@ export interface Convoy {
 
 /** Something that happened along a line, in order. */
 export interface TraceEvent {
-  kind: "wall" | "kill" | "edge";
+  /** The long war adds: `bank` off a cushion, `split` leaving your prism, `ink` crossing an old line. */
+  kind: "wall" | "kill" | "edge" | "bank" | "split" | "ink";
   at: Pt;
   /** Distance along the line. */
   d: number;
@@ -125,13 +127,17 @@ export interface TraceEvent {
   free?: boolean;
   /** A wall's price: the share of a snipe's length it took, or the lunger's shake (radians, 1 sd). */
   cost?: number;
-  /** Radians the lunger's heading turned here. */
+  /** Radians the lunger's heading turned here (in the long war, any line's, at old ink). */
   jolt?: number;
+  /** The long war: which line it happened on (0, or 1 for the half a prism split off). */
+  branch?: number;
 }
 
 /** What an action did. Flick fields are empty for the other actions. */
 export interface Outcome {
   path: Pt[];
+  /** The long war: the other half of a line your prism split. */
+  branches?: Pt[][];
   killed: number[];
   /** A lunger who lived: where he stands now. */
   movedTo?: Pt;
@@ -440,7 +446,8 @@ function edgeParam(a: Pt, b: Pt) {
  * its length at each wall and each kill, so it falls short; a lunger's
  * heading jolts instead (seeded by `wob`), turning the rest of his line.
  */
-export function trace(s: GameState, f: Flick): { pts: Pt[]; events: TraceEvent[]; hits: number[]; offPage: boolean } {
+export function trace(s: GameState, f: Flick): Trace {
+  if (s.rules.long) return traceLong(s, f);
   const R = s.rules;
   const me = s.soldiers[f.soldier];
   const snipe = f.kind === "snipe";
@@ -525,12 +532,267 @@ export function trace(s: GameState, f: Flick): { pts: Pt[]; events: TraceEvent[]
   return { pts: out, events, hits, offPage };
 }
 
+/** Where a flick's ink goes, and what it meets on the way. */
+export interface Trace {
+  pts: Pt[];
+  events: TraceEvent[];
+  hits: number[];
+  offPage: boolean;
+  /** The long war: a prism's split-off halves. */
+  branches?: Pt[][];
+}
+
+// --- the long war's ink -----------------------------------------------------------
+//
+// A long-war line is walked like a turtle: a heading, plus the flick's own
+// arc as a turn before each step, in steps short enough for the page to bend
+// it. Before each step a camp's well and an old line's groove turn the
+// heading a little; within it, the first thing met is dealt with: the page
+// edge, a wall (priced by its garrison, as in the core rules; or a bank off a
+// cushion, or a split leaving your prism), an enemy soldier, or a steep
+// crossing of old ink (a jolt). A bank reflects the heading and mirrors the
+// arc. The only randomness is the jolts, from the flick's `wob`.
+
+const SUB = 14; // the longest step the pen takes between bends
+const LOOK = 20, RIDING = 5; // a groove leans the pen in over this run; it's riding once this close
+
+function traceLong(s: GameState, f: Flick): Trace {
+  const R = s.rules, L = R.long!;
+  const me = s.soldiers[f.soldier];
+  const snipe = f.kind === "snipe";
+  const raw = flickPath(me, f);
+  // the arc as the turtle walks it: each step's turn (from the one before) and length
+  const turn: number[] = [], len: number[] = [];
+  let h0 = f.angle, prev = NaN;
+  for (let i = 1; i < raw.length; i++) {
+    const l = dist(raw[i - 1], raw[i]);
+    if (l < 1e-9) continue;
+    const h = Math.atan2(raw[i].y - raw[i - 1].y, raw[i].x - raw[i - 1].x);
+    if (Number.isNaN(prev)) { h0 = h; turn.push(0); } else turn.push(wrap(h - prev));
+    len.push(l);
+    prev = h;
+  }
+  const rand = rng(f.wob >>> 0);
+  const reach = hitReach();
+  const targets = s.soldiers.filter((o) => o.alive && o.owner !== me.owner);
+  const camps = s.bases.filter((b) => b.shape === "camp").map((b) => ({ b, men: garrison(s, b).filter((x) => x.id !== me.id) }));
+  const ink = inkOf(s.marks);
+  const runs: Run[] = [];
+  const vmax = maxReach(R);
+  const hit = new Set<number>();
+  const hits: number[] = [];
+  const events: TraceEvent[] = [];
+  const branches: Pt[][] = [];
+  let offPage = false;
+
+  // a groove's pull: the nearest old line within reach and within the groove angle of parallel turns the pen along it, leaning in
+  const pull = (p: Pt, h: number, left: number, step: number) => {
+    const G = L.ink.grooveReach, max = L.ink.groove, cosMax = Math.cos(max);
+    const hx = Math.cos(h), hy = Math.sin(h);
+    let best = 0, delta = 0, own = false, near = Infinity, angle = 0;
+    for (const r of ink.near(p.x - G, p.y - G, p.x + G, p.y + G, runs)) {
+      const vx = r.b.x - r.a.x, vy = r.b.y - r.a.y;
+      const l2 = vx * vx + vy * vy;
+      if (l2 < 1e-9) continue;
+      const t = Math.max(0, Math.min(1, ((p.x - r.a.x) * vx + (p.y - r.a.y) * vy) / l2));
+      const qx = r.a.x + vx * t, qy = r.a.y + vy * t;
+      const rho = Math.hypot(p.x - qx, p.y - qy);
+      if (rho > G) continue;
+      const l = Math.sqrt(l2);
+      const c = (hx * vx + hy * vy) / l;
+      if (Math.abs(c) <= cosMax) continue; // steeper than a groove: a crossing, not a pull
+      const phi = Math.acos(Math.min(1, Math.abs(c)));
+      const w = (1 - rho / G) * (1 - phi / max);
+      if (w <= best) continue;
+      best = w;
+      // along the line (whichever way is nearer the pen's heading), leaning in toward it
+      const cross = ((hx * vy - hy * vx) / l) * Math.sign(c);
+      const side = hx * (qy - p.y) - hy * (qx - p.x);
+      delta = Math.sign(cross) * phi + Math.sign(side) * Math.atan2(rho, LOOK);
+      own = r.owner === me.owner;
+      near = rho;
+      angle = phi;
+    }
+    if (!best) return { turn: 0, k: 1 };
+    // a flick slows as it runs out: speed goes as the root of the line it has left
+    const speed = Math.sqrt(Math.max(0, Math.min(1, left / vmax)));
+    const rate = L.ink.groovePull * best * (1 - speed) * step;
+    const riding = near < RIDING && angle < max * 0.4;
+    return { turn: Math.max(-rate, Math.min(rate, delta)), k: riding ? (own ? L.ink.grooveOwn : L.ink.grooveEnemy) : 1 };
+  };
+
+  interface Pen { at: Pt; h: number; sign: number; j: number; rem: number; budget: number; d: number; free: Set<number>; banks: number; jolts: number; well: number; skip: number }
+
+  const walk = (pen: Pen, branch: number, canSplit: boolean): Pt[] => {
+    let { at: pos, h, sign, j, rem, budget, d } = pen;
+    const { free } = pen;
+    let { banks, jolts, well, skip } = pen; // skip: the base or stroke just met here, not to be met again at once
+    const pts: Pt[] = [pos];
+    let lastInk = { stroke: -1, d: -1 };
+    const ev = (e: Omit<TraceEvent, "branch">) => events.push(branch ? { ...e, branch } : e);
+    for (let guard = 0; budget > 1e-6 && guard < 4000; guard++) {
+      if (rem <= 1e-9) {
+        j++;
+        if (j < len.length) { h += sign * turn[j]; rem = len[j]; } else rem = Infinity; // past the arc with line to spare (a friendly groove): straight on
+      }
+      const seg = Math.min(rem, SUB);
+      // a camp's well: lines outside its wall turn toward it, as hard as its garrison
+      if (well < L.well.maxTurn) {
+        let dh = 0;
+        for (const c of camps) {
+          if (free.has(c.b.id)) continue; // still leaving his own camp
+          const dd = dist(c.b, pos), Rw = c.b.r * L.well.reach;
+          if (dd <= c.b.r || dd >= Rw) continue;
+          let n = 0;
+          for (const x of c.men) if (!hit.has(x.id)) n++;
+          const g = Math.max(L.well.floor, Math.min(1, n / capacity(s, c.b)));
+          const w = ((Rw - dd) / (Rw - c.b.r)) ** 2;
+          dh += L.well.pull * g * w * Math.sin(wrap(Math.atan2(c.b.y - pos.y, c.b.x - pos.x) - h)) * seg;
+        }
+        dh = Math.max(well - L.well.maxTurn, Math.min(L.well.maxTurn - well, dh));
+        well += Math.abs(dh);
+        h += dh;
+      }
+      // a groove: nearly parallel to old ink, the pen is drawn along it; riding it, the line runs further or shorter
+      let k = 1;
+      if (branch || d >= Math.max(L.ink.clear, L.ink.grooveReach * 1.5)) {
+        const g = pull(pos, h, budget, seg);
+        h += g.turn;
+        k = g.k;
+      }
+      const nxt = { x: pos.x + Math.cos(h) * seg, y: pos.y + Math.sin(h) * seg };
+      const tEnd = Math.min(1, budget / (seg * k));
+      // the earliest thing this step meets
+      let bt = Infinity;
+      let ev0: { kind: "edge" } | { kind: "wall"; base: Base; edge: number } | { kind: "kill"; soldier: number } | { kind: "ink"; run: Run } | null = null;
+      const te = edgeParam(pos, nxt);
+      if (te <= tEnd) { bt = te; ev0 = { kind: "edge" }; }
+      for (const b of s.bases) {
+        const vs = corners(b);
+        const first = vs ? polyHits(pos, nxt, vs)[0] : (() => { const t = circleHits(pos, nxt, b, b.r)[0]; return t === undefined ? undefined : { t, edge: -1 }; })();
+        if (!first || first.t > tEnd || first.t >= bt) continue;
+        if (b.id === skip && first.t * seg < 1e-3) continue;
+        bt = first.t; ev0 = { kind: "wall", base: b, edge: first.edge };
+      }
+      const vx = nxt.x - pos.x, vy = nxt.y - pos.y;
+      for (const o of targets) {
+        if (hit.has(o.id)) continue;
+        const px = o.x - pos.x, py = o.y - pos.y;
+        if (Math.abs(px) > seg + reach || Math.abs(py) > seg + reach) continue;
+        const u = (px * vx + py * vy) / (seg * seg);
+        if (u > tEnd && tEnd === 1) continue; // closest further on: a later step finds him
+        const t = Math.max(0, Math.min(tEnd, u));
+        if (t >= bt) continue;
+        if (Math.hypot(px - vx * t, py - vy * t) > reach) continue;
+        if (!branch && d + t * seg <= RULES.soldierRadius * 1.5) continue; // the first sliver sits on the shooter's own dot
+        bt = t; ev0 = { kind: "kill", soldier: o.id };
+      }
+      if (ink.size && jolts < L.ink.joltMax) {
+        for (const r of ink.near(Math.min(pos.x, nxt.x) - 1, Math.min(pos.y, nxt.y) - 1, Math.max(pos.x, nxt.x) + 1, Math.max(pos.y, nxt.y) + 1, runs)) {
+          const t = segT(pos, nxt, r.a, r.b);
+          if (t === null || t > tEnd || t >= bt) continue;
+          if (!branch && d + t * seg < L.ink.clear) continue; // his own old lines all start on his dot
+          if (r.stroke === skip && t * seg < 1e-3) continue;
+          if (r.stroke === lastInk.stroke && Math.abs(d + t * seg - lastInk.d) < 1) continue; // where two runs of one stroke meet
+          let off = Math.abs(wrap(Math.atan2(r.b.y - r.a.y, r.b.x - r.a.x) - h));
+          if (off > Math.PI / 2) off = Math.PI - off;
+          if (off < L.ink.groove) continue; // shallow: that's a groove, not a crossing
+          bt = t; ev0 = { kind: "ink", run: r };
+        }
+      }
+      if (!ev0) {
+        if (tEnd < 1) { pts.push({ x: pos.x + vx * tEnd, y: pos.y + vy * tEnd }); break; }
+        budget -= seg * k;
+        d += seg;
+        rem -= seg;
+        pts.push(nxt);
+        pos = nxt;
+        skip = -1;
+        continue;
+      }
+      const at = { x: pos.x + vx * bt, y: pos.y + vy * bt };
+      budget -= bt * seg * k;
+      d += bt * seg;
+      rem -= bt * seg;
+      if (bt > 0) pts.push(at);
+      const was = pos;
+      pos = at;
+      skip = -1;
+      if (ev0.kind === "edge") {
+        if (!branch) offPage = true;
+        ev({ kind: "edge", at, d });
+        break;
+      }
+      if (ev0.kind === "kill") {
+        hit.add(ev0.soldier);
+        hits.push(ev0.soldier);
+        if (snipe) { budget *= 1 - R.snipeKillLoss; ev({ kind: "kill", at, d, soldier: ev0.soldier }); }
+        else { const a = gauss(rand) * R.lungeKillShake; h += a; ev({ kind: "kill", at, d, soldier: ev0.soldier, jolt: a }); }
+        continue;
+      }
+      if (ev0.kind === "ink") {
+        const a = gauss(rand) * L.ink.jolt;
+        h += a;
+        jolts++;
+        skip = ev0.run.stroke;
+        lastInk = { stroke: ev0.run.stroke, d };
+        ev({ kind: "ink", at, d, jolt: a });
+        continue;
+      }
+      // a wall: which way through?
+      const b = ev0.base;
+      skip = b.id;
+      const e = Math.min(0.5, 0.5 / seg);
+      const before = { x: was.x + vx * Math.max(0, bt - e), y: was.y + vy * Math.max(0, bt - e) };
+      const after = { x: was.x + vx * Math.min(1, bt + e), y: was.y + vy * Math.min(1, bt + e) };
+      const inBefore = inside(b, before, 1), inAfter = inside(b, after, 1);
+      const entering = !inBefore && inAfter, leaving = inBefore && !inAfter;
+      if (!entering && !leaving) continue; // grazed a corner
+      if (b.shape === "cushion" && entering && banks < L.cushion.maxBanks) {
+        // billiards: only a glancing line comes off the cushion; a straight one goes in
+        const vs = corners(b)!, p = vs[ev0.edge], q = vs[(ev0.edge + 1) % vs.length];
+        const wall = Math.atan2(q.y - p.y, q.x - p.x);
+        if (Math.abs(Math.cos(h - wall)) > Math.sin(L.cushion.glance)) {
+          h = 2 * wall - h;
+          sign = -sign;
+          banks++;
+          ev({ kind: "bank", at, d, base: b.id });
+          continue;
+        }
+      }
+      const back = leaving && free.has(b.id);
+      if (back) free.delete(b.id);
+      const own = b.shape === "prism" && b.owner === me.owner && L.prism.ownFree;
+      if (back || own) ev({ kind: "wall", at, d, base: b.id, free: true });
+      else {
+        // garrisoned walls, as in the core rules: as tough as the men inside at this moment
+        const cost = wallCost(s, b, f.kind, hit, me.id);
+        if (snipe) { budget *= 1 - cost; ev({ kind: "wall", at, d, base: b.id, cost }); }
+        else { const a = gauss(rand) * cost; h += a; ev({ kind: "wall", at, d, base: b.id, cost, jolt: a }); }
+      }
+      if (b.shape === "prism" && b.owner === me.owner && snipe && leaving && canSplit) {
+        // leaving your own prism, a snipe splits in two
+        canSplit = false;
+        ev({ kind: "split", at, d, base: b.id });
+        const half = { at, sign, j, rem, budget, d, free: new Set(free), banks, jolts, well, skip: b.id };
+        branches.push(walk({ ...half, h: h - L.prism.spread }, branches.length + 1, false));
+        h += L.prism.spread;
+      }
+    }
+    return pts;
+  };
+
+  const free = new Set(s.bases.filter((b) => wallGap(b, me) < 0).map((b) => b.id));
+  const pts = walk({ at: { x: me.x, y: me.y }, h: h0, sign: 1, j: 0, rem: len[0] ?? 0, budget: pathLen(raw), d: 0, free, banks: 0, jolts: 0, well: 0, skip: -1 }, 0, true);
+  return { pts, events, hits, offPage, ...(branches.length && { branches }) };
+}
+
 const empty = (): Outcome => ({ path: [], killed: [], lost: false, events: [], again: true, earned: false, stood: [], walked: [], arrived: [], handover: false });
 
 /** What a flick would do, without doing it. */
 export function preview(s: GameState, f: Flick): Outcome {
   const tr = trace(s, f);
-  const o: Outcome = { ...empty(), path: tr.pts, killed: tr.hits, events: tr.events };
+  const o: Outcome = { ...empty(), path: tr.pts, killed: tr.hits, events: tr.events, ...(tr.branches && { branches: tr.branches }) };
   if (f.kind === "lunge") {
     const end = tr.pts[tr.pts.length - 1];
     if (tr.offPage) o.lost = true;
@@ -538,7 +800,8 @@ export function preview(s: GameState, f: Flick): Outcome {
       // where he lands decides: among enemy soldiers still standing in their base, they shoot him
       const dead = new Set(tr.hits);
       const me = s.soldiers[f.soldier];
-      const camp = s.bases.find((b) => b.owner !== me.owner && dist(b, end) <= b.r && garrison(s, b).some((x) => !dead.has(x.id)));
+      const at = (b: Base) => (s.rules.long ? inside(b, end, 1) : dist(b, end) <= b.r);
+      const camp = s.bases.find((b) => b.owner !== me.owner && at(b) && garrison(s, b).some((x) => !dead.has(x.id)));
       if (camp) { o.lost = true; o.crashed = camp.id; }
       else o.movedTo = { x: end.x, y: end.y };
     }
@@ -603,6 +866,7 @@ function flick(s: GameState, f: Flick, seed: number): Outcome {
   const me = s.soldiers[f.soldier];
   const who = me.owner;
   s.marks.push({ t: "stroke", kind: f.kind, owner: who, pts: o.path, seed, turn: s.turn });
+  o.branches?.forEach((pts, k) => s.marks.push({ t: "stroke", kind: f.kind, owner: who, pts, seed: seed + 3 + k, turn: s.turn }));
   for (const id of o.killed) {
     const v = s.soldiers[id];
     v.alive = false;
