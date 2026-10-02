@@ -68,8 +68,12 @@ export type RulesT = typeof RULES;
 export const CORE = {
   /** Bumped when a rule's *logic* changes, so old records can be told apart. 2: shorter pull reach. */
   version: 2,
-  /** Shared snipe/lunge reach; short lines get more of the thumb's travel. Version 1 keeps 300–1800 on its 0.9 curve. */
-  reach: { min: 200, max: 1200, curve: 1.5 },
+  /**
+   * Shared snipe/lunge reach; short lines get more of the thumb's travel. Full
+   * power crosses the page corner to corner (the diagonal is about 1970).
+   * Games begun on 200–1200 at power^1.5 keep it; version 1 keeps 300–1800 on its 0.9 curve.
+   */
+  reach: { min: 200, max: 2000, curve: 2 },
   /**
    * Snipe power loss (to test): the share of what's left of the line lost at
    * each soldier it crosses out, and at each wall *when the game has no

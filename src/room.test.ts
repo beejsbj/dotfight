@@ -249,12 +249,12 @@ describe("room engines", () => {
     expect(canRead(engine)).toBe(true);
     const { garrison: _g, ...flat } = CORE;
     void _g;
-    const rules = engine === "core-4" ? CORE : engine === "core-3" ? flat : { ...flat, version: 1, reach: { min: 300, max: 1800 } };
+    const rules = engine === "core-4" ? CORE : engine === "core-3" ? { ...flat, reach: { min: 200, max: 1200, curve: 1.5 } } : { ...flat, version: 1, reach: { min: 300, max: 1800 } };
     const old: Setup = JSON.parse(JSON.stringify({ ...setup, rules }));
     const s = fresh(old);
     expect(s.rules.garrison).toEqual(engine === "core-4" ? CORE.garrison : null);
     expect(reachOf(s.rules, 0)).toBe(engine === "core-2" ? 300 : 200);
-    expect(reachOf(s.rules, 1)).toBe(engine === "core-2" ? 1800 : 1200);
+    expect(reachOf(s.rules, 1)).toBe(engine === "core-2" ? 1800 : engine === "core-3" ? 1200 : CORE.reach.max);
     const log: { seat: Seat; a: Payload }[] = [];
     while (s.phase !== "over" && log.length < 150) {
       const a = botMove(s);

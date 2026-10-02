@@ -6,7 +6,7 @@ import {
   act, alive, canArrange, canFlick, canPlaceBase, canSend, columnSpots, garrison, hand, illegal, isRing, maxReach, newGame, pathLen, powerFor, preview, reachOf, replay, wildOf, wildOfLength, wallCost, wallStrength,
   type Action, type Flick, type GameState, type Player,
 } from "./game";
-import { CORE, RULES, SIZES, type CoreRules, type Size } from "./rules";
+import { CORE, FEEL, RULES, SIZES, type CoreRules, type Size } from "./rules";
 
 const UP = -Math.PI / 2;
 const DOWN = Math.PI / 2;
@@ -532,16 +532,21 @@ describe("reach: how far a pull sends the line", () => {
 
   it("a snipe and a lunge reach alike: one reach, one curve", () => {
     expect(CORE).not.toHaveProperty("lungeReach");
-    expect(maxReach(CORE)).toBe(1200);
+    expect(maxReach(CORE)).toBe(2000);
     expect(reachOf(CORE, 0)).toBe(200);
-    expect(reachOf(CORE, 1)).toBe(1200);
+    expect(reachOf(CORE, 1)).toBe(2000);
   });
 
-  it("the lengths a lunge is wanted at (300..700) get a good share of the thumb's travel", () => {
-    const share = powerFor(CORE, 700) - powerFor(CORE, 300);
-    expect(share).toBeGreaterThan(0.4);
-    // and no length in that band moves more than ~5 units for a pixel of a 224 px pull
-    for (let p = powerFor(CORE, 300); p < powerFor(CORE, 700); p += 0.01) expect(reachOf(CORE, p + 1 / 224) - reachOf(CORE, p)).toBeLessThan(5.5);
+  it("full power crosses the page corner to corner", () => {
+    expect(reachOf(CORE, 1)).toBeGreaterThan(Math.hypot(RULES.pageW, RULES.pageH));
+  });
+
+  it("the lengths a lunge is wanted at (300..700) still take real thumb travel", () => {
+    // a 300-unit lunge sits well clear of the cancel zone, and the band gets over a quarter of the pull
+    expect(powerFor(CORE, 300) * FEEL.maxPullPx).toBeGreaterThan(3 * FEEL.minPullPx);
+    expect(powerFor(CORE, 700) - powerFor(CORE, 300)).toBeGreaterThan(0.25);
+    // and no length in that band moves more than ~8 units for a pixel of a 224 px pull (version 1: ~10 at 700)
+    for (let p = powerFor(CORE, 300); p < powerFor(CORE, 700); p += 0.01) expect(reachOf(CORE, p + 1 / 224) - reachOf(CORE, p)).toBeLessThan(8.5);
   });
 
   it("version 1 pages keep the one reach and the 0.9 curve", () => {
@@ -558,6 +563,6 @@ describe("reach: how far a pull sends the line", () => {
     expect(wildOfLength(1800)).toBeCloseTo(1, 9);
     const s = game(PAGE, 3);
     const id = of(s, 0)[0].id;
-    expect(hand(s, id, "lunge").wild!(1)).toBeCloseTo(wildOfLength(1200), 9);
+    expect(hand(s, id, "lunge").wild!(1)).toBeCloseTo(wildOfLength(2000), 9);
   });
 });
