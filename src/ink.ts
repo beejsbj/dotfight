@@ -214,6 +214,63 @@ export function inkDot(ctx: Ctx, x: number, y: number, r: number, color: string,
   ctx.globalAlpha = 1;
 }
 
+/**
+ * The corners of a soldier's shape as a hand presses it: `n` corners about
+ * (x, y), turned by `rot` plus a seeded wobble of its own, each a little off
+ * the circumradius `R`. Shared by the pressed mark (inkShape) and the hollow
+ * one he leaves (page.ts drawSpent), so the hollow sits where the solid was.
+ * Takes four seeded values, then two per corner, in that order.
+ */
+export function shapeCorners(x: number, y: number, R: number, n: number, rot: number, rand: () => number): Pt[] {
+  const turn = rot + (rand() - 0.5) * 0.3;
+  const out: Pt[] = [];
+  for (let k = 0; k < n; k++) {
+    const a = turn + (k * Math.PI * 2) / n + (rand() - 0.5) * 0.12;
+    const rr = R * (0.86 + rand() * 0.26);
+    out.push({ x: x + Math.cos(a) * rr, y: y + Math.sin(a) * rr });
+  }
+  return out;
+}
+
+// A soldier in his base's shape (the long war): the same pressed ballpoint
+// mark as inkDot, with `n` corners instead of ten lumps. `R` is the
+// circumradius, `rot` the base's turn. Sides bow a hair, the pen goes round
+// twice for a darker off-centre core; no outline stroke, it's pressed, not
+// drawn. `grow`, `wob` and `amp` as inkDot; n under 3 is the plain dot.
+export function inkShape(ctx: Ctx, x: number, y: number, R: number, n: number, rot: number, color: string, seed: number, alpha = 1, grow = 1, wob = 0, amp = 1) {
+  if (grow <= 0) return;
+  if (n < 3) return inkDot(ctx, x, y, R, color, seed, alpha, grow, wob, amp);
+  const rand = redrawn(seed, wob, REDRAW.dot * amp);
+  if (grow < 1) {
+    const e = 1 - Math.pow(1 - grow, 3);
+    R *= 0.35 + 0.65 * e;
+    alpha *= 0.5 + 0.5 * e;
+  }
+  const vs = shapeCorners(x, y, R, n, rot, rand);
+  const bow = n === 3 ? 0.18 : 0.3; // a straighter triangle reads better
+  const bows = vs.map(() => (rand() - 0.5) * bow);
+  const path = (k: number, ox: number, oy: number) => {
+    ctx.beginPath();
+    vs.forEach((a, i) => {
+      const b = vs[(i + 1) % n];
+      const ax = x + (a.x - x) * k + ox, ay = y + (a.y - y) * k + oy, bx = x + (b.x - x) * k + ox, by = y + (b.y - y) * k + oy;
+      const dx = bx - ax, dy = by - ay;
+      if (i === 0) ctx.moveTo(ax, ay);
+      ctx.quadraticCurveTo((ax + bx) / 2 - dy * bows[i], (ay + by) / 2 + dx * bows[i], bx, by);
+    });
+    ctx.closePath();
+  };
+  ctx.fillStyle = paint(ctx, color);
+  ctx.globalAlpha = 0.9 * alpha;
+  path(1, 0, 0);
+  ctx.fill();
+  // the pen goes round twice: a darker core, a little off centre
+  ctx.globalAlpha = 0.5 * alpha;
+  path(0.55, (rand() - 0.5) * R * 0.3, (rand() - 0.5) * R * 0.3);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
 // A cross: two quick strokes. Kills are big and hard; "moved" is small and light.
 // `upTo` (0..1) draws it the way a hand does: one stroke, a beat, the other.
 export function inkCross(ctx: Ctx, x: number, y: number, size: number, color: string, seed: number, width = 2.4, alpha = 1, upTo = 1, wob = 0) {

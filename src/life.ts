@@ -58,8 +58,9 @@ export const FRAME = 1000 / FPS;
 
 /** How far a pose may take a dot from his spot: the boil layer's box has room for this, no more. */
 export const REACH = { offset: 9, stretch: 1.42, scale: 1.14 };
-/** Half the side of a living soldier's box on the boil layer (page units): his scribble at full stretch, off his spot. */
-export const LIFE_BOX = REACH.offset + RULES.soldierRadius * 1.3 * REACH.stretch * REACH.scale + 3;
+/** Half the side of a living soldier's box on the boil layer (page units): his scribble at full stretch, off his spot. `r`: his mark's circumradius (a dot's, or a shaped man's). */
+export const lifeBox = (r: number = RULES.soldierRadius) => REACH.offset + r * 1.3 * REACH.stretch * REACH.scale + 3;
+export const LIFE_BOX = lifeBox();
 
 export interface Pose {
   /** Off his spot, page units. */

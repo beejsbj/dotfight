@@ -315,3 +315,53 @@ describe("long roads", () => {
     expect(c.state).toBe("cut");
   });
 });
+
+describe("shaped soldiers", () => {
+  // four bases placed by the rules, then straight into play
+  const page = () => {
+    const s = newGame(SIZES.long, 5, undefined, LONG);
+    const kit: [Shape, number, number][] = [["prism", 250, 1450], ["camp", 450, 300], ["cushion", 700, 1450], ["prism", 800, 300]];
+    for (const [shape, x, y] of kit) act(s, { t: "base", x, y, shape });
+    Object.assign(s, { phase: "play", turn: 1, current: 0, left: 1, ready: [true, true] });
+    return s;
+  };
+
+  it("takes his base's shape and turn at the jot, in a long war only", () => {
+    const s = page();
+    for (const b of s.bases) {
+      for (const x of s.soldiers.filter((m) => m.home === b.id)) {
+        expect(x.shape).toBe(b.shape);
+        if (b.shape === "camp") expect(x).not.toHaveProperty("rot");
+        else expect(x.rot).toBe(b.rot);
+      }
+    }
+    const core = newGame(SIZES.quick, 5);
+    act(core, { t: "base", x: 300, y: 1300 });
+    for (const x of core.soldiers) { expect(x).not.toHaveProperty("shape"); expect(x).not.toHaveProperty("rot"); }
+  });
+
+  it("keeps it across a send: a prism's men arrive at a cushion still triangles", () => {
+    const s = page();
+    const was = s.soldiers.filter((x) => x.home === 0).map((x) => ({ id: x.id, shape: x.shape, rot: x.rot }));
+    act(s, { t: "send", from: 0, to: 2, n: 3 });
+    const c = s.convoys[0];
+    for (let k = 0; c.state !== "arrived" && k < 20; k++) act(s, { t: "stop" });
+    expect(c.state).toBe("arrived");
+    for (const id of c.ids) {
+      const x = s.soldiers[id], w = was.find((m) => m.id === id)!;
+      expect(x.home).toBe(2);
+      expect(x.shape).toBe("prism");
+      expect([x.shape, x.rot]).toEqual([w.shape, w.rot]);
+    }
+  });
+
+  it("keeps it across a lunge onto open paper", () => {
+    const s = page();
+    const me = s.soldiers.filter((x) => x.home === 0).sort((p, q) => p.y - q.y)[0];
+    const { shape, rot } = me;
+    const o = act(s, { t: "flick", ...shot(me.id, -Math.PI / 2, 260, "lunge") });
+    expect(o.movedTo).toBeDefined();
+    expect(me.y).toBeLessThan(1300);
+    expect([me.shape, me.rot]).toEqual([shape, rot]);
+  });
+});

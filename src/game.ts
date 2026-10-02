@@ -48,6 +48,14 @@ export interface Soldier {
   home?: number;
   /** In a send: ordered this turn (still standing at home), or out on the road. */
   convoy?: number;
+  /**
+   * The long war: the shape of the base he was jotted into, and its turn on the
+   * page (a triangle's or hexagon's `rot`). Set once at the jot and kept for the
+   * whole page: a prism's man is a triangle wherever he's sent. Only a look;
+   * absent in a core game.
+   */
+  shape?: Shape;
+  rot?: number;
 }
 
 /** Everything inked on the page, in order. The page is append-only: marks are never removed. */
@@ -239,8 +247,10 @@ function placeBase(s: GameState, x: number, y: number, shape?: Shape) {
   const id = s.bases.length;
   const base = baseAt(s, x, y, shape);
   s.bases.push(base);
+  // the long war: each man takes his base's shape (and its turn) for the whole page
+  const look = s.rules.long && base.shape ? { shape: base.shape, ...(base.rot !== undefined && { rot: base.rot }) } : {};
   for (const p of scatterIn(base, capacity(s, base), base.seed)) {
-    s.soldiers.push({ id: s.soldiers.length, owner: base.owner, x: p.x, y: p.y, alive: true, home: id });
+    s.soldiers.push({ id: s.soldiers.length, owner: base.owner, x: p.x, y: p.y, alive: true, home: id, ...look });
   }
   if (basesLeft(s, 0) === 0 && basesLeft(s, 1) === 0) {
     // everyone arranges their soldiers first: whoever flicks first arranges first
