@@ -22,6 +22,7 @@
 // or while the camera moves.
 
 import { distToPath, pathLen, type Pt } from "./geom";
+import { inside, type Walled } from "./game";
 import { LIFE, unit } from "./life";
 
 export type Mood = "tiny" | "whisper" | "say" | "shout" | "chant";
@@ -313,7 +314,7 @@ export interface BotchIn {
   crashed: boolean;
   offPage: boolean;
   foes: Pt[];
-  own: { x: number; y: number; r: number }[];
+  own: Walled[];
 }
 export interface Botch {
   /** 0 no botch, 1 a mutter, 2 the full treatment. */
@@ -365,12 +366,12 @@ export function botchOf(b: BotchIn): Botch {
     if (k > 0) why.push("offline");
     score += k;
     // stranded in the open, nowhere near anyone
-    const home = b.own.some((c) => Math.hypot(end.x - c.x, end.y - c.y) < c.r);
+    const home = b.own.some((c) => inside(c, end, 1));
     const nearest = b.foes.length ? Math.min(...b.foes.map((p) => Math.hypot(p.x - end.x, p.y - end.y))) : Infinity;
     if (!b.lost && !home && nearest > B.strandedAt) { why.push("stranded"); score += B.stranded; }
   }
   // the ink ends back in his own camp; or it runs off the page
-  if (len > 60 && !b.offPage && b.own.some((c) => Math.hypot(end.x - c.x, end.y - c.y) < c.r * 1.1)) { why.push("home"); score += B.home; }
+  if (len > 60 && !b.offPage && b.own.some((c) => inside(c, end, 1.1))) { why.push("home"); score += B.home; }
   if (b.offPage) { why.push("offpage"); score += B.offpage; }
   const grade = score >= B.full ? 2 : score >= B.mild ? 1 : 0;
   return { grade, score, why };

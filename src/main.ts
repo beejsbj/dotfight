@@ -9,7 +9,7 @@ import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
-  act, baseAt, canArrange, canSend, corners, garrison, illegal, inLastStand, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax, wallGap,
+  act, baseAt, canArrange, canSend, corners, garrison, illegal, inLastStand, inside, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax, wallGap,
   type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
 } from "./game";
 import { offsetPolygon } from "./geom";
@@ -947,7 +947,7 @@ function speakStreak(n: number, id: number, t0: number, seed: number, only?: Str
     if (k === "streakMe") return me.alive ? id : undefined;
     if (k === "streakFoe") return turn.aliveOf(seen, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
     if (k === "streakCamp") return campOf(id);
-    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && inside(b, x, 1)));
     return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
   };
   for (const k of only ? [only] : streakVoices(n, seeded(seed, n, 71), streak.last)) {
@@ -984,7 +984,7 @@ function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number
     if (k === "botchMe") return me.alive ? id : undefined;
     if (k === "botchCamp") return campOf(id);
     if (k === "botchFoe") return turn.aliveOf(seen, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
-    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && inside(b, x, 1)));
     return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
   };
   for (const k of only ? [only] : botchVoices(grade, seeded(seed, grade, 79), botchLast)) {
@@ -2865,7 +2865,7 @@ function frame(now: number) {
     const lead = mine.length - theirs.length;
     if (mine.length) {
       const me = mine[Math.floor(seeded(s.seed, s.turn, Math.floor(wall / 1000)) * mine.length)];
-      const inBase = s.bases.some((b) => b.owner === me.owner && Math.hypot(b.x - me.x, b.y - me.y) < b.r);
+      const inBase = s.bases.some((b) => b.owner === me.owner && inside(b, me, 1));
       const c0 = core();
       let kind = strayKind(seeded(s.seed, s.turn, Math.floor(wall / 1000), 3), { lead, waited, inBase, heat: noteContext(me.owner).heat });
       if (kind === "chant" && c0 && inLastStand(c0, me.owner)) kind = "chantLast";

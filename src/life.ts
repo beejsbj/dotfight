@@ -13,7 +13,7 @@
 // Poses are sampled on the boil's 12 fps grid ("on twos"), so reactions are
 // written as key drawings a frame apart, the way a 2D animator would.
 
-import { type Player, type Pt, type Soldier } from "./game";
+import { inside, type Player, type Pt, type Soldier } from "./game";
 import type { AnyState as GameState } from "./record";
 import { inBase } from "./hand";
 import { RULES } from "./rules";
@@ -671,7 +671,7 @@ export function planFlick(
       act(c.id, { kind: "mourn", t0: f.at + 60 + rank * 30, dir: Math.atan2(f.x.y - c.y, f.x.x - c.x), amp: 1 });
     });
     if (near[0] && ohs++ < 2) plan.cues.push({ at: f.at + 420 + ohs * 180, id: near[0].id, say: "oh", gain: 0.8 });
-    const home = s.bases.find((b) => b.owner === f.x.owner && Math.hypot(b.x - f.x.x, b.y - f.x.y) <= b.r * 1.05);
+    const home = s.bases.find((b) => b.owner === f.x.owner && inside(b, f.x));
     if (home) plan.hush.push({ base: home.id, at: f.at, ms: MOURN.still });
   }
   // the shooter's side cheers a kill: him first and loudest, then his campmates in a ripple
