@@ -1134,8 +1134,8 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   if (t.kind === "note") {
     handText(g, t.text ?? "", 0, 0, 46, pencil, { upTo: p * 1.2, weight: 400, rot: -0.02, align: "center" });
   } else if (t.kind === "place") {
-    handText(g, "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
-    handText(g, t.note ?? "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
+    handText(g, t.text ?? "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
+    if (t.note !== "") handText(g, t.note ?? "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
   } else if (t.kind === "arrange") {
     handText(g, "drag your men where you want them", 0, 0, 40, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
     handText(g, "(in camp, or just outside the wall)", 0, 42, 32, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });

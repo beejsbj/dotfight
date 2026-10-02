@@ -266,7 +266,7 @@ function hud() {
     (el.querySelector(".name") as HTMLElement).textContent = name(p);
     const n = turn.aliveOf(s, p).length;
     const c = el.querySelector(".count") as HTMLElement;
-    c.textContent = s.phase === "setup" ? `${turn.basesLeft(s, p)} ${turn.shaped(s) ? "bases" : "camps"} to draw`
+    c.textContent = s.phase === "setup" ? `${turn.basesLeft(s, p)} ${baseWord()}s to draw`
       : s.phase === "position" ? (c0?.ready[p] ? "arranged" : "arranging")
       : stand ? `last ${n} · two flicks` : `${n} standing`;
     el.style.setProperty("--ink-left", inkLeft(p).toFixed(3));
@@ -369,6 +369,11 @@ function syncRing() {
   if (on) { haptic("brink"); learn("cancel"); }
 }
 
+/** What a base is called in the status lines: a camp in the core rules; in the long war "base", or its own shape where one base is meant. */
+function baseWord(b?: { shape?: Shape }, st: AnyState = s) {
+  return turn.shaped(st) ? b?.shape ?? "base" : "camp";
+}
+
 function status(msg?: string) {
   let t = msg ?? "";
   if (!msg) {
@@ -377,12 +382,12 @@ function status(msg?: string) {
     if (screen === "replay") t = "the war, again";
     else if (screen === "game" && roomStatus() !== null) t = roomStatus()!;
     else if (screen === "view") t = viewing ? `page ${viewing.page?.no ?? "?"} · ${viewing.page?.date ?? ""}` : "";
-    else if (s.phase === "setup") t = isBot(s.current) ? `${who} is drawing a ${turn.shaped(s) ? "base" : "camp"}…` : turn.shaped(s) ? `${who}: pick a shape, draw a ${shape}` : `${who}: draw a camp`;
-    else if (s.phase === "position") t = isBot(s.current) ? `${who} is arranging…` : dragging ? (dragging.ok ? "let go to put him here" : "too far from his camp") : `${who}: arrange your men, then done`;
+    else if (s.phase === "setup") t = isBot(s.current) ? `${who} is drawing a ${baseWord()}…` : turn.shaped(s) ? `${who}: pick a shape, draw a ${shape}` : `${who}: draw a camp`;
+    else if (s.phase === "position") t = isBot(s.current) ? `${who} is arranging…` : dragging ? (dragging.ok ? "let go to put him here" : `too far from his ${baseWord(s.bases[s.soldiers[dragging.id]?.home ?? -1])}`) : `${who}: arrange your men, then done`;
     else if (s.phase === "over") t = `${name(s.winner!)} held the page`;
     else if (res || lapse) t = "";
     else if (isBot(s.current)) t = `${who} is lining up…`;
-    else if (sending) t = sending.to !== undefined ? "how many go?" : sending.from !== undefined ? "…to another of your camps" : "drag from one of your camps to another";
+    else if (sending) t = sending.to !== undefined ? "how many go?" : sending.from !== undefined ? `…to another of your ${baseWord()}s` : `drag from one of your ${baseWord()}s to another`;
     else if (aim) t = pull(aim).live ? (taught("cancel") ? `let go to ${turn.verb(s, kind)}` : `let go to ${turn.verb(s, kind)}, or slide back to the start to cancel`) : aim.charged ? "let go to cancel" : "pull back further…";
     else if (c0?.chain) t = `one more for ${who}: lunge on, or stop`;
     else if (unit) t = "";
@@ -1385,7 +1390,7 @@ function coverMenu() {
   const menu = $("#cover .menu");
   const mark = $("#cover .tabs .m1 sup");
   mark.textContent = d.length ? String(d.length) : "";
-  const where = (x: AnyState) => x.phase === "setup" ? "still drawing camps" : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
+  const where = (x: AnyState) => x.phase === "setup" ? `still drawing ${baseWord(undefined, x)}s` : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
   const draw = () => {
     const carry = canResume ? (tearing === "local" ? `
       <div class="carry tearing">
@@ -2047,7 +2052,7 @@ function roomStatus(): string | null {
   if (l.offline) return l.data.pending.length ? "no signal: your move goes when it can" : "no signal: still trying…";
   if (s.phase === "over" || res || !remote(s.current)) return null;
   const who = name(s.current);
-  if (busy) return s.phase === "setup" ? `${who} is drawing a camp…` : s.phase === "position" ? `${who} is arranging…` : `${who} is lining up…`;
+  if (busy) return s.phase === "setup" ? `${who} is drawing a ${baseWord()}…` : s.phase === "position" ? `${who} is arranging…` : `${who} is lining up…`;
   if (l.seat === 0 && l.names[1] === null) return RESEND;
   if (l.seat === null) return `watching ${name(0)} v ${name(1)}`;
   return lastNote;
@@ -2064,7 +2069,7 @@ function showShare() {
     <p class="link">${esc(l.url)}</p>
     <button class="act" data-a="send">send the link</button>
     <button class="act" data-a="copy">copy it</button>
-    <button class="act red" data-a="back">${s.bases.length === 0 && l.seat === 0 ? "draw your first camp" : "back to the page"}</button>
+    <button class="act red" data-a="back">${s.bases.length === 0 && l.seat === 0 ? `draw your first ${baseWord()}` : "back to the page"}</button>
     <p class="fine">They open it, write their name and take the red pen. You go first; they can come later.</p>`, "share");
   card.onclick = async (e) => {
     const a = (e.target as HTMLElement).closest("button")?.dataset.a;
@@ -2942,7 +2947,10 @@ function currentFrame(): Frame {
   if (human && s.phase === "setup" && !ghost && !busy && !taught("place")) {
     const ownY = mode.kind === "pnp" && s.current === 1 ? 0.3 : 0.7;
     const n = turn.perBase(s, shape);
-    f.teach = { kind: "place", at: { x: RULES.pageW / 2 + 20, y: RULES.pageH * ownY }, p: fx.p("teach", T), rot: cam.cur.rot, note: `(${n === 10 ? "ten" : n} men in each)` };
+    // the long war's bases come up from the cards, and don't all hold the same
+    f.teach = turn.shaped(s)
+      ? { kind: "place", at: { x: RULES.pageW / 2 + 20, y: RULES.pageH * ownY }, p: fx.p("teach", T), rot: cam.cur.rot, text: "drag a base up from the cards", note: "" }
+      : { kind: "place", at: { x: RULES.pageW / 2 + 20, y: RULES.pageH * ownY }, p: fx.p("teach", T), rot: cam.cur.rot, note: `(${n === 10 ? "ten" : n} men in each)` };
   }
   const c0 = core();
   if (c0 && human && c0.phase === "position" && !busy) {
