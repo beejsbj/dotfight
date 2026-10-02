@@ -2,10 +2,10 @@
 // game plays them (src/game.ts), headless, and what they tell us. Pure and
 // seeded: the same size, rules, stances and seed always play the same game.
 
-import { botAction, botArrange, botBase, HUMAN, STANCES, type Skill, type Stance } from "../bot";
-import { act, alive, canPlaceBase, garrison, newGame, type Action, type GameState, type Player } from "../game";
+import { botAction, botArrange, botBase, botShape, HUMAN, STANCES, type Skill, type Stance } from "../bot";
+import { act, alive, canPlaceBase, garrison, inside, newGame, type Action, type GameState, type Player } from "../game";
 import { rng } from "../geom";
-import { CORE, type CoreRules, type Size } from "../rules";
+import { CORE, type CoreRules, type Shape, type Size } from "../rules";
 
 export interface GameStats {
   label: string;
@@ -55,7 +55,15 @@ export interface GameStats {
 export type Agent = (s: GameState, seed: number) => Action;
 export const botAgent = (sk: Skill = HUMAN): Agent => (s, seed) => botAction(s, sk, seed);
 
-export interface Opts { maxTurns?: number; agents?: [Agent, Agent]; rules?: CoreRules; label?: string; stances?: [Stance, Stance] }
+export interface Opts {
+  maxTurns?: number;
+  agents?: [Agent, Agent];
+  rules?: CoreRules;
+  label?: string;
+  stances?: [Stance, Stance];
+  /** The long war: each side's shapes, in the order it draws them (default: the bot picks). */
+  kit?: [Shape[], Shape[]];
+}
 
 export function playGame(size: Size, seed: number, opts: Opts = {}): { st: GameStats; s: GameState } {
   const maxTurns = opts.maxTurns ?? 400;
@@ -63,9 +71,12 @@ export function playGame(size: Size, seed: number, opts: Opts = {}): { st: GameS
   const s = newGame(size, seed, undefined, opts.rules ?? CORE);
   const rand = rng(seed ^ 0x9e3779b9);
   while (s.phase === "setup") {
-    const spot = botBase(s, (x, y) => !canPlaceBase(s, x, y), (rand() * 2 ** 32) >>> 0);
+    const n = s.bases.filter((b) => b.owner === s.current).length;
+    const kit = opts.kit?.[s.current];
+    const shape = s.rules.long ? (kit ? kit[n % kit.length] : botShape(rand)) : undefined;
+    const spot = botBase(s, (x, y) => !canPlaceBase(s, x, y, shape), (rand() * 2 ** 32) >>> 0);
     if (!spot) throw new Error(`no room for a base (seed ${seed})`);
-    act(s, { t: "base", x: spot.x, y: spot.y });
+    act(s, { t: "base", x: spot.x, y: spot.y, ...(shape && { shape }) });
   }
   const st: GameStats = {
     label: opts.label ?? size.name, seed, winner: -1, turns: 0, flicks: 0, snipes: 0, lunges: 0, sends: 0, stops: 0, perFlick: [], doubles: 0,
@@ -79,7 +90,7 @@ export function playGame(size: Size, seed: number, opts: Opts = {}): { st: GameS
       if (a.t === "ready") break;
     }
   }
-  st.outside = s.soldiers.filter((x) => { const b = s.bases[x.home!]; return Math.hypot(b.x - x.x, b.y - x.y) > b.r * 1.05; }).length;
+  st.outside = s.soldiers.filter((x) => !inside(s.bases[x.home!], x)).length;
   const manned = () => new Set(s.bases.flatMap((b) => garrison(s, b).map((x) => x.id)));
   for (const b of s.bases) st.insideAtStart[b.owner] += garrison(s, b).length;
   const counts: [number, number][] = [];
