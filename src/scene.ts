@@ -15,8 +15,8 @@ import { inscribedBounds } from "./note-bounds";
 import { walkerAt } from "./timeline";
 import { BoilLayer, planBoil, type Plan } from "./boil";
 import type { Anchor, Mood } from "./bubble";
-import { rng, type Pt } from "./game";
-import { offsetPolygon, polygon } from "./geom";
+import { corners, rng, type Pt } from "./game";
+import { offsetPolygon, polygon, segDist } from "./geom";
 import type { Shape } from "./rules";
 import type { AnyState as GameState } from "./record";
 import { INK, arcText, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilRing, pencilStroke, rubOut } from "./ink";
@@ -106,6 +106,8 @@ export interface Frame {
 
 export interface Note {
   text: string; mood: Mood; anchor: Anchor; at: Pt; r?: number; p: number; e: number; side: 1 | -1; seed: number; owner: 0 | 1;
+  /** A long-war base's walls (a triangle or hexagon): the note arcs along them. */
+  poly?: Pt[];
   /** An exchange: the other speaker. */
   with?: Pt;
   /** An exchange's answer: the first line's key (seed|text), whose spot it must keep clear of. */
@@ -765,7 +767,12 @@ function noteSpot(f: Frame, b: Note, fits: Fit[], angK = 1) {
   const near = (p: Pt) => Math.hypot(p.x - b.at.x, p.y - b.at.y) < reach + F.size * 6;
   const L_ = (p: Pt) => toLocal_(p.x, p.y);
   for (const x of s.soldiers) if (near(x)) { const q = L_(x); grid.disc(q.x, q.y, R + 3, 10); }
-  for (const k of s.bases) if (Math.hypot(k.x - b.at.x, k.y - b.at.y) < reach + k.r) { const q = L_(k); grid.ring(q.x, q.y, k.r, 1); }
+  for (const k of s.bases) if (Math.hypot(k.x - b.at.x, k.y - b.at.y) < reach + k.r) {
+    const vs = corners(k);
+    if (!vs) { const q = L_(k); grid.ring(q.x, q.y, k.r, 1); continue; }
+    const q = vs.map(L_); // a triangle's or hexagon's walls, not its circumcircle
+    q.forEach((p, i) => grid.seg(p, q[(i + 1) % q.length], 1));
+  }
   for (const m of s.marks) {
     if (m.t === "cross") { if (near(m)) { const q = L_(m); grid.disc(q.x, q.y, 9, 6); } }
     else if (m.t === "walk") { if (near(m.a) || near(m.b)) grid.seg(L_(m.a), L_(m.b), 0.6); }
@@ -849,6 +856,19 @@ function noteSpot(f: Frame, b: Note, fits: Fit[], angK = 1) {
   return spot;
 }
 
+/** How far from `c`, inside the convex polygon `vs`, its wall is along page angle `a`. */
+function wallRadius(vs: Pt[], c: Pt, a: number) {
+  const dx = Math.cos(a), dy = Math.sin(a);
+  let far = 0;
+  vs.forEach((p, i) => {
+    const q = vs[(i + 1) % vs.length], ex = q.x - p.x, ey = q.y - p.y, den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-9) return;
+    const t = ((p.x - c.x) * ey - (p.y - c.y) * ex) / den, u = ((p.x - c.x) * dy - (p.y - c.y) * dx) / den;
+    if (t > far && u >= -1e-9 && u <= 1 + 1e-9) far = t;
+  });
+  return far;
+}
+
 // A camp speaks: its line arcs along the outside of its ring, on the side
 // facing the top of the screen (or the first side that's on the page), so
 // the speaker is plain from bird's-eye. A chant is written in beats, a word
@@ -859,8 +879,9 @@ function drawBaseNote(g: Ctx, f: Frame, b: Note, box: Box) {
   const heat = f.heat ?? 0;
   const base = Math.max(30, Math.min(70, 25 / f.view.z));
   let size = base * M.size * (b.mood === "shout" ? 1 + SHOUT_GROW * heat : 1);
-  const R = b.r ?? RULES.baseRadius;
   const rot = f.view.rot;
+  // a polygon's note rides its walls: the arc starts at the inscribed circle and is pushed out to clear them along its run
+  const R = b.poly ? Math.min(...b.poly.map((p, i) => segDist(b.at, p, b.poly![(i + 1) % b.poly!.length]))) : b.r ?? RULES.baseRadius;
   const r = rng(b.seed + 3);
   // which side of the ring: up the screen for choice, else whichever is on the page; and if no side
   // keeps the run on the page (a camp by the edge), written smaller, down to what still reads from above
@@ -876,24 +897,33 @@ function drawBaseNote(g: Ctx, f: Frame, b: Note, box: Box) {
     // the run must fit round the ring: written smaller if it wouldn't
     g.save();
     g.font = `${M.weight} ${size}px Caveat, "Patrick Hand", cursive`;
-    half = (g.measureText(b.text).width * M.stretch) / 2 / rr;
+    const tw = (g.measureText(b.text).width * M.stretch) / 2;
+    half = tw / rr;
     g.restore();
     const most = Math.PI * 0.72;
     if (half > most) { size *= most / half; half = most; }
-    let bestCost = Infinity, off = 0;
+    let bestCost = Infinity, off = 0, bestRR = rr;
     // the sides in order of choice: the top, the bottom, left and right, then the diagonals
     [-Math.PI / 2, Math.PI / 2, 0, Math.PI, -Math.PI / 4, (-3 * Math.PI) / 4, Math.PI / 4, (3 * Math.PI) / 4].forEach((m, i) => {
       // the run's ends and middle: how far off the page (or under the HUD) they'd be, plus a preference for the top
       // (a shout's marks fly out past the letters, and a little past the run's ends)
       let miss = 0;
-      const out = rr + size * (M.spiky ? 1.35 : 1), ends = M.spiky ? 0.3 : 0.08;
+      const ends = M.spiky ? 0.3 : 0.08;
+      let rrm = rr;
+      if (b.poly) {
+        let wall = 0;
+        for (let j = 0; j <= 8; j++) wall = Math.max(wall, wallRadius(b.poly, b.at, m - half - ends + ((half + ends) * 2 * j) / 8 - rot));
+        rrm = wall + gap + size * 0.45;
+      }
+      const out = rrm + size * (M.spiky ? 1.35 : 1);
       for (let j = 0; j <= 8; j++) {
         const a = m - half - ends + ((half + ends) * 2 * j) / 8;
         const p = toPage(Math.cos(a) * out, Math.sin(a) * out);
         miss += Math.max(0, B.x0 - p.x, p.x - B.x1) + Math.max(0, B.y0 - p.y, p.y - B.y1);
       }
-      if (miss + i * size * 0.4 < bestCost) { bestCost = miss + i * size * 0.4; mid = m; off = miss; }
+      if (miss + i * size * 0.4 < bestCost) { bestCost = miss + i * size * 0.4; mid = m; off = miss; bestRR = rrm; }
     });
+    if (b.poly) { rr = bestRR; half = tw / rr; }
     if (off <= 1) break; // on the page
   }
   const lw = Math.max(2.2, size * 0.065);

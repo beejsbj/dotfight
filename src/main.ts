@@ -2923,7 +2923,7 @@ function currentFrame(): Frame {
     f.heat = noteContext(s.current).heat;
     const bs = bubbleAt(bb, wall, reduced);
     if (bs) {
-      if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k && (bb.important || noteOnScreen(k))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
+      if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k && (bb.important || noteOnScreen(k))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, ...(corners(k) && { poly: corners(k)! }), p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
       else {
         let x = s.soldiers[bb.id];
         if (bb.important && bb.kind === "stand" && x && !x.alive) {
