@@ -201,6 +201,17 @@ describe("a prism", () => {
 });
 
 describe("old ink", () => {
+  it("a dot just past where the line stops is still crossed out, as in the core rules", () => {
+    const s = field([]);
+    const me = man(s, 0, 500, 850);
+    for (let k = 0; k < 40; k++) {
+      const a = -Math.PI / 2 + (k - 20) * 0.03, len = 100 + k * 7;
+      s.soldiers = s.soldiers.slice(0, 1);
+      const foe = man(s, 1, 500 + Math.cos(a) * (len + 6), 850 + Math.sin(a) * (len + 6));
+      expect(trace(s, shot(me, a, len)).hits, `angle ${a}, length ${len}`).toEqual([foe]);
+    }
+  });
+
   it("a steep crossing jolts the line, at most joltMax times", () => {
     const s = field([]);
     const me = man(s, 0, 150, 1000);
@@ -275,8 +286,19 @@ describe("long roads", () => {
     }
     expect(c.state).toBe("arrived");
     expect(o.arrived).toEqual([0]);
-    expect(seen).toEqual(Array.from({ length: Math.ceil(l / pace) }, (_, k) => Math.min(l, pace * (k + 1))));
+    const legs = [Math.min(l, pace)];
+    while (legs[legs.length - 1] + pace < l) legs.push(legs[legs.length - 1] + pace);
+    expect(seen).toEqual(legs);
     for (const id of c.ids) expect(inside(s.bases[1], s.soldiers[id])).toBe(true);
+  });
+
+  it("a convoy on a road shorter than the pace is still out for one enemy turn", () => {
+    const s = field([["camp", 0, 300, 1500], ["camp", 0, 300, 1300], ["camp", 1, 500, 200]]);
+    for (const b of [0, 1, 2]) fill(s, b, 4);
+    act(s, { t: "send", from: 0, to: 1, n: 2 });
+    expect(handover(s).walked).toEqual([0]);
+    expect(s.convoys[0].state).toBe("road");
+    expect(handover(s).arrived).toEqual([0]);
   });
 
   it("a line along the road crosses walkers out, and an emptied convoy is cut", () => {

@@ -625,12 +625,13 @@ function traceLong(s: GameState, f: Flick): Trace {
     return { turn: Math.max(-rate, Math.min(rate, delta)), k: riding ? (own ? L.ink.grooveOwn : L.ink.grooveEnemy) : 1 };
   };
 
-  interface Pen { at: Pt; h: number; sign: number; j: number; rem: number; budget: number; d: number; free: Set<number>; banks: number; jolts: number; well: number; skip: number }
+  interface Pen { at: Pt; h: number; sign: number; j: number; rem: number; budget: number; d: number; free: Set<number>; banks: number; jolts: number; well: number; skipBase: number }
 
   const walk = (pen: Pen, branch: number, canSplit: boolean): Pt[] => {
     let { at: pos, h, sign, j, rem, budget, d } = pen;
     const { free } = pen;
-    let { banks, jolts, well, skip } = pen; // skip: the base or stroke just met here, not to be met again at once
+    let { banks, jolts, well, skipBase } = pen; // the base just met here, not to be met again at once
+    let skipStroke = -1; // likewise the old stroke
     const pts: Pt[] = [pos];
     let lastInk = { stroke: -1, d: -1 };
     const ev = (e: Omit<TraceEvent, "branch">) => events.push(branch ? { ...e, branch } : e);
@@ -640,6 +641,7 @@ function traceLong(s: GameState, f: Flick): Trace {
         if (j < len.length) { h += sign * turn[j]; rem = len[j]; } else rem = Infinity; // past the arc with line to spare (a friendly groove): straight on
       }
       const seg = Math.min(rem, SUB);
+      let wellTurn = 0, grooveTurn = 0; // what the well and the groove turned the pen for this step
       // a camp's well: lines outside its wall turn toward it, as hard as its garrison
       if (well < L.well.maxTurn) {
         let dh = 0;
@@ -656,12 +658,14 @@ function traceLong(s: GameState, f: Flick): Trace {
         dh = Math.max(well - L.well.maxTurn, Math.min(L.well.maxTurn - well, dh));
         well += Math.abs(dh);
         h += dh;
+        wellTurn = dh;
       }
       // a groove: nearly parallel to old ink, the pen is drawn along it; riding it, the line runs further or shorter
       let k = 1;
       if (branch || d >= Math.max(L.ink.clear, L.ink.grooveReach * 1.5)) {
         const g = pull(pos, h, budget, seg);
         h += g.turn;
+        grooveTurn = g.turn;
         k = g.k;
       }
       const nxt = { x: pos.x + Math.cos(h) * seg, y: pos.y + Math.sin(h) * seg };
@@ -675,7 +679,7 @@ function traceLong(s: GameState, f: Flick): Trace {
         const vs = corners(b);
         const first = vs ? polyHits(pos, nxt, vs)[0] : (() => { const t = circleHits(pos, nxt, b, b.r)[0]; return t === undefined ? undefined : { t, edge: -1 }; })();
         if (!first || first.t > tEnd || first.t >= bt) continue;
-        if (b.id === skip && first.t * seg < 1e-3) continue;
+        if (b.id === skipBase && first.t * seg < 1e-3) continue;
         bt = first.t; ev0 = { kind: "wall", base: b, edge: first.edge };
       }
       const vx = nxt.x - pos.x, vy = nxt.y - pos.y;
@@ -684,7 +688,7 @@ function traceLong(s: GameState, f: Flick): Trace {
         const px = o.x - pos.x, py = o.y - pos.y;
         if (Math.abs(px) > seg + reach || Math.abs(py) > seg + reach) continue;
         const u = (px * vx + py * vy) / (seg * seg);
-        if (u > tEnd && tEnd === 1) continue; // closest further on: a later step finds him
+        if (u > tEnd && tEnd === 1 && budget - seg * k > 1e-6) continue; // closest further on: a later step finds him (unless the line ends here)
         const t = Math.max(0, Math.min(tEnd, u));
         if (t >= bt) continue;
         if (Math.hypot(px - vx * t, py - vy * t) > reach) continue;
@@ -696,7 +700,7 @@ function traceLong(s: GameState, f: Flick): Trace {
           const t = segT(pos, nxt, r.a, r.b);
           if (t === null || t > tEnd || t >= bt) continue;
           if (!branch && d + t * seg < L.ink.clear) continue; // his own old lines all start on his dot
-          if (r.stroke === skip && t * seg < 1e-3) continue;
+          if (r.stroke === skipStroke && t * seg < 1e-3) continue;
           if (r.stroke === lastInk.stroke && Math.abs(d + t * seg - lastInk.d) < 1) continue; // where two runs of one stroke meet
           let off = Math.abs(wrap(Math.atan2(r.b.y - r.a.y, r.b.x - r.a.x) - h));
           if (off > Math.PI / 2) off = Math.PI - off;
@@ -711,17 +715,20 @@ function traceLong(s: GameState, f: Flick): Trace {
         rem -= seg;
         pts.push(nxt);
         pos = nxt;
-        skip = -1;
+        skipBase = skipStroke = -1;
         continue;
       }
       const at = { x: pos.x + vx * bt, y: pos.y + vy * bt };
+      // cut short: the well and the groove only bent it for the part it walked
+      h -= (1 - bt) * (wellTurn + grooveTurn);
+      well -= (1 - bt) * Math.abs(wellTurn);
       budget -= bt * seg * k;
       d += bt * seg;
       rem -= bt * seg;
       if (bt > 0) pts.push(at);
       const was = pos;
       pos = at;
-      skip = -1;
+      skipBase = skipStroke = -1;
       if (ev0.kind === "edge") {
         if (!branch) offPage = true;
         ev({ kind: "edge", at, d });
@@ -738,14 +745,14 @@ function traceLong(s: GameState, f: Flick): Trace {
         const a = gauss(rand) * L.ink.jolt;
         h += a;
         jolts++;
-        skip = ev0.run.stroke;
+        skipStroke = ev0.run.stroke;
         lastInk = { stroke: ev0.run.stroke, d };
         ev({ kind: "ink", at, d, jolt: a });
         continue;
       }
       // a wall: which way through?
       const b = ev0.base;
-      skip = b.id;
+      skipBase = b.id;
       const e = Math.min(0.5, 0.5 / seg);
       const before = { x: was.x + vx * Math.max(0, bt - e), y: was.y + vy * Math.max(0, bt - e) };
       const after = { x: was.x + vx * Math.min(1, bt + e), y: was.y + vy * Math.min(1, bt + e) };
@@ -778,7 +785,7 @@ function traceLong(s: GameState, f: Flick): Trace {
         // leaving your own prism, a snipe splits in two
         canSplit = false;
         ev({ kind: "split", at, d, base: b.id });
-        const half = { at, sign, j, rem, budget, d, free: new Set(free), banks, jolts, well, skip: b.id };
+        const half = { at, sign, j, rem, budget, d, free: new Set(free), banks, jolts, well, skipBase: b.id };
         branches.push(walk({ ...half, h: h - L.prism.spread }, branches.length + 1, false));
         h += L.prism.spread;
       }
@@ -787,7 +794,7 @@ function traceLong(s: GameState, f: Flick): Trace {
   };
 
   const free = new Set(s.bases.filter((b) => wallGap(b, me) < 0).map((b) => b.id));
-  const pts = walk({ at: { x: me.x, y: me.y }, h: h0, sign: 1, j: 0, rem: len[0] ?? 0, budget: pathLen(raw), d: 0, free, banks: 0, jolts: 0, well: 0, skip: -1 }, 0, true);
+  const pts = walk({ at: { x: me.x, y: me.y }, h: h0, sign: 1, j: 0, rem: len[0] ?? 0, budget: pathLen(raw), d: 0, free, banks: 0, jolts: 0, well: 0, skipBase: -1 }, 0, true);
   return { pts, events, hits, offPage, ...(branches.length && { branches }) };
 }
 
@@ -1025,8 +1032,9 @@ function endTurn(s: GameState, seed: number, o: Outcome) {
 }
 
 // The long war's roads are long: at every hand-over each convoy on the road
-// walks `sendPace` further (or, its head at the far wall, goes in), and the
-// outgoing side's sends walk out. They're exposed the whole way.
+// walks `sendPace` further (going in if that reaches the far wall), and the
+// outgoing side's sends walk out. They're exposed the whole way, and always
+// for at least one enemy turn.
 function endLongTurn(s: GameState, seed: number, o: Outcome) {
   const who = s.current, foe = other(who), pace = s.rules.long!.sendPace;
   o.advanced = [];
@@ -1035,9 +1043,9 @@ function endLongTurn(s: GameState, seed: number, o: Outcome) {
     const go = c.ids.map((id) => s.soldiers[id]).filter((x) => x.alive && x.convoy === c.id);
     const l = dist(c.road[0], c.road[1]);
     if (!go.length) { c.state = "cut"; continue; }
-    if (c.at! >= l) { arrive(s, c, seed, o); continue; }
+    if (c.at! + pace >= l) { arrive(s, c, seed, o); continue; }
     const was = columnAt(c.road, c.at!, 1)[0];
-    c.at = Math.min(l, c.at! + pace);
+    c.at = c.at! + pace;
     columnAt(c.road, c.at, go.length).forEach((p, k) => { go[k].x = p.x; go[k].y = p.y; });
     s.marks.push({ t: "walk", owner: c.owner, a: was, b: columnAt(c.road, c.at, 1)[0], n: go.length, seed: seed + 7 + c.id, turn: s.turn });
     o.advanced.push(c.id);

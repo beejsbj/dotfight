@@ -242,7 +242,8 @@ describe("room engines", () => {
   it("new rooms use core-4, or long-1 for the long war, which older clients reject for the reload path", () => {
     expect(ENGINE).toBe("core-4");
     expect(LONG_ENGINE).toBe("long-1");
-    expect(READS).toEqual(["core-2", "core-3", "core-4", "long-1"]);
+    expect(READS).toEqual(["core-2", "core-3", "core-4"]); // long-1 joins once the page can play it
+    expect(canRead(LONG_ENGINE)).toBe(false);
     expect(engineFor(CORE)).toBe("core-4");
     expect(engineFor(LONG)).toBe("long-1");
     expect(["core-2", "core-3"].includes(ENGINE)).toBe(false);
