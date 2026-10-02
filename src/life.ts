@@ -312,6 +312,8 @@ export interface Pass {
   /** Page direction from the line to him: away. */
   away: number;
   fatal: boolean;
+  /** The long war: 0 the main line, k the k-th half a prism split off (path k - 1 of `branches`). */
+  branch?: number;
 }
 
 /**
@@ -339,6 +341,26 @@ export function passes(soldiers: readonly Soldier[], path: Pt[], shooter: number
     out.push({ id: x.id, index: bi, d: best, away, fatal: dead.has(x.id) });
   }
   return out.sort((p, q) => p.index - q.index);
+}
+
+/**
+ * `passes` for a line and the halves a prism split off it: each man is met by
+ * the line that crossed him out, or else the one that comes nearest. `branchOf`
+ * says which line killed a man (0 the main one). Pure.
+ */
+export function passesAll(
+  soldiers: readonly Soldier[], path: Pt[], branches: readonly Pt[][] | undefined, shooter: number, killed: readonly number[],
+  branchOf: (id: number) => number = () => 0,
+): Pass[] {
+  if (!branches?.length) return passes(soldiers, path, shooter, killed);
+  const best = new Map<number, Pass>();
+  [path, ...branches].forEach((P, k) => {
+    for (const p of passes(soldiers, P, shooter, killed.filter((id) => branchOf(id) === k))) {
+      const was = best.get(p.id);
+      if (!was || (p.fatal && !was.fatal) || (p.fatal === was.fatal && p.d < was.d)) best.set(p.id, { ...p, branch: k });
+    }
+  });
+  return [...best.values()].sort((p, q) => p.index - q.index);
 }
 
 /**
@@ -588,8 +610,8 @@ export const NEAR = 85;
  */
 export function planFlick(
   s: GameState,
-  o: { path: Pt[]; killed: readonly number[]; lost: boolean; movedTo?: Pt },
-  shooter: number, kind: "shoot" | "move", when: (index: number) => number, arrive: number,
+  o: { path: Pt[]; killed: readonly number[]; lost: boolean; movedTo?: Pt; branches?: Pt[][]; events?: readonly { kind: string; soldier?: number; branch?: number }[] },
+  shooter: number, kind: "shoot" | "move", when: (index: number, branch?: number) => number, arrive: number,
   // Wall ms relative to the flick; only the lost shooter waits for a volley cross.
   lostDeathAt = arrive,
 ): FlickPlan {
@@ -608,12 +630,13 @@ export function planFlick(
       plan.cues.push({ at: arrive, id: shooter, say: "land", gain: 0.7 });
     }
   }
-  const ps = passes(s.soldiers, P, shooter, o.killed);
+  const killedOn = (id: number) => o.events?.find((e) => e.kind === "kill" && e.soldier === id)?.branch ?? 0;
+  const ps = passesAll(s.soldiers, P, o.branches, shooter, o.killed, killedOn);
   let eeps = 0, phews = 0;
   const near = new Set(ps.map((p) => p.id));
   const twitched = new Set<number>();
   for (const p of ps) {
-    const at = when(p.index);
+    const at = when(p.index, p.branch);
     const x = s.soldiers[p.id];
     if (p.fatal) {
       // he sees it coming, and rears back: the cross cuts him off
@@ -635,7 +658,7 @@ export function planFlick(
     }
   }
   // the fallen: his campmates hold still for him, and one of them says so
-  const fallen = ps.filter((p) => p.fatal).map((p) => ({ x: s.soldiers[p.id], at: when(p.index) }));
+  const fallen = ps.filter((p) => p.fatal).map((p) => ({ x: s.soldiers[p.id], at: when(p.index, p.branch) }));
   // Lost shooter: mourned by the camp he left when his cross starts.
   if (o.lost) fallen.push({ x: { ...me, x: P[0].x, y: P[0].y }, at: lostDeathAt });
   let ohs = 0;

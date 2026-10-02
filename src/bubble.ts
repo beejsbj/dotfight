@@ -306,6 +306,8 @@ export interface BotchIn {
   from: Pt;
   aim: number;
   path: Pt[];
+  /** The long war: the other half a prism split off the line. */
+  branches?: Pt[][];
   killed: number;
   lost: boolean;
   crashed: boolean;
@@ -342,7 +344,7 @@ export function botchOf(b: BotchIn): Botch {
   const end = b.path[b.path.length - 1], len = pathLen(b.path);
   let score = 0;
   // how wide: the closest the ink came to any of theirs
-  const miss = b.foes.length ? Math.min(...b.foes.map((p) => distToPath(p, b.path).d)) : B.far;
+  const miss = b.foes.length ? Math.min(...b.foes.map((p) => Math.min(distToPath(p, b.path).d, ...(b.branches ?? []).map((q) => distToPath(p, q).d)))) : B.far;
   const wide = clamp01((miss - B.near) / (B.far - B.near)) * B.wide;
   if (wide > 0.1) why.push("wide");
   score += wide;

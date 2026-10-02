@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { act, canArrange, columnAt, capacity, corners, illegal, inside, newGame, preview, scatterIn, trace, wallGap, wallStrength, type Base, type Flick, type GameState, type Player } from "./game";
+import { passesAll } from "./life";
 import { dist, insidePoly, pathLen, polyHits, polygon, type Pt } from "./geom";
 import { LONG, RULES, SIZES, type Shape } from "./rules";
 
@@ -183,6 +184,21 @@ describe("a prism", () => {
     const o = preview(s, shot(me, -Math.PI / 2, 800));
     expect(o.killed.sort()).toEqual([a, b].sort());
     expect(o.branches).toHaveLength(1);
+  });
+
+  it("a man the other half kills is met along that half, not the main line", () => {
+    const { s, me } = page();
+    const split = trace(s, shot(me, -Math.PI / 2, 800)).events.find((e) => e.kind === "split")!;
+    const sp = LONG.long!.prism.spread;
+    const b = man(s, 1, split.at.x + Math.cos(-Math.PI / 2 - sp) * 300, split.at.y + Math.sin(-Math.PI / 2 - sp) * 300);
+    const o = act(s, { t: "flick", ...shot(me, -Math.PI / 2, 800) });
+    expect(o.events.find((e) => e.kind === "kill" && e.soldier === b)?.branch).toBe(1);
+    const ps = passesAll(s.soldiers, o.path, o.branches, me, o.killed, (id) => o.events.find((e) => e.kind === "kill" && e.soldier === id)?.branch ?? 0);
+    const p = ps.find((q) => q.id === b)!;
+    expect(p).toMatchObject({ fatal: true, branch: 1 });
+    // he is some 300 u along the half, which the main line (parting from it) is far from
+    expect(p.index).toBeGreaterThan(5);
+    expect(p.d).toBeLessThan(1);
   });
 
   it("doesn't split a lunge, or an enemy's line", () => {

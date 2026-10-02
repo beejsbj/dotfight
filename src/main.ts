@@ -748,12 +748,10 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   const quick = opts.quick ?? 1;
   const len = pathLen(o.path);
   const dur = Math.min(900, Math.max(300, 220 + len * 0.42)) * quick;
-  const n = o.path.length - 1;
   inkTL.clear();
   inkTL.add(`m${first}`, 0, 0, dur, "out2");
   // a prism's other half runs on from where the line split
-  const split = o.events.find((e) => e.kind === "split");
-  const splitAt = split ? Math.min(0.95, split.d / Math.max(1, len)) * dur : 0;
+  const splitAt = splitMs(o, dur);
   o.branches?.forEach((_, k) => inkTL.add(`m${first + 1 + k}`, 0, splitAt, Math.max(120, dur - splitAt), "out2"));
   const over = s.phase === "over";
   const kills: Resolve["kills"] = [];
@@ -763,6 +761,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   const live = opts.cam ?? true; // replays are watched, not felt
   let lastKill = -1;
   for (let i = first + 1; i < s.marks.length; i++) if (s.marks[i].t === "cross" && (s.marks[i] as { kind: string }).kind === "kill") lastKill = i;
+  let killed = 0; // the kill crosses come in the order of o.killed
   const killCount = s.marks.slice(first + 1).filter((m) => m.t === "cross" && m.kind === "kill").length;
   for (let i = first + 1; i < s.marks.length; i++) {
     const m = s.marks[i];
@@ -774,7 +773,9 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     }
     if (m.t !== "cross") continue;
     if (m.kind === "kill") {
-      const at = reachFraction(nearestIndex(o.path, m), n) * dur;
+      // a man the prism's other half crosses out falls when that ink reaches him
+      const by = o.events.find((e) => e.kind === "kill" && e.soldier === o.killed[killed++])?.branch ?? 0;
+      const at = inkAt(o, dur, by, m);
       const last = over && i === lastKill;
       kills.push({ i, at, hit: false, last });
       // held until the ink gets there; then drawn on the wall clock during the snag
@@ -800,7 +801,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     }
     moments.push({ at: dur + 20 * quick + volleyHold, fn: () => { if (live) { sfx.snag(true); sfx.cross(0.03, 1.1); cam.shake(7); cue("lunge-death", base); } } });
   }
-  feelFlick(o, f, dur, snags, n, seen, volleyHold);
+  feelFlick(o, f, dur, snags, seen, volleyHold);
   for (const { i, owner } of stands) {
     const at = dur + Math.max(380 * quick, volleyHold ? volleyHold + VOLLEY.crossMs * speed : 0);
     inkTL.add(`m${i}`, 0, at, 500 * quick);
@@ -1092,8 +1093,8 @@ function skipUnitCam() { if (unit && !unit.rising) unit.skip = T - unit.t0; }
  * clock the boil draws by. Ink time is snagged on each kill; `when` turns a
  * place on the line into the wall ms at which the ink's head gets there.
  */
-function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number, seen: AnyState, volleyHold: number) {
-  const when = (i: number) => wallTime(reachFraction(Math.min(n, Math.round(i)), n) * dur, snags) / speed;
+function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], seen: AnyState, volleyHold: number) {
+  const when = (i: number, branch = 0) => wallTime(lineAt(o, dur, branch, i), snags) / speed;
   const arrive = wallTime(dur, snags) / speed;
   const plan = planFlick(seen, o, f.soldier, f.kind === "snipe" ? "shoot" : "move", when, arrive, arrive + volleyHold / speed);
   const on = (k: string) => (k === "recoil" || k === "flinch" || k === "gasp" ? LIFE.line : k === "land" ? LIFE.chosen : LIFE.crowd);
@@ -1109,7 +1110,7 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number, 
   if (close && away(shooter)) after(close.at * speed, () => feel("flinch"));
   // a botch: graded from the flick as it ran; a spectacular one takes the page from the target's "phew"
   const bo = st.n === 0 && st.ended < 3 ? botchOf({
-    kind: f.kind, from: o.path[0], aim: f.angle, path: o.path, killed: o.killed.length, lost: o.lost, crashed: o.crashed !== undefined,
+    kind: f.kind, from: o.path[0], aim: f.angle, path: o.path, ...(o.branches && { branches: o.branches }), killed: o.killed.length, lost: o.lost, crashed: o.crashed !== undefined,
     offPage: o.events.some((e) => e.kind === "edge") || (o.lost && o.crashed === undefined),
     foes: turn.aliveOf(seen, other(shooter)), own: seen.bases.filter((b) => b.owner === shooter),
   }) : null;
@@ -1209,6 +1210,26 @@ function noteFor(who: Player, f: Flick, o: Outcome) {
   if (o.earned) return `${name(who)}'s lunger took ${k}: one more, lunge on or stop${stood}`;
   if (k) return `${name(who)}'s ${v === "shoot" ? "shot" : v === "move" ? "run" : v} crossed out ${k}${stood}`;
   return (f.kind === "lunge" ? `${name(who)} ${v === "move" ? "moved" : "lunged"}` : `${name(who)} missed`) + stood;
+}
+
+/** Ink ms at which the line a prism split off (or the main line, 0) has run `i` vertices. */
+function lineAt(o: Outcome, dur: number, branch: number, i: number): number {
+  if (!branch || !o.branches?.[branch - 1]) {
+    const n = o.path.length - 1;
+    return reachFraction(Math.min(n, Math.max(0, Math.round(i))), n) * dur;
+  }
+  const pts = o.branches[branch - 1], nb = pts.length - 1, from = splitMs(o, dur);
+  return from + reachFraction(Math.min(nb, Math.max(0, Math.round(i))), nb) * Math.max(120, dur - from);
+}
+/** Ink ms at which that line's head reaches the point `p`. */
+function inkAt(o: Outcome, dur: number, branch: number, p: Pt) {
+  return lineAt(o, dur, branch, nearestIndex(branch && o.branches?.[branch - 1] ? o.branches[branch - 1] : o.path, p));
+}
+/** When the main line's ink head is at the split, so the other half sets out from there. */
+function splitMs(o: Outcome, dur: number): number {
+  const split = o.events.find((e) => e.kind === "split");
+  const n = o.path.length - 1;
+  return split ? Math.min(0.95 * dur, reachFraction(nearestIndex(o.path, split.at), n) * dur) : 0;
 }
 
 function nearestIndex(pts: Pt[], p: Pt) {
