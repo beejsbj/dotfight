@@ -327,17 +327,17 @@ function canSendAny(c0: GameState) {
 // and the aim is dropped, nothing fired. One small fixed DOM element in screen
 // space, so no page or canvas layer is touched. How hard you're pulling shows
 // in the pen itself: its refill fills with the pull (pen.ts, `charge`). The
-// ring is in the side's ink, and once the thumb has pulled away an arrow runs
-// from it back up to the ring, labelled, so where to go to stop is never lost.
+// ring is in the side's ink, and once the thumb has pulled away a light arrow
+// runs from it back up to the ring, so where to go to stop is never lost.
 let ringOn = false; // the thumb is inside the ring
-/** The arrow back to the ring: px clear of the ring, px left for the fingertip, shortest worth drawing, and where its label flips sides. */
-const BACK_GAP = 4, BACK_FINGER = 26, BACK_MIN = 28, BACK_FLIP = 150;
+/** The arrow back to the ring: px clear of the ring, px left for the fingertip, and the shortest worth drawing. */
+const BACK_GAP = 4, BACK_FINGER = 26, BACK_MIN = 28;
 let markOn = false;
 let thumbX = 0; // where the thumb is across the screen
 const ringEl = document.createElement("div");
 ringEl.id = "cancel-ring";
 ringEl.hidden = true;
-ringEl.innerHTML = `<i></i><b class="back"><span>back here to stop</span></b>`;
+ringEl.innerHTML = `<i></i><b class="back"></b>`;
 const backEl = ringEl.querySelector<HTMLElement>(".back")!;
 document.body.append(ringEl);
 function syncRing() {
@@ -351,7 +351,6 @@ function syncRing() {
     const len = byThumb.dist - r - BACK_GAP - BACK_FINGER;
     backEl.style.height = `${Math.max(0, len)}px`;
     backEl.classList.toggle("on", len > BACK_MIN);
-    backEl.classList.toggle("flip", thumbX < BACK_FLIP); // near the left edge, the label goes on the right
   }
   if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
   const on = shown && !!aim && aim.charged && !pull(aim).live;

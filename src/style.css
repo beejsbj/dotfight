@@ -427,21 +427,15 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   background: var(--ink); box-shadow: 0 0 0 1.5px rgba(var(--desk-rgb), .85);
 }
 #cancel-ring.in { border-style: solid; background: color-mix(in srgb, var(--ink) 28%, transparent); }
-/* the arrow back to the ring, from just above the fingertip, labelled; height set from script */
+/* the arrow back to the ring, from just above the fingertip: a light pencil stroke, there if you look for it; height set from script */
 #cancel-ring .back {
-  position: absolute; left: 50%; top: calc(100% + 4px); width: 3px; margin-left: -1.5px; display: none;
-  background: var(--ink); border-radius: 2px; box-shadow: 0 0 0 1.5px rgba(var(--desk-rgb), .55);
+  position: absolute; left: 50%; top: calc(100% + 4px); width: 2px; margin-left: -1px; display: none;
+  background: var(--ink); border-radius: 1px; opacity: .5;
 }
 #cancel-ring .back.on { display: block; }
 #cancel-ring .back::before {
-  content: ""; position: absolute; left: 50%; top: -2px; width: 11px; height: 11px; margin-left: -5.5px;
-  border-left: 3px solid var(--ink); border-top: 3px solid var(--ink); transform: rotate(45deg); transform-origin: center;
+  content: ""; position: absolute; left: 50%; top: 0; width: 7px; height: 7px; margin-left: -4.5px;
+  border-left: 2px solid var(--ink); border-top: 2px solid var(--ink); transform: rotate(45deg); transform-origin: center;
 }
-#cancel-ring .back span {
-  position: absolute; right: 12px; top: 6px; transform: rotate(-4deg); white-space: nowrap;
-  font-family: var(--hand); font-weight: 700; font-size: 18px; line-height: 1; color: rgb(var(--desk-rgb));
-  padding: 3px 8px 4px; border-radius: 9px; background: rgba(20, 16, 12, .78); border: 1.5px solid var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
-}
-#cancel-ring .back.flip span { right: auto; left: 12px; transform: rotate(4deg); }
 #cancel-ring.in .back { display: none; }
 #cancel-ring[hidden] { display: none; }
