@@ -159,12 +159,12 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 /* --- the cover: a brown-paper exercise book ------------------------------------ */
 
 #cover {
-  position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 46px 16px 16px;
+  position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 10px 28px 10px 10px;
   perspective: 1400px;
 }
 #cover[hidden] { display: none; }
 .book {
-  position: relative; width: min(370px, 100%); max-height: calc(100dvh - 62px);
+  position: relative; width: min(370px, 100%); min-width: 0; max-height: calc(100dvh - 20px);
   transform-origin: left center;
   background:
     radial-gradient(ellipse at 30% 20%, rgba(255, 230, 190, .16), transparent 60%),
@@ -176,28 +176,28 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   transform: rotate(-2.2deg);
   animation: bookIn .7s cubic-bezier(.2,.8,.2,1) both;
 }
-/* the sheet inside the boards scrolls; the bookmarks stay on the edge */
+/* the outside of the book never scrolls: the slip lists what fits, and --fit (set from
+   script) draws the whole leaf smaller when even that is too tall */
 .leaf {
-  max-height: calc(100dvh - 62px); overflow: auto; overscroll-behavior: contain; border-radius: inherit;
-  padding: 26px 20px 20px 30px; scrollbar-width: none;
+  max-height: calc((100dvh - 20px) / var(--fit, 1)); overflow: hidden; border-radius: inherit;
+  padding: 22px 20px 14px 30px; zoom: var(--fit, 1);
 }
-.leaf::-webkit-scrollbar { display: none; }
 
-/* bookmarks: paper index tabs sticking out of the top edge */
-.tabs { position: absolute; z-index: 2; left: 34px; right: 14px; top: -31px; height: 44px; display: flex; gap: 5px; pointer-events: none; }
+/* bookmarks: paper index tabs sticking out of the fore edge, read top to bottom, so the book gets the screen's full height */
+.tabs { position: absolute; z-index: 2; right: -20px; top: 22px; width: 30px; display: flex; flex-direction: column; gap: 5px; pointer-events: none; }
 .mark {
-  pointer-events: auto; flex: 0 1 auto; min-width: 48px; height: 44px; padding: 0 9px 3px; text-decoration: none;
+  pointer-events: auto; flex: none; width: 30px; min-height: 48px; padding: 10px 2px 10px 0; text-decoration: none; writing-mode: vertical-rl;
   display: flex; align-items: center; justify-content: center; box-sizing: border-box;
-  font-family: var(--hand); font-weight: 700; font-size: 19px; line-height: 1.05; color: #3a3530; white-space: nowrap;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--tab-c) 92%, #fff) 0, var(--tab-c) 100%);
-  border-radius: 6px 6px 0 0; box-shadow: 0 -1px 2px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.35);
+  font-family: var(--hand); font-weight: 700; font-size: 18px; line-height: 1.05; color: #3a3530; white-space: nowrap;
+  background: linear-gradient(90deg, var(--tab-c) 0, color-mix(in srgb, var(--tab-c) 92%, #fff) 100%);
+  border-radius: 0 6px 6px 0; box-shadow: 1px 0 2px rgba(0,0,0,.28), inset -1px 0 0 rgba(255,255,255,.35);
   transition: transform .12s;
 }
 .mark.m1 { --tab-c: #e8c9a0; transform: rotate(-1deg); }
-.mark.m2 { --tab-c: #cfdcb8; height: 40px; margin-top: 4px; transform: rotate(.8deg); }
+.mark.m2 { --tab-c: #cfdcb8; width: 27px; transform: rotate(.8deg); }
 .mark.m3 { --tab-c: #e5b4ac; transform: rotate(-.6deg); }
-.mark.m4 { --tab-c: #b9cfe0; height: 40px; margin-top: 4px; transform: rotate(1deg); }
-.mark:active { transform: translateY(3px); }
+.mark.m4 { --tab-c: #b9cfe0; width: 27px; transform: rotate(1deg); }
+.mark:active { transform: translateX(-3px); }
 .mark sup { font-size: 13px; margin-left: 2px; color: #6b3b2a; }
 .mark sup:empty { display: none; }
 .book::before { /* the stitched spine */
@@ -213,21 +213,24 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 #cover.open .book { animation: bookOpen .7s cubic-bezier(.5,0,.6,1) both; }
 
 .label {
-  position: relative; background: var(--label); padding: 14px 16px 10px; border-radius: 10px;
+  position: relative; background: var(--label); padding: 13px 16px 9px; border-radius: 10px;
   box-shadow: inset 0 0 0 3px var(--label), inset 0 0 0 4.5px var(--label-ink), inset 0 0 0 7px var(--label), inset 0 0 0 8px var(--label-ink), 0 2px 3px rgba(0,0,0,.25);
   transform: rotate(1deg);
 }
 .label .school { margin: 0; font-family: var(--type); font-size: 11px; letter-spacing: .12em; color: var(--label-ink); text-align: center; }
-.label h1 { margin: 2px 0 8px; font-family: var(--hand); font-weight: 700; font-size: 46px; line-height: .95; color: var(--title-0); text-align: center; transform: rotate(-2deg); }
+.label h1 { margin: 2px 0 5px; font-family: var(--hand); font-weight: 700; font-size: 44px; line-height: .95; color: var(--title-0); text-align: center; transform: rotate(-2deg); }
 .label h1 em { font-style: normal; color: var(--title-1); }
 .label .field { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 2px 0 0; border-bottom: 1.5px solid color-mix(in srgb, var(--label-ink) 50%, transparent); font-family: var(--type); font-size: 13px; color: var(--label-ink); }
-.label .field span { width: 64px; flex: none; }
+.label .field span { flex: none; }
+.label .pair { display: flex; gap: 12px; }
+.label .pair .field { flex: 1 1 auto; min-width: 0; }
+.label .pair .field.subject { flex: none; }
 .label .field b { font-family: var(--hand); font-weight: 700; font-size: 25px; line-height: 1.05; }
 .label .hand.blue { color: var(--title-0); }
 
 /* the menu: a torn-out slip of squared paper tucked into the cover */
 .menu {
-  position: relative; margin: 18px -4px 2px 8px; padding: 14px 14px 12px 16px;
+  position: relative; margin: 13px -4px 2px 8px; padding: 10px 14px 9px 16px;
   background:
     linear-gradient(90deg, transparent 22px, var(--card-margin) 22px 23.5px, transparent 23.5px),
     var(--lines),
@@ -242,53 +245,70 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .menu .ink.blue { color: var(--blue); }
 .menu .ink.red { color: var(--red); }
 .menu .ink:active { transform: translateX(3px); }
-.menu .levels { display: flex; gap: 4px; margin: -2px 0 8px 18px; }
-.menu .levels button { font-family: var(--hand); font-size: 21px; padding: 2px 8px; color: var(--fine); border-radius: 50%; }
-.menu .levels button.on { color: var(--red); box-shadow: inset 0 0 0 2px var(--red); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
+/* Dawood-bot and how well he flicks, on one line: the level is one word, underlined by its own stroke; tap it round */
+/* on the slip the name matters more than the turn; the drawer has room for both */
+.menu .game .go small { display: none; }
+.menu .game .go b { font-size: 24px; }
+.menu .game.yours .go span { font-size: 20px; padding: 1px 7px 2px; }
+.menu .bot { display: flex; align-items: center; gap: 2px; margin: 2px 0 0; }
+.menu .bot .ink { flex: none; font-size: 29px; padding-left: 14px; }
+.menu .bot .level {
+  flex: none; margin-left: auto; min-width: 64px; height: 46px; padding: 0 4px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  font-family: var(--hand); font-size: 22px; line-height: 1; color: var(--red); transform: rotate(-2deg);
+}
+.menu .bot .level .hand-icon { width: 58px; height: 13px; margin-top: -1px; }
+.menu .bot .level:active { transform: rotate(-2deg) scale(.93); }
+/* the two ways to play a person, side by side */
+.menu .duo { display: flex; gap: 6px; margin: 2px 0 0; }
+.menu .duo .ink { flex: 1 1 0; min-width: 0; font-size: 25px; padding-left: 14px; white-space: nowrap; }
+.menu .duo .ink + .ink { padding-left: 0; }
 .menu .head { font-family: var(--hand); font-size: 19px; color: var(--pencil); margin: 2px 0 0 18px; letter-spacing: .02em; }
 /* section headings: inked and underlined twice, like a kid ruling off a new topic */
 .menu .sect {
-  margin: 12px 4px 4px 14px; padding-bottom: 1px; font-family: var(--hand); font-weight: 700; font-size: 30px; line-height: 1.05; color: var(--pencil);
+  margin: 7px 4px 3px 14px; padding-bottom: 0; font-family: var(--hand); font-weight: 700; font-size: 27px; line-height: 1.05; color: var(--pencil);
   border-bottom: 2px solid var(--pencil); box-shadow: 0 4px 0 -1px color-mix(in srgb, var(--pencil) 45%, transparent);
   transform: rotate(-.6deg);
 }
+.menu .sect { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.menu .sect .pencil { flex: none; font-size: 21px; font-weight: 400; padding: 0 4px; }
+.menu .sect .pencil.yours { color: var(--red); font-weight: 700; text-decoration: none; padding: 0 8px 1px; box-shadow: inset 0 0 0 2px var(--red); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
 .menu .carry { position: relative; display: flex; align-items: flex-start; margin: 0 0 2px; }
-.menu .carry .ink { flex: 1; min-width: 0; }
-.menu .x { flex: none; width: 40px; height: 40px; margin: 0 -4px 0 0; display: grid; place-items: center; font-family: var(--hand); font-size: 30px; line-height: 1; color: var(--pencil); opacity: .7; text-align: center; }
-.menu .x:active { color: var(--red); opacity: 1; }
-.menu .games { list-style: none; margin: 0 0 4px; padding: 0; }
-.menu .game { display: flex; align-items: center; margin: 0 0 0 14px; border-bottom: 1px dashed color-mix(in srgb, var(--pencil) 35%, transparent); }
-.menu .game .go { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 4px 0 4px 4px; font-family: var(--hand); }
-.menu .game .go b { font-size: 26px; font-weight: 700; line-height: 1; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.menu .game .go span { flex: none; white-space: nowrap; font-size: 22px; line-height: 1; }
-.menu .game .go small { flex: none; white-space: nowrap; margin-left: auto; padding-right: 2px; font-size: 16px; color: var(--pencil); }
+:is(.menu, .card) .game { position: relative; }
+.menu .carry .ink { flex: 1; min-width: 0; font-size: 28px; }
+:is(.menu, .card) .x { flex: none; width: 40px; height: 40px; margin: 0 -4px 0 0; display: grid; place-items: center; font-family: var(--hand); font-size: 30px; line-height: 1; color: var(--pencil); opacity: .7; text-align: center; }
+:is(.menu, .card) .x:active { color: var(--red); opacity: 1; }
+:is(.menu, .card) .games { list-style: none; margin: 0 0 2px; padding: 0; }
+:is(.menu, .card) .game { display: flex; align-items: center; margin: 0 0 0 14px; border-bottom: 1px dashed color-mix(in srgb, var(--pencil) 35%, transparent); }
+:is(.menu, .card) .game .go { flex: 1; min-width: 0; min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 4px 0 4px 4px; font-family: var(--hand); }
+:is(.menu, .card) .game .go b { font-size: 26px; font-weight: 700; line-height: 1; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(.menu, .card) .game .go span { flex: none; white-space: nowrap; font-size: 22px; line-height: 1; }
+:is(.menu, .card) .game .go small { flex: none; white-space: nowrap; margin-left: auto; padding-right: 2px; font-size: 16px; color: var(--pencil); }
 /* your go: inked, circled, wants you. their go: pencil, waiting. finished: faint */
-.menu .game.yours .go b { color: var(--blue); }
-.menu .game.yours .go span { color: var(--red); font-weight: 700; padding: 1px 9px 2px; box-shadow: inset 0 0 0 2px var(--red); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
-.menu .game.yours { background: linear-gradient(90deg, color-mix(in srgb, var(--red) 9%, transparent), transparent 80%); }
-.menu .game.theirs .go b { color: var(--fine); font-weight: 400; }
-.menu .game.theirs .go span { color: var(--fine); }
-.menu .game.done .go b { color: var(--fine); font-weight: 400; font-size: 22px; opacity: .8; }
-.menu .game.done .go span { color: var(--fine); font-size: 19px; opacity: .8; }
-.menu .game.done .x { opacity: .5; }
-.menu .more { margin-left: 18px; }
-.menu .more .pencil { min-height: 40px; font-size: 20px; }
-.menu .tearing { display: flex; align-items: center; gap: 6px; padding: 4px 0 4px 18px; }
-.menu .tearing .say { flex: 1; min-width: 0; }
-.menu .tearing p { margin: 0; }
-.menu .tearing .struck { font-family: var(--hand); font-size: 22px; line-height: 1.2; font-weight: 700; color: var(--pencil); width: fit-content; max-width: 100%; background: linear-gradient(var(--red), var(--red)) 0 58% / 100% 2.5px no-repeat; }
-.menu .tearing .ask { font-family: var(--hand); font-size: 15px; line-height: 1.1; color: var(--pencil); opacity: .85; margin-top: 1px; }
-.menu .tearing .acts { flex: none; display: flex; gap: 0; }
-.menu .ico { width: 42px; height: 44px; display: grid; place-items: center; color: var(--pencil); }
-.menu .ico .hand-icon { width: 28px; height: 28px; }
-.menu .ico.rip { color: var(--red); }
-.menu .ico:active { transform: scale(.9); }
+:is(.menu, .card) .game.yours .go b { color: var(--blue); }
+:is(.menu, .card) .game.yours .go span { color: var(--red); font-weight: 700; padding: 1px 9px 2px; box-shadow: inset 0 0 0 2px var(--red); border-radius: 48% 52% 46% 54% / 56% 48% 52% 44%; }
+:is(.menu, .card) .game.yours { background: linear-gradient(90deg, color-mix(in srgb, var(--red) 9%, transparent), transparent 80%); }
+:is(.menu, .card) .game.theirs .go b { color: var(--fine); font-weight: 400; }
+:is(.menu, .card) .game.theirs .go span { color: var(--fine); }
+:is(.menu, .card) .game.done .go b { color: var(--fine); font-weight: 400; font-size: 22px; opacity: .8; }
+:is(.menu, .card) .game.done .go span { color: var(--fine); font-size: 19px; opacity: .8; }
+:is(.menu, .card) .game.done .x { opacity: .5; }
+/* "tear it out?": written in red over the row, which fades underneath; nothing moves */
+:is(.menu, .card) .tearing { position: absolute; z-index: 1; inset: 0; display: flex; align-items: center; gap: 4px; padding-left: 8px; }
+:is(.menu, .card) .tearing .ask { position: relative; flex: 1; min-width: 0; margin: 0; font-family: var(--hand); font-weight: 700; font-size: 17px; line-height: .98; color: var(--red); transform: rotate(-2deg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu .carry .tearing .ask { font-size: 22px; }
+:is(.menu, .card) :has(> .tearing) > :not(.tearing) { opacity: .22; }
+:is(.menu, .card) :has(> .tearing) > .x { visibility: hidden; }
+:is(.menu, .card) .tearing .acts { flex: none; display: flex; gap: 0; }
+:is(.menu, .card) .ico { width: 42px; height: 44px; display: grid; place-items: center; color: var(--pencil); }
+:is(.menu, .card) .ico .hand-icon { width: 28px; height: 28px; }
+:is(.menu, .card) .ico.rip { color: var(--red); }
+:is(.menu, .card) .ico:active { transform: scale(.9); }
 /* a torn scrap of each game's own paper */
-.menu .paper-icon { flex: none; align-self: center; width: 24px; height: 28px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
+:is(.menu, .card) .paper-icon { flex: none; align-self: center; width: 24px; height: 28px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
 .menu .carry-icon { flex: none; padding: 9px 0 0 14px; }
 .menu .carry-icon + .ink { padding-left: 8px; }
-.menu .game .go .paper-icon { margin-right: -2px; }
-.menu .game.done .paper-icon, .menu .game.theirs .paper-icon { opacity: .75; }
+:is(.menu, .card) .game .go .paper-icon { margin-right: -2px; }
+:is(.menu, .card) .game.done .paper-icon, :is(.menu, .card) .game.theirs .paper-icon { opacity: .75; }
 .menu .sizes { display: flex; gap: 2px; margin: 0 0 4px 12px; }
 .menu .sizes button { font-family: var(--hand); text-align: center; padding: 2px 8px 3px; color: var(--fine); border-radius: 50%; }
 .menu .sizes button b { display: block; font-size: 23px; font-weight: 700; line-height: 1; }
@@ -374,11 +394,26 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .card.drawer .page { text-align: left; }
 .card.drawer .page canvas { width: 100%; height: auto; display: block; box-shadow: 0 3px 8px rgba(0,0,0,.35); transform: rotate(-1deg); }
 .card.drawer .page:nth-child(2n) canvas { transform: rotate(1.2deg); }
+.card.drawer .friends h3 { margin-bottom: 2px; }
+.card.drawer .friends:not(:empty) { margin: 0 0 12px -14px; }
+.card.drawer .friends h3 { margin-left: 14px; }
+.card .games button { display: block; text-align: left; }
 .card.drawer .page span { display: block; font-family: var(--hand); font-size: 16px; line-height: 1.1; margin-top: 5px; color: var(--pencil); }
 
 /* wide windows: the HUD stays a phone's width, centred on the near edge */
 @media (min-width: 700px) {
   #top, #bottom { max-width: 640px; margin: 0 auto; }
+}
+
+/* narrow phones: the slip's hand gets smaller so nothing wraps */
+@media (max-width: 340px) {
+  .menu .ink { font-size: 24px; }
+  .menu .sect { font-size: 24px; white-space: nowrap; }
+  .menu .bot .ink { font-size: 23px; }
+  .menu .duo .ink { font-size: 21px; }
+  .menu .ink small { font-size: 15px; }
+  .menu .custom { flex-wrap: wrap; gap: 0 10px; margin-left: 12px; }
+  .menu .custom .step small { white-space: nowrap; }
 }
 
 /* short landscape phones: the page is portrait, so keep the chrome thin */
