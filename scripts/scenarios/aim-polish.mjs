@@ -1,6 +1,6 @@
 // Polish on the turning-page aim (feel/aim-polish): the dial clicks as the page
-// turns under the thumb (firmer passing straight ahead), the pull's rule hangs
-// under the start mark and is drawn over as far as the thumb has pulled, and
+// turns under the thumb (firmer passing straight ahead), the pen's refill fills
+// with the pull while the start mark waits where the thumb went down, and
 // after a shot the page holds the shot's way up (slid across so the soldier
 // stays on screen) until the ink lands, then faces its player again. Also
 // measures the frame cost of a sweep (pft.frames) and shoots a turn frame by
@@ -37,11 +37,11 @@ export default async function (T, out) {
   };
   const felt = (ev) => page.evaluate((ev) => window.pft.haptics.felt.filter((f) => f.ev === ev).map((f) => f.arg ?? 0), ev);
   const read = () => page.evaluate(() => {
-    const ring = document.querySelector("#cancel-ring"), drawn = ring.querySelector(".drawn"), stop = ring.querySelector(".stop");
+    const ring = document.querySelector("#cancel-ring");
     return {
       marks: window.pft.s.marks.length, busy: window.pft.busy, selected: window.pft.selected, status: document.querySelector("#status").textContent,
-      mark: !ring.hidden, ring: ring.classList.contains("in"), drawn: parseFloat(drawn.style.height), stopTop: parseFloat(stop.style.top),
-      ruleShown: getComputedStyle(drawn).visibility !== "hidden", tgt: { ...window.pft.cam.tgt }, cur: { ...window.pft.cam.cur },
+      mark: !ring.hidden, ring: ring.classList.contains("in"), charge: window.pft.frame().pen?.charge,
+      tgt: { ...window.pft.cam.tgt }, cur: { ...window.pft.cam.cur },
     };
   });
   const W = 390, x0 = 195, y0 = 520;
@@ -90,22 +90,23 @@ export default async function (T, out) {
   // the line the thumb sat on doesn't click again; the ones behind it do, and straight ahead last, firmer
   check(back.length === want * 2 && back[back.length - 1] === 1 && back.slice(0, -1).every((c) => c === 0), "back past straight ahead: the clicks come back, the last one firmer", `felt ${JSON.stringify(back)}`);
 
-  // 2. a quarter turn left, then the pull: the rule under the thumb fills as far as the pull
+  // 2. a quarter turn left, then the pull: the pen's refill fills with it
   const xq = x0 - 8 - Math.round((Math.PI / 2) / k);
   await moveTo(xq, y0, 16);
   await moveTo(xq, y0 + 100, 12);
   await page.waitForTimeout(400);
   const r2 = await read();
-  check(r2.mark && !r2.ring && r2.ruleShown && Math.abs(r2.drawn - (100 - feel.minPullPx)) < 2.5 && Math.abs(r2.stopTop - (feel.minPullPx + feel.maxPullPx)) < 0.5, "pulled 100px: the rule is drawn to the thumb, its end bar at full pull", `drawn ${r2.drawn}px stop ${r2.stopTop}px`);
+  const want2 = await page.evaluate(() => window.pft.aim.power);
+  check(r2.mark && !r2.ring && want2 > 0 && Math.abs(r2.charge - want2) < 1e-9, "pulled 100px: the start mark stays, the refill fills to the pull's power", `charge ${r2.charge} power ${want2}`);
   await T.shot(`${out}/polish-3-pulled.png`);
   const aimed = await page.evaluate(() => ({ rot: window.pft.cam.tgt.rot, angle: window.pft.aim.angle }));
   check(Math.abs(wrap(aimed.angle - (-(Math.PI / 2 + own) - Math.PI / 2))) < 0.05, "  aimed a quarter turn left", `angle ${deg(aimed.angle)}`);
 
-  // 3. back to the start: the ring firms up and the rule goes
+  // 3. back to the start: the ring firms up and the refill empties
   await moveTo(xq, y0 + 2, 12);
   await page.waitForTimeout(400);
   const r3 = await read();
-  check(r3.ring && !r3.ruleShown, "back at the start: ring firm, rule put away", JSON.stringify({ ring: r3.ring, ruleShown: r3.ruleShown }));
+  check(r3.ring && r3.charge === 0, "back at the start: ring firm, refill empty", JSON.stringify({ ring: r3.ring, charge: r3.charge }));
   await T.shot(`${out}/polish-4-cancel-ring.png`);
 
   // 4. pull again and let go: the page keeps the shot's way up while the ink runs, he stays on screen, then it faces its player

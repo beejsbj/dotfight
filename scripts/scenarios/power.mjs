@@ -1,5 +1,5 @@
-// The power bar while aiming: pick a man up, pull a quarter, half and all the
-// way, and shoot each, to see how plainly the pull reads.
+// The power while aiming, in the pen's refill: pick a man up, pull a quarter, half
+// and all the way, and shoot each, to see how plainly the pull reads.
 //   [THEME=<id>] node scripts/playtest.mjs power <url> <outdir>
 import { idle } from "../lib/phone.mjs";
 

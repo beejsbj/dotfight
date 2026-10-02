@@ -13,7 +13,7 @@ import {
   type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
-import { DETENTS, Dial, haptic, haptics, Ratchet } from "./haptics";
+import { Dial, haptic, haptics, Ratchet } from "./haptics";
 import { inkTime, wallTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
@@ -325,25 +325,15 @@ function canSendAny(c0: GameState) {
 // page turns as you slide sideways; the pull is only the way down). With no
 // downward pull left after a real pull, the ring firms up (and ticks): let go
 // and the aim is dropped, nothing fired. One small fixed DOM element in screen
-// space, so no page or canvas layer is touched.
-// Under the ring hangs the pull's power bar: a groove down to full power, filled
-// in the side's ink as far as the thumb has pulled, with a notch at each detent
-// (the ones the ratchet clicks), and lit at the end at full power. The guide on the page is under the pen; this is
-// where the thumb is, so how hard you're pulling, of how hard you can, reads
-// at a glance.
+// space, so no page or canvas layer is touched. How hard you're pulling shows
+// in the pen itself: its refill fills with the pull (pen.ts, `charge`).
 let ringOn = false; // the thumb is inside the ring
 let markOn = false;
 let thumbX = 0; // where the thumb is across the screen
 const ringEl = document.createElement("div");
 ringEl.id = "cancel-ring";
 ringEl.hidden = true;
-{
-  const r = FEEL.minPullPx, span = FEEL.maxPullPx - r;
-  ringEl.innerHTML = `<i></i><b class="rule" style="height:${span}px"></b><b class="drawn"></b>` +
-    DETENTS.slice(1, -1).map((d) => `<b class="tick" style="top:${r + r + d * span}px"></b>`).join("") +
-    `<b class="stop" style="top:${r + FEEL.maxPullPx}px"></b>`;
-}
-const drawnEl = () => ringEl.querySelector<HTMLElement>(".drawn")!;
+ringEl.innerHTML = "<i></i>";
 document.body.append(ringEl);
 function syncRing() {
   const shown = !!aim && g.t === "aim";
@@ -352,8 +342,6 @@ function syncRing() {
     ringEl.style.transform = `translate(${thumbX - r}px, ${g.sy - r}px)`;
     ringEl.style.width = ringEl.style.height = `${r * 2}px`;
     (ringEl.firstElementChild as HTMLElement).style.transform = `translate(${g.sx - thumbX}px, 0)`; // the dot stays where the thumb began
-    drawnEl().style.height = `${Math.max(0, Math.min(FEEL.maxPullPx, byThumb.dist) - r)}px`;
-    ringEl.classList.toggle("full", byThumb.dist >= FEEL.maxPullPx);
   }
   if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
   const on = shown && !!aim && aim.charged && !pull(aim).live;
@@ -3014,7 +3002,7 @@ if (import.meta.env.DEV) {
       };
       return Object.fromEntries(Object.keys(layers).map((k) => [k, differ(a[k], b[k], mask(k))]));
     },
-    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view, bubble: f.bubble, mover: f.mover, stand: f.stand, road: f.road, jabs: f.jabs, stamp: f.stamp }; },
+    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view, bubble: f.bubble, mover: f.mover, stand: f.stand, road: f.road, jabs: f.jabs, stamp: f.stamp, pen: f.pen }; },
     frames: (reset = false) => {
       const stats = (src: number[]) => {
         const a = [...src].sort((x, y) => x - y);
