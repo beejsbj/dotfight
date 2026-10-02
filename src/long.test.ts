@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { act, canArrange, capacity, corners, illegal, inside, newGame, preview, scatterIn, trace, wallGap, wallStrength, type Base, type Flick, type GameState, type Player } from "./game";
+import { act, canArrange, columnAt, capacity, corners, illegal, inside, newGame, preview, scatterIn, trace, wallGap, wallStrength, type Base, type Flick, type GameState, type Player } from "./game";
 import { dist, insidePoly, pathLen, polyHits, polygon, type Pt } from "./geom";
 import { LONG, RULES, SIZES, type Shape } from "./rules";
 
@@ -246,5 +246,50 @@ describe("long war lines keep the core's walls and kills", () => {
     const me = man(s, 0, 150, 1000);
     const o = preview(s, shot(me, 0, 340, "lunge"));
     expect(o.crashed).toBe(0);
+  });
+});
+
+describe("long roads", () => {
+  // two of player 0's camps 700 apart, one enemy camp out of the way
+  const page = () => {
+    const s = field([["camp", 0, 200, 1500], ["camp", 0, 900, 1100], ["camp", 1, 500, 200]]);
+    for (const b of [0, 1, 2]) fill(s, b, 4);
+    return s;
+  };
+  const handover = (s: GameState) => act(s, { t: "stop" });
+
+  it("a convoy walks the pace at every hand-over, exposed all the way, and goes in at the far wall", () => {
+    const s = page();
+    act(s, { t: "send", from: 0, to: 1, n: 3 });
+    const c = s.convoys[0];
+    const l = dist(c.road[0], c.road[1]);
+    const pace = LONG.long!.sendPace;
+    const seen: number[] = [];
+    let o = handover(s);
+    expect(o.walked).toEqual([0]);
+    for (let k = 0; c.state === "road" && k < 20; k++) {
+      seen.push(c.at!);
+      const heads = columnAt(c.road, c.at!, 3);
+      c.ids.forEach((id, i) => expect(dist(s.soldiers[id], heads[i])).toBeLessThan(1e-9));
+      o = handover(s);
+    }
+    expect(c.state).toBe("arrived");
+    expect(o.arrived).toEqual([0]);
+    expect(seen).toEqual(Array.from({ length: Math.ceil(l / pace) }, (_, k) => Math.min(l, pace * (k + 1))));
+    for (const id of c.ids) expect(inside(s.bases[1], s.soldiers[id])).toBe(true);
+  });
+
+  it("a line along the road crosses walkers out, and an emptied convoy is cut", () => {
+    const s = page();
+    act(s, { t: "send", from: 0, to: 1, n: 2 });
+    handover(s);
+    const c = s.convoys[0];
+    const [head, last] = c.ids.map((id) => s.soldiers[id]);
+    // an enemy just behind the column's tail, flicking up the road
+    const up = Math.atan2(head.y - last.y, head.x - last.x);
+    const foe = man(s, 1, last.x - Math.cos(up) * 60, last.y - Math.sin(up) * 60);
+    const o = act(s, { t: "flick", ...shot(foe, up, 120) });
+    expect(o.killed.sort()).toEqual([head.id, last.id].sort());
+    expect(c.state).toBe("cut");
   });
 });

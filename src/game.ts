@@ -112,6 +112,8 @@ export interface Convoy {
   /** Wall to wall, `from` to `to`. */
   road: [Pt, Pt];
   turn: number;
+  /** The long war: how far along the road the head of the column has walked. */
+  at?: number;
 }
 
 /** Something that happened along a line, in order. */
@@ -155,6 +157,8 @@ export interface Outcome {
   /** Convoys that walked out onto the road, and that arrived, as the pen changed hands. */
   walked: number[];
   arrived: number[];
+  /** The long war: convoys that walked on along their road as the pen changed hands. */
+  advanced?: number[];
   /** The pen changed hands. */
   handover: boolean;
 }
@@ -962,6 +966,18 @@ export function whoGoes(s: GameState, from: number, to: number, n: number) {
   return sendable(s, s.bases[from]).sort((p, q) => dist(p, b) - dist(q, b) || p.id - q.id).slice(0, n);
 }
 
+/** A long-war column on its road: the head `at` units along it, the rest behind (none behind the start). */
+export function columnAt(road: [Pt, Pt], at: number, n: number): Pt[] {
+  const [a, b] = road;
+  const l = dist(a, b) || 1;
+  const ux = (b.x - a.x) / l, uy = (b.y - a.y) / l;
+  const gap = RULES.soldierRadius * 2.6;
+  return Array.from({ length: n }, (_, k) => {
+    const u = Math.max(0, Math.min(l, at) - k * gap);
+    return { x: a.x + ux * u, y: a.y + uy * u };
+  });
+}
+
 /** Where a convoy stands on the road during the enemy's turn: a column across the middle. */
 export function columnSpots(road: [Pt, Pt], n: number): Pt[] {
   const [a, b] = road;
@@ -996,12 +1012,55 @@ function send(s: GameState, a: { from: number; to: number; n: number }, seed: nu
 // (there for exactly one enemy turn); the incoming side's convoys arrive.
 function endTurn(s: GameState, seed: number, o: Outcome) {
   const who = s.current, foe = other(who);
+  if (s.rules.long) return endLongTurn(s, seed, o);
   for (const c of s.convoys) if (c.owner === who && c.state === "ordered") walkOut(s, c, seed, o);
   s.current = foe;
   s.turn++;
   s.sent = false;
   s.chain = undefined;
   for (const c of s.convoys) if (c.owner === foe && c.state === "road") arrive(s, c, seed, o);
+  s.left = allotment(s, foe);
+  o.handover = true;
+  o.again = false;
+}
+
+// The long war's roads are long: at every hand-over each convoy on the road
+// walks `sendPace` further (or, its head at the far wall, goes in), and the
+// outgoing side's sends walk out. They're exposed the whole way.
+function endLongTurn(s: GameState, seed: number, o: Outcome) {
+  const who = s.current, foe = other(who), pace = s.rules.long!.sendPace;
+  o.advanced = [];
+  for (const c of s.convoys) {
+    if (c.state !== "road") continue;
+    const go = c.ids.map((id) => s.soldiers[id]).filter((x) => x.alive && x.convoy === c.id);
+    const l = dist(c.road[0], c.road[1]);
+    if (!go.length) { c.state = "cut"; continue; }
+    if (c.at! >= l) { arrive(s, c, seed, o); continue; }
+    const was = columnAt(c.road, c.at!, 1)[0];
+    c.at = Math.min(l, c.at! + pace);
+    columnAt(c.road, c.at, go.length).forEach((p, k) => { go[k].x = p.x; go[k].y = p.y; });
+    s.marks.push({ t: "walk", owner: c.owner, a: was, b: columnAt(c.road, c.at, 1)[0], n: go.length, seed: seed + 7 + c.id, turn: s.turn });
+    o.advanced.push(c.id);
+  }
+  for (const c of s.convoys) {
+    if (c.owner !== who || c.state !== "ordered") continue;
+    const go = c.ids.map((id) => s.soldiers[id]).filter((x) => x.alive);
+    if (!go.length) { c.state = "cut"; continue; }
+    c.at = Math.min(dist(c.road[0], c.road[1]), pace);
+    const spots = columnAt(c.road, c.at, go.length);
+    go.forEach((x, k) => {
+      s.marks.push({ t: "cross", kind: "moved", owner: c.owner, x: x.x, y: x.y, seed: seed + 11 + x.id, turn: s.turn, id: x.id });
+      x.x = spots[k].x;
+      x.y = spots[k].y;
+    });
+    s.marks.push({ t: "walk", owner: c.owner, a: c.road[0], b: spots[0], n: go.length, seed: seed + 7 + c.id, turn: s.turn });
+    c.state = "road";
+    o.walked.push(c.id);
+  }
+  s.current = foe;
+  s.turn++;
+  s.sent = false;
+  s.chain = undefined;
   s.left = allotment(s, foe);
   o.handover = true;
   o.again = false;
@@ -1026,8 +1085,8 @@ function arrive(s: GameState, c: Convoy, seed: number, o: Outcome) {
   const go = c.ids.map((id) => s.soldiers[id]).filter((x) => x.alive && x.convoy === c.id);
   if (!go.length) { c.state = "cut"; return; }
   const b = s.bases[c.to];
-  const mid = { x: (c.road[0].x + c.road[1].x) / 2, y: (c.road[0].y + c.road[1].y) / 2 };
-  s.marks.push({ t: "walk", owner: c.owner, a: mid, b: c.road[1], n: go.length, seed: seed + 9 + c.id, turn: s.turn });
+  const mid = c.at !== undefined ? columnAt(c.road, c.at, 1)[0] : { x: (c.road[0].x + c.road[1].x) / 2, y: (c.road[0].y + c.road[1].y) / 2 };
+  if (dist(mid, c.road[1]) > 1e-6) s.marks.push({ t: "walk", owner: c.owner, a: mid, b: c.road[1], n: go.length, seed: seed + 9 + c.id, turn: s.turn });
   const avoid = s.soldiers.filter((x) => x.alive && x.convoy === undefined).map((x) => ({ x: x.x, y: x.y }));
   const spots = scatterIn(b, go.length, (seed ^ (c.id * 2654435761)) >>> 0, avoid);
   go.forEach((x, k) => {
