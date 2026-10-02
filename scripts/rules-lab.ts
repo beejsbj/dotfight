@@ -1,4 +1,4 @@
-// Rules lab (rounds 3 and 4): bot-vs-bot games on the core rules across
+// Rules lab (rounds 3 to 5): bot-vs-bot games on the core or long-war rules across
 // worker threads, and the table. No browser. On bjslab, run it inside
 // t3-test-run with --threads 3, in chunks that finish well inside its
 // 20-minute cap (--from/--to), writing --raw files that scripts/lab-table.ts
@@ -10,30 +10,24 @@
 //   npm run lab -- --games 300 --sizes quick --set snipeWallLoss=0.2,snipeKillLoss=0.1 --label heavy
 //   npm run lab -- --games 2000 --out docs/rules-lab/data/round-3/finals.json
 //
+// Round 5, the long war:
+//   npm run lab -- --rules long --sizes long --from 1 --to 120 --max-turns 250 --threads 3
+//   ... --set long.well.pull=0.002,long.cushion.maxBanks=0,long.prism.ownFree=false --label weak
+//   ... --sizes long4,long6                (N bases a side)
+//   ... --kits ccccc:hhhhh --swap          (each side's shapes in draw order: c camp, p prism, h cushion, or mix; --swap plays every seed twice, seats swapped)
+//
 // Seeds are 1..games for every size and variant, so they're compared on the same seeds.
 
 import { availableParallelism } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
-import { botAgent, playGame, round4Table, summarise, type GameStats, type Summary } from "../src/lab/sim";
+import { botAgent, kitTable, parseKits, parseSet, playGame, round4Table, round5Table, sizeOf, summarise, type GameStats, type Summary } from "../src/lab/sim";
 import { SKILLS, STANCES } from "../src/bot";
-import { CORE, SIZES, type CoreRules, type Garrison, type Size } from "../src/rules";
+import { type CoreRules, type Garrison, type Shape, type Size } from "../src/rules";
 
-interface Job { size: Size; label: string; rules: CoreRules; from: number; to: number; maxTurns: number; agents: [string, string]; stances: [string, string] }
+interface Job { size: Size; label: string; rules: CoreRules; from: number; to: number; maxTurns: number; agents: [string, string]; stances: [string, string]; kits?: [Shape[] | null, Shape[] | null]; kitNames?: [string, string]; swap: boolean }
 const AGENTS = { steady: botAgent(), sloppy: botAgent(SKILLS[0]), sharp: botAgent(SKILLS[2]) } as const;
-
-function parseSet(spec: string | undefined): CoreRules {
-  const r = structuredClone(CORE) as Record<string, unknown>;
-  for (const kv of (spec ?? "").split(",").filter(Boolean)) {
-    const [k, v] = kv.split("=");
-    if (k === "reachMin") (r.reach as { min: number }).min = +v;
-    else if (k === "reachMax") (r.reach as { max: number }).max = +v;
-    else if (!(k in r)) throw new Error(`unknown rule ${k}`);
-    else r[k] = +v;
-  }
-  return r as unknown as CoreRules;
-}
 
 /** `flat` (walls before garrisons), or `snipeLo-snipeHi,shakeLo-shakeHi,curve`. */
 function parseGarrison(spec: string | undefined): Garrison | null | undefined {
@@ -44,19 +38,17 @@ function parseGarrison(spec: string | undefined): Garrison | null | undefined {
   return { snipeLoss: pair(sn), lungeShake: pair(sh), curve: +(curve ?? 1) };
 }
 
-function sizeOf(name: string): Size {
-  if (name === "quick" || name === "classic") return { ...SIZES[name] };
-  const m = /^(\d+)x(\d+)$/.exec(name);
-  if (!m) throw new Error(`unknown size ${name} (quick, classic or e.g. 4x8)`);
-  return { name: "custom", bases: +m[1], soldiers: +m[2] };
-}
-
 if (!isMainThread) {
   const job = workerData as Job;
   const recs: GameStats[] = [];
   const agents = [AGENTS[job.agents[0] as keyof typeof AGENTS], AGENTS[job.agents[1] as keyof typeof AGENTS]] as [typeof AGENTS.steady, typeof AGENTS.steady];
   const stances = [STANCES[job.stances[0] as keyof typeof STANCES], STANCES[job.stances[1] as keyof typeof STANCES]] as [typeof STANCES.half, typeof STANCES.half];
-  for (let seed = job.from; seed < job.to; seed++) recs.push(playGame(job.size, seed, { maxTurns: job.maxTurns, agents, rules: job.rules, label: job.label, stances }).st);
+  for (let seed = job.from; seed < job.to; seed++) {
+    recs.push(playGame(job.size, seed, { maxTurns: job.maxTurns, agents, rules: job.rules, label: job.label, stances, kit: job.kits, kitNames: job.kitNames }).st);
+    if (job.swap && job.kits && job.kitNames) {
+      recs.push(playGame(job.size, seed, { maxTurns: job.maxTurns, agents, rules: job.rules, label: job.label, stances, kit: [job.kits[1], job.kits[0]], kitNames: [job.kitNames[1], job.kitNames[0]], swap: true }).st);
+    }
+  }
   parentPort!.postMessage(recs);
 } else {
   const args = process.argv.slice(2);
@@ -64,7 +56,15 @@ if (!isMainThread) {
   const games = +arg("games", "200")!;
   const maxTurns = +arg("max-turns", "400")!;
   const sizes = arg("sizes", "quick,classic")!.split(",");
-  const rules = parseSet(arg("set"));
+  const base = arg("rules", "core")!;
+  if (base !== "core" && base !== "long") throw new Error(`--rules is core or long, got ${base}`);
+  const rules = parseSet(arg("set"), base);
+  const kitSpec = arg("kits");
+  const kits = parseKits(kitSpec);
+  if (kits && base !== "long") throw new Error("--kits needs --rules long");
+  const kitNames = kitSpec ? (kitSpec.split(":") as [string, string]) : undefined;
+  const swap = args.includes("--swap");
+  if (swap && !kits) throw new Error("--swap needs --kits");
   const g = parseGarrison(arg("garrison"));
   if (g !== undefined) rules.garrison = g;
   const rawStances = arg("stances", "half,half")!.split(",");
@@ -83,7 +83,7 @@ if (!isMainThread) {
   for (const name of sizes) {
     const size = sizeOf(name);
     const label = tag ? `${name} ${tag}` : name;
-    for (let from = first; from <= last; from += chunk) jobs.push({ size, label, rules, from, to: Math.min(last + 1, from + chunk), maxTurns, agents, stances });
+    for (let from = first; from <= last; from += chunk) jobs.push({ size, label, rules, from, to: Math.min(last + 1, from + chunk), maxTurns, agents, stances, kits, kitNames, swap });
   }
   const results = new Map<string, GameStats[]>();
   const t0 = Date.now();
@@ -99,7 +99,7 @@ if (!isMainThread) {
         (results.get(job.label) ?? results.set(job.label, []).get(job.label)!).push(...recs);
         done += recs.length;
         running--;
-        process.stderr.write(`\r${done}/${(last - first + 1) * sizes.length} games, ${((Date.now() - t0) / 1000).toFixed(0)}s   `);
+        process.stderr.write(`\r${done}/${(last - first + 1) * sizes.length * (swap ? 2 : 1)} games, ${((Date.now() - t0) / 1000).toFixed(0)}s   `);
         launch();
       });
       w.once("error", reject);
@@ -107,7 +107,8 @@ if (!isMainThread) {
     for (let i = 0; i < threads; i++) launch();
   });
   process.stderr.write("\n");
-  const sums: Summary[] = [...results.values()].map((r) => summarise(r.sort((a, b) => a.seed - b.seed)));
+  for (const r of results.values()) r.sort((a, b) => a.seed - b.seed || Number(!!a.swap) - Number(!!b.swap));
+  const sums: Summary[] = [...results.values()].map((r) => summarise(r));
   const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
   const f1 = (x: number) => x.toFixed(1);
   console.log("| size | games | turns (p10–p90) | flicks | 1st-player wins | stalled | kills/flick | lunges | snipes taking 2+ | sends/game (road kills) | longest turn: mean, p90, max | lunge chains: mean; 1/2/3/4+; max | lungers shot / off page | last stand (both; stander won) | comebacks |");
@@ -116,11 +117,15 @@ if (!isMainThread) {
     console.log(`| ${s.label} | ${s.games} | ${f1(s.turns.mean)} (${s.turns.p10}–${s.turns.p90}) | ${f1(s.flicksPerGame)} | ${pct(s.firstWins)} | ${pct(s.stalled)} | ${s.killsPerFlick.toFixed(2)} | ${pct(s.lungeShare)} | ${pct(s.doubleRate)} | ${f1(s.sendsPerGame)} (${f1(s.roadKills)}) | ${f1(s.longestTurn.mean)}, ${s.longestTurn.p90}, ${s.longestTurn.max} | ${s.chain.mean.toFixed(2)}; ${s.chain.share.map(pct).join("/")}; ${s.chain.max} | ${f1(s.crashes)} / ${f1(s.offPage)} | ${pct(s.standGames)} (${pct(s.standBoth)}; ${pct(s.standWins)}) | ${pct(s.comeback)} |`);
   }
   console.log("\n" + round4Table(sums));
+  if (base === "long") {
+    console.log("\n" + round5Table(sums));
+    if (kits) console.log("\n" + kitTable(sums));
+  }
   console.log(`\nrules: ${JSON.stringify(rules)}; stances ${stances.join(" v ")}`);
   console.log(`${((Date.now() - t0) / 1000).toFixed(0)}s on ${threads} threads`);
   if (raw) {
     mkdirSync(dirname(raw), { recursive: true });
-    writeFileSync(raw, JSON.stringify({ rules, stances, agents, maxTurns, from: first, to: last, games: Object.fromEntries(results) }));
+    writeFileSync(raw, JSON.stringify({ rules, stances, agents, maxTurns, from: first, to: last, kits: kitSpec, swap, games: Object.fromEntries(results) }));
   }
   if (out) {
     mkdirSync(dirname(out), { recursive: true });
