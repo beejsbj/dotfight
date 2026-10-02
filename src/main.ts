@@ -129,7 +129,7 @@ let lastPull: { id: number; angle: number } | null = null;
 // hands; the page holds their new dots back and shows the march as a quick
 // time-lapse before the next go (see holdLapse / runLapse).
 interface Walk { id: number; from: Pt; to: Pt; departing?: boolean; convoy?: number }
-let lapseDue: { walkers: Walk[]; marks: number[]; out: number; home: number; seen?: AnyState } | null = null;
+let lapseDue: { walkers: Walk[]; marks: number[]; out: number; home: number; on?: number; seen?: AnyState } | null = null;
 let lapse: { walkers: Walk[]; t0: number; dur: number } | null = null;
 
 // A send being drawn (pick a camp, drag to another, choose how many), and
@@ -620,14 +620,14 @@ function holdLapse(o: Outcome, before: Pt[], first: number) {
   if (!c0 || (!o.walked.length && !o.arrived.length && !on.length)) return;
   const convoys = new Set([...o.walked, ...o.arrived, ...on]);
   const walkers: Walk[] = [];
-  let out = 0, home = 0;
+  let out = 0, home = 0, onward = 0;
   for (const c of c0.convoys) {
     if (!convoys.has(c.id)) continue;
     for (const id of c.ids) {
       const x = c0.soldiers[id], b = before[id];
       if (!x.alive || (b.x === x.x && b.y === x.y)) continue;
       walkers.push({ id, from: b, to: { x: x.x, y: x.y }, departing: o.walked.includes(c.id), convoy: c.id });
-      if (o.walked.includes(c.id)) out++; else if (o.arrived.includes(c.id)) home++;
+      if (o.walked.includes(c.id)) out++; else if (o.arrived.includes(c.id)) home++; else onward++;
     }
   }
   const ids = new Set(walkers.map((w) => w.id));
@@ -638,7 +638,7 @@ function holdLapse(o: Outcome, before: Pt[], first: number) {
   }
   for (const w of walkers) fx.add(`d${w.id}`, T, 1e9, 1);
   for (const i of marks) fx.add(`m${i}`, T, 1e9, 1);
-  lapseDue = { walkers, marks, out, home };
+  lapseDue = { walkers, marks, out, home, on: onward };
 }
 
 // The march itself: footprints drawn on, each man walking his way.
@@ -658,6 +658,7 @@ function runLapse(then: () => void) {
   sfx.scratch(dur / 1000 / speed, 0.12, 900);
   if (screen === "game") {
     if (due.out) cue("walk-out", due.out);
+    if (due.on) cue("walk-on", due.on);
     if (due.home) cue("arrive", due.home);
     // one of the marchers, setting off; or, once they're there, one arriving
     const group = due.walkers.filter((w) => w.departing === !!due.out);
@@ -2961,12 +2962,17 @@ function currentFrame(): Frame {
     const pending = new Map(lapseDue?.walkers.map((w) => [w.id, w]));
     const out = c0.convoys.flatMap((c) => {
       const dir = Math.atan2(c.road[1].y - c.road[0].y, c.road[1].x - c.road[0].x);
-      return c.ids.filter((id) => {
+      const out = c.ids.filter((id) => {
         const walk = pending.get(id), w = walk?.convoy === c.id ? walk : undefined;
         // Departures still stand at home; arrivals still stand on the road.
         const onRoad = w ? !w.departing : c.state === "road";
         return onRoad && c0.soldiers[id].alive && !marching.has(id);
-      }).map((id) => ({ at: displayedAt(id), dir }));
+      }).map((id) => ({ at: displayedAt(id), dir, ahead: undefined as { to: Pt; left: number } | undefined }));
+      // a long-war convoy sits out on the paper for a few hand-overs: the rest of its road, and how many are left
+      if (out.length && c.state === "road" && c.at !== undefined && c0.rules.long) {
+        out[0].ahead = { to: c.road[1], left: Math.max(1, Math.ceil((pathLen(c.road) - c.at) / c0.rules.long.sendPace)) };
+      }
+      return out;
     });
     if (out.length) f.road = out;
     if (sending?.from !== undefined && arrowTo) {

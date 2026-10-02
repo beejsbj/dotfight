@@ -79,7 +79,7 @@ export interface Frame {
   /** Sends ordered this turn: the road in pencil, the ones going ringed. */
   orders?: { a: Pt; b: Pt; at: Pt[] }[];
   /** Soldiers out on the open road between camps (a convoy in transit), marked in pencil as marching and exposed: where he stands and the way he faces. */
-  road?: { at: Pt; dir: number }[];
+  road?: { at: Pt; dir: number; ahead?: { to: Pt; left: number } }[];
   /** A side in its last stand: its survivors, kept marked in pencil for the rest of the war. */
   stand?: (Pt & { id: number })[];
   /** A lunger owed another lunge: ringed twice, with what he's owed and how many links. */
@@ -221,10 +221,15 @@ export function renderStage(els: Els, f: Frame) {
   page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold, f.pageSource);
   boil.set(plan, s, pageState.S);
   const road = f.road ?? [];
-  const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road, f.chain]);
-  const marks = [...road.map((q) => q.at), ...(f.chain ? [f.chain.at] : [])];
+  // a count is written the right way up for whoever the page faces
+  const flip = Math.cos(f.view.rot) < 0;
+  const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road, f.chain, flip]);
+  const marks = [...road.flatMap((q) => (q.ahead ? [q.at, q.ahead.to] : [q.at])), ...(f.chain ? [f.chain.at] : [])];
   if (field.draw(key, marks, pageState.S, 42, (g) => {
-    for (const q of road) drawRoad(g, q.at, q.dir, 3, s.soldiers.length + Math.round(q.at.x));
+    for (const q of road) {
+      drawRoad(g, q.at, q.dir, 3, s.soldiers.length + Math.round(q.at.x));
+      if (q.ahead) drawAhead(g, q.at, q.ahead.to, q.ahead.left, flip, 3, s.soldiers.length + Math.round(q.at.y));
+    }
     if (f.chain) drawChain(g, f.chain, 3, new Box());
   })) stageStats.field++;
   const survivors = new Set((f.stand ?? []).map((q) => q.id));
@@ -497,6 +502,30 @@ function drawRoad(g: Ctx, at: Pt, dir: number, px: number, seed: number) {
     pencilLine(g, { x: cx - ux * s - uy * s, y: cy - uy * s + ux * s }, { x: cx, y: cy }, w, seed + 40 + d, false);
     pencilLine(g, { x: cx - ux * s + uy * s, y: cy - uy * s - ux * s }, { x: cx, y: cy }, w, seed + 50 + d, false);
   }
+}
+
+/**
+ * The rest of a convoy's road, pencilled on ahead of the column in a dashed line to an
+ * arrowhead at the far wall, with how many hand-overs are left written beside it.
+ */
+function drawAhead(g: Ctx, from: Pt, to: Pt, left: number, flip: boolean, px: number, seed: number) {
+  const dx = to.x - from.x, dy = to.y - from.y, l = Math.hypot(dx, dy);
+  const ux = l ? dx / l : 0, uy = l ? dy / l : -1, w = Math.max(2.2, px * 1.7);
+  const r = RULES.soldierRadius + 22; // past the chevrons
+  let mx = from.x + ux * 24, my = from.y + uy * 24 - 30;
+  if (l > r + 40) {
+    const a = { x: from.x + ux * r, y: from.y + uy * r }, b = { x: to.x - ux * 4, y: to.y - uy * 4 };
+    pencilLine(g, a, b, w, seed, true);
+    for (const s of [1, -1]) pencilLine(g, { x: b.x - ux * 14 - uy * 8 * s, y: b.y - uy * 14 + ux * 8 * s }, b, w, seed + 7 + s, false);
+    // beside the road, a little way along, on whichever side is higher up the page
+    const nx = ux > 0 ? uy : -uy, ny = ux > 0 ? -ux : ux, at = Math.min(l * 0.4, r + 90);
+    mx = from.x + ux * at + nx * 26; my = from.y + uy * at + ny * 26;
+  }
+  g.save();
+  g.translate(mx, my);
+  if (flip) g.rotate(Math.PI);
+  handText(g, String(left), 0, 16, 50, lead(theme).note, { weight: 400, rot: -0.04, align: "center" });
+  g.restore();
 }
 
 /** The last few: short pencil rays all round each one, the way a kid draws something shining, or shouting. */
