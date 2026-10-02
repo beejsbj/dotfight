@@ -221,9 +221,8 @@ export function canPlaceBase(s: GameState, x: number, y: number, shape?: Shape):
   return null;
 }
 
-function placeBase(s: GameState, x: number, y: number, shape?: Shape) {
-  const why = canPlaceBase(s, x, y, shape);
-  if (why) throw new Error(why);
+/** The base the current player would draw here next, as it would land (shape, size and seeded turn). */
+export function baseAt(s: GameState, x: number, y: number, shape?: Shape): Base {
   const id = s.bases.length;
   const base: Base = { id, owner: s.current, x, y, r: RULES.baseRadius, seed: (s.seed ^ (id * 7919)) >>> 0 };
   if (s.rules.long && shape) {
@@ -231,6 +230,14 @@ function placeBase(s: GameState, x: number, y: number, shape?: Shape) {
     base.r = radiusOf(s, shape);
     if (shape !== "camp") base.rot = rng(base.seed ^ 0x2545f491)() * 2 * Math.PI;
   }
+  return base;
+}
+
+function placeBase(s: GameState, x: number, y: number, shape?: Shape) {
+  const why = canPlaceBase(s, x, y, shape);
+  if (why) throw new Error(why);
+  const id = s.bases.length;
+  const base = baseAt(s, x, y, shape);
   s.bases.push(base);
   for (const p of scatterIn(base, capacity(s, base), base.seed)) {
     s.soldiers.push({ id: s.soldiers.length, owner: base.owner, x: p.x, y: p.y, alive: true, home: id });

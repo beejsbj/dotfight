@@ -201,8 +201,8 @@ export const SIZES = {
   quick: { name: "quick", bases: 3, soldiers: 8 },
   /** Dawood's own. */
   classic: { name: "classic", bases: 5, soldiers: 10 },
-  /** The long war: five shaped bases a side (to test: "bigger armies" is undecided). `soldiers` is a camp's. */
-  long: { name: "long", bases: 5, soldiers: 12 },
+  /** The long war: six shaped bases a side (Burooj, 2026-10-02, after round 5: five fielded fewer men than Classic). `soldiers` is a camp's. */
+  long: { name: "long", bases: 6, soldiers: 12 },
 } as const satisfies Record<string, Size>;
 
 /** What Custom lets you pick. */

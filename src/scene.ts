@@ -59,7 +59,8 @@ export interface Frame {
   dpr: number;
   selected?: number;
   aim?: Aim;
-  ghost?: { x: number; y: number; ok: boolean; owner: 0 | 1 };
+  /** The base about to be drawn; `pts`: a long war's triangle or hexagon (else a circle of `r`). */
+  ghost?: { x: number; y: number; ok: boolean; owner: 0 | 1; r: number; pts?: Pt[] };
   /** Setup: the no-go rings round enemy bases, faintly hatched. */
   keepOut?: { x: number; y: number; r: number }[];
   mover?: { id: number; at: Pt; angle?: number; stretch?: number };
@@ -68,7 +69,7 @@ export interface Frame {
   /** Convoys walking (the time-lapse between turns): each soldier from where he stood to where he'll stand. */
   walkers?: { id: number; from: Pt; to: Pt; p: number }[];
   /** Positioning: how far each of your bases' soldiers may stand, in pencil. */
-  zones?: { x: number; y: number; r: number }[];
+  zones?: { x: number; y: number; r: number; pts?: Pt[] }[];
   /** Positioning: the soldier under your finger. */
   drag?: { id: number; at: Pt; ok: boolean };
   /** A send being drawn, base to base, in pencil. */
@@ -424,11 +425,8 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
   const px = 1 / v.z;
   for (const z of f.zones ?? []) {
     // dashed pencil: how far out his men may stand
-    const n = 36;
-    for (let i = 0; i < n; i += 2) {
-      const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
-      pencilLine(g, { x: z.x + Math.cos(a0) * z.r, y: z.y + Math.sin(a0) * z.r }, { x: z.x + Math.cos(a1) * z.r, y: z.y + Math.sin(a1) * z.r }, Math.max(1.4, px), 300 + i, false);
-    }
+    const ring = outline(z, 36);
+    for (let i = 0; i < ring.length - 1; i += 2) pencilLine(g, ring[i], ring[i + 1], Math.max(1.4, px), 300 + i, false);
     box.add(z.x, z.y, z.r + 6);
   }
   for (const d of f.danger ?? []) { pencilHatchRing(g, d.x, d.y, d.r, px); box.add(d.x, d.y, d.r + 6); }
@@ -454,13 +452,12 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
     box.add(x.x, x.y, 30);
   }
   if (f.ghost) {
-    box.add(f.ghost.x, f.ghost.y, RULES.baseRadius + 10);
+    box.add(f.ghost.x, f.ghost.y, f.ghost.r + 10);
     g.globalAlpha = f.ghost.ok ? 1 : 0.5;
-    const r = RULES.baseRadius;
-    for (let i = 0; i < 28; i++) {
+    const ring = outline(f.ghost, 28);
+    for (let i = 0; i < ring.length - 1; i++) {
       if (!f.ghost.ok && i % 2) continue;
-      const a0 = (i / 28) * Math.PI * 2, a1 = ((i + 1) / 28) * Math.PI * 2;
-      pencilLine(g, { x: f.ghost.x + Math.cos(a0) * r, y: f.ghost.y + Math.sin(a0) * r }, { x: f.ghost.x + Math.cos(a1) * r, y: f.ghost.y + Math.sin(a1) * r }, Math.max(2, px * 1.4), i, false);
+      pencilLine(g, ring[i], ring[i + 1], Math.max(2, px * 1.4), i, false);
     }
     g.globalAlpha = 1;
   }
@@ -514,6 +511,15 @@ function drawSpeed(g: Ctx, at: Pt, angle: number, stretch: number, px: number, s
     const b = { x: a.x - ux * len * (k ? 0.65 : 1), y: a.y - uy * len * (k ? 0.65 : 1) };
     pencilLine(g, a, b, w, seed * 7 + i, false);
   });
+}
+
+/** A closed outline, `n` short runs round it: a circle of `r`, or the polygon `pts` with each side cut into its share. */
+function outline(o: { x: number; y: number; r: number; pts?: Pt[] }, n: number): Pt[] {
+  if (!o.pts) return Array.from({ length: n + 1 }, (_, i) => ({ x: o.x + Math.cos((i / n) * Math.PI * 2) * o.r, y: o.y + Math.sin((i / n) * Math.PI * 2) * o.r }));
+  const vs = o.pts, per = Math.max(2, Math.round(n / vs.length)), out: Pt[] = [];
+  vs.forEach((a, k) => { const b = vs[(k + 1) % vs.length]; for (let j = 0; j < per; j++) out.push({ x: a.x + ((b.x - a.x) * j) / per, y: a.y + ((b.y - a.y) * j) / per }); });
+  out.push(vs[0]);
+  return out;
 }
 
 function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {

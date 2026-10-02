@@ -20,12 +20,11 @@ export const ENGINE = "core-4";
 
 // long-1: the long war, a second rule set on the same reducer (`rules.long`).
 // Its own name, so a client that predates it says it can't read the room
-// instead of playing it by the core rules. Not in READS until this client can
-// show and play a long war (shapes, split lines, long roads).
+// instead of playing it by the core rules.
 export const LONG_ENGINE = "long-1";
 
-/** core-2: original reach; core-3: shorter pull reach; core-4: garrisoned walls. */
-export const READS: readonly string[] = ["core-2", "core-3", ENGINE];
+/** core-2: original reach; core-3: shorter pull reach; core-4: garrisoned walls; long-1: the long war. */
+export const READS: readonly string[] = ["core-2", "core-3", ENGINE, LONG_ENGINE];
 export const canRead = (engine: string) => READS.includes(engine);
 
 /** The engine a new room with these rules is played on. */

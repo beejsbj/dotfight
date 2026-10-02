@@ -6,9 +6,9 @@
 // they settle gives the same pixels as drawing the page from scratch. The
 // camera can then swoop and chase the ink for the cost of one image draw.
 
-import { rng, type Mark, type Pt } from "./game";
+import { corners, rng, type Mark, type Pt } from "./game";
 import type { AnyState as GameState } from "./record";
-import { INK, handText, inkCircle, inkCross, inkDot, inkFlick, inkLeft, inkOp, inkScribble, paint, paperGrain } from "./ink";
+import { INK, handText, inkCircle, inkCross, inkDot, inkFlick, inkLeft, inkOp, inkPolygon, inkScribble, paint, paperGrain } from "./ink";
 import { GAME } from "./name";
 import { RULES } from "./rules";
 import type { Hold } from "./boil";
@@ -308,8 +308,11 @@ function showThrough(g: Ctx, w: number, h: number) {
 type Dotted = { id: number; owner: 0 | 1 };
 
 // `wob` picks a redrawing for the line boil (0 is the drawing the page keeps), straying `amp` times the usual.
+// A triangle or hexagon (the long war) is inked side by side; each redrawing of the boil is a fresh hand at it.
 export function drawBase(g: Ctx, b: GameState["bases"][number], p = 1, wob = 0, amp = 1) {
-  inkCircle(g, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.8 * theme.ink.width, 2, p, wob, amp);
+  const vs = corners(b);
+  if (vs) inkPolygon(g, vs, INK.pens[b.owner], wob ? (b.seed ^ Math.imul(wob, 0x9e3779b1)) >>> 0 : b.seed, 2.8 * theme.ink.width, 2, p);
+  else inkCircle(g, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.8 * theme.ink.width, 2, p, wob, amp);
 }
 
 /**
