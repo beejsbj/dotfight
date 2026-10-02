@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { act, canArrange, columnAt, capacity, corners, illegal, inside, newGame, preview, scatterIn, trace, wallGap, wallStrength, type Base, type Flick, type GameState, type Player } from "./game";
+import { inBase, pickSoldier } from "./hand";
 import { passesAll } from "./life";
-import { dist, insidePoly, pathLen, polyHits, polygon, type Pt } from "./geom";
+import { dist, insidePoly, offsetPolygon, pathLen, polyHits, polygon, type Pt } from "./geom";
 import { LONG, RULES, SIZES, type Shape } from "./rules";
 
 const L = LONG.long!;
@@ -379,5 +380,29 @@ describe("shaped soldiers", () => {
     expect(o.movedTo).toBeDefined();
     expect(me.y).toBeLessThan(1300);
     expect([me.shape, me.rot]).toEqual([shape, rot]);
+  });
+});
+
+describe("walls, not circumcircles", () => {
+  it("a tap or a count at a triangle's corner-side outside its walls misses; inside its walls hits", () => {
+    const s = field([["prism", 0, 500, 1300, Math.PI / 2]]); // a corner down: the flat side faces up the page, 41.9 u from the centre
+    const me = man(s, 0, 500, 1300, 0);
+    const inr = s.bases[0].r / 2;
+    const out = { x: 500, y: 1300 - inr - 15 }; // inside the circumcircle, 15 u past the flat wall
+    expect(inBase([{ ...out }], s.bases[0])).toHaveLength(0);
+    expect(inBase([{ x: 500, y: 1300 - inr + 1 }], s.bases[0])).toHaveLength(1);
+    const view = { current: 0 as Player, soldiers: s.soldiers, bases: s.bases };
+    expect(pickSoldier(view, out, { soldier: 3, base: 5 })).toBeUndefined();
+    expect(pickSoldier(view, out, { soldier: 3, base: 20 })).toBe(me);
+  });
+
+  it("offsetPolygon is the set within pad of the wall, whichever way the corners run", () => {
+    const sq = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    for (const vs of [sq, [...sq].reverse()]) {
+      const ring = offsetPolygon(vs, 5);
+      for (const p of ring) expect(Math.hypot(Math.max(0, -p.x, p.x - 10), Math.max(0, -p.y, p.y - 10))).toBeCloseTo(5, 6);
+      expect(Math.min(...ring.map((p) => p.x))).toBeCloseTo(-5, 6);
+      expect(Math.max(...ring.map((p) => p.y))).toBeCloseTo(15, 6);
+    }
   });
 });

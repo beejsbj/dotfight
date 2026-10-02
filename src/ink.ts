@@ -466,6 +466,44 @@ export function pencilLoop(ctx: Ctx, cx: number, cy: number, r: number, seed: nu
   ctx.globalAlpha = 1;
 }
 
+// The same loose loop round a closed outline (a triangle's or hexagon's walls) instead of a circle:
+// `ring` is the corners in order, and the pencil starts somewhere on it and runs a hair past its start.
+export function pencilRing(ctx: Ctx, ring: Pt[], seed: number, width: number, upTo = 1, alpha = 1) {
+  if (upTo <= 0 || alpha <= 0 || ring.length < 2) return;
+  const rand = rng(seed);
+  const w = wave(seed + 3);
+  const closed = [...ring, ring[0]];
+  const cum = [0];
+  for (let i = 1; i < closed.length; i++) cum.push(cum[i - 1] + Math.hypot(closed[i].x - closed[i - 1].x, closed[i].y - closed[i - 1].y));
+  const total = cum[cum.length - 1];
+  const start = rand(), sweep = 1.05 + rand() * 0.1;
+  const steps = Math.max(28, Math.round(total / 8));
+  const shade = Array.from({ length: steps }, () => rand());
+  const at = (t: number) => {
+    const d = (((start + sweep * t) % 1) + 1) % 1 * total;
+    let i = 1;
+    while (i < cum.length - 1 && cum[i] < d) i++;
+    const u = (d - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]), a = closed[i - 1], b = closed[i];
+    const nx = (b.y - a.y), ny = -(b.x - a.x), nl = Math.hypot(nx, ny) || 1, off = w(t * 2) * 0.007 * total;
+    return { x: a.x + (b.x - a.x) * u + (nx / nl) * off, y: a.y + (b.y - a.y) * u + (ny / nl) * off };
+  };
+  const head = steps * Math.min(1, upTo);
+  ctx.strokeStyle = INK.pencil;
+  ctx.lineCap = "round";
+  for (let i = 0; i < Math.ceil(head); i++) {
+    const t0 = i / steps, t1 = Math.min(head, i + 1) / steps;
+    const ends = Math.min(1, t0 / 0.08, (1 - t0) / 0.1);
+    ctx.globalAlpha = alpha * (0.35 + shade[i] * 0.35) * (0.4 + 0.6 * Math.max(0, ends));
+    ctx.lineWidth = width * (0.75 + shade[i] * 0.5);
+    const a = at(t0), b = at(t1);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
 // A pencil arrow, bowed a little, for notes in the margin.
 // `color`: a pen instead of the pencil (a note written on the page in a side's ink).
 export function pencilArrow(ctx: Ctx, from: Pt, to: Pt, bend: number, seed: number, width: number, upTo = 1, alpha = 1, color?: string) {

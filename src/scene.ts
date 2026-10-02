@@ -16,10 +16,10 @@ import { walkerAt } from "./timeline";
 import { BoilLayer, planBoil, type Plan } from "./boil";
 import type { Anchor, Mood } from "./bubble";
 import { rng, type Pt } from "./game";
-import { polygon } from "./geom";
+import { offsetPolygon, polygon } from "./geom";
 import type { Shape } from "./rules";
 import type { AnyState as GameState } from "./record";
-import { INK, arcText, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilStroke, rubOut } from "./ink";
+import { INK, arcText, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilRing, pencilStroke, rubOut } from "./ink";
 import { Life } from "./life";
 import { PencilLayer } from "./pencil-layer";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
@@ -67,7 +67,7 @@ export interface Frame {
   keepOut?: { x: number; y: number; r: number }[];
   mover?: { id: number; at: Pt; angle?: number; stretch?: number };
   pen?: PenPose;
-  hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] };
+  hint?: { p: number; bases: { id: number; x: number; y: number; r: number; pts?: Pt[] }[] };
   /** Convoys walking (the time-lapse between turns): each soldier from where he stood to where he'll stand. */
   walkers?: { id: number; from: Pt; to: Pt; p: number }[];
   /** Positioning: how far each of your bases' soldiers may stand, in pencil. */
@@ -85,7 +85,7 @@ export interface Frame {
   /** A lunger owed another lunge: ringed twice, with what he's owed and how many links. */
   chain?: { at: Pt; link: number };
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
-  danger?: { x: number; y: number; r: number }[];
+  danger?: { x: number; y: number; r: number; pts?: Pt[] }[];
   /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
   teach?: { kind: "aim" | "place" | "arrange" | "note"; at: Pt; p: number; rot: number; note?: string; text?: string };
   sig?: Signature;
@@ -431,7 +431,7 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
     for (let i = 0; i < ring.length - 1; i += 2) pencilLine(g, ring[i], ring[i + 1], Math.max(1.4, px), 300 + i, false);
     box.add(z.x, z.y, z.r + 6);
   }
-  for (const d of f.danger ?? []) { pencilHatchRing(g, d.x, d.y, d.r, px); box.add(d.x, d.y, d.r + 6); }
+  for (const d of f.danger ?? []) { pencilHatchRing(g, d.x, d.y, d.r, px, d.pts); box.add(d.x, d.y, d.r + 6); }
   for (const o of f.orders ?? []) {
     pencilArrow(g, o.a, o.b, 0.08, 611, Math.max(1.8, px * 1.2), 1, 0.85);
     for (const q of o.at) pencilLoop(g, q.x, q.y, RULES.soldierRadius + 7, 71 + Math.round(q.x), Math.max(1.4, px), 1, 0.8);
@@ -447,7 +447,12 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
   if (f.keepOut) {
     for (const k of f.keepOut) { pencilHatchRing(g, k.x, k.y, k.r, px); box.add(k.x, k.y, k.r + 6); }
   }
-  if (f.hint) for (const b of f.hint.bases) { pencilLoop(g, b.x, b.y, b.r + 12, 900 + b.id * 17, Math.max(1.6, px * 1.1), f.hint.p, 0.75); box.add(b.x, b.y, b.r + 24); }
+  if (f.hint) for (const b of f.hint.bases) {
+    const wd = Math.max(1.6, px * 1.1);
+    if (b.pts) pencilRing(g, offsetPolygon(b.pts, 12), 900 + b.id * 17, wd, f.hint.p, 0.75);
+    else pencilLoop(g, b.x, b.y, b.r + 12, 900 + b.id * 17, wd, f.hint.p, 0.75);
+    box.add(b.x, b.y, b.r + 24);
+  }
   if (f.selected !== undefined && !f.aim && !f.mover) {
     const x = s.soldiers[f.selected];
     pencilLoop(g, x.x, x.y, RULES.soldierRadius + 10, 77 + x.id, Math.max(1.6, px), 1, 0.9);
@@ -531,10 +536,11 @@ function outline(o: { x: number; y: number; r: number; pts?: Pt[] }, n: number):
   return out;
 }
 
-function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
+function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number, pts?: Pt[]) {
   g.save();
   g.beginPath();
-  g.arc(x, y, r, 0, Math.PI * 2);
+  if (pts) { pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath(); }
+  else g.arc(x, y, r, 0, Math.PI * 2);
   g.clip();
   g.strokeStyle = INK.pencil;
   g.globalAlpha = 0.28;
@@ -544,7 +550,8 @@ function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
   g.stroke();
   g.restore();
   g.globalAlpha = 0.5;
-  pencilLoop(g, x, y, r, (x * 13 + y) | 0, Math.max(1.4, px), 1, 0.8);
+  if (pts) pencilRing(g, pts, (x * 13 + y) | 0, Math.max(1.4, px), 1, 0.8);
+  else pencilLoop(g, x, y, r, (x * 13 + y) | 0, Math.max(1.4, px), 1, 0.8);
   g.globalAlpha = 1;
 }
 

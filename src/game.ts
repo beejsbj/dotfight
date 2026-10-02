@@ -287,7 +287,8 @@ export function scatterIn(b: { x: number; y: number; r: number; shape?: Shape; r
 const cornerMemo = new WeakMap<object, Pt[]>();
 
 /** A triangle's or hexagon's corners, in order; null for a circle (a camp, or any core base). */
-export function corners(b: { x: number; y: number; r: number; shape?: Shape; rot?: number }): Pt[] | null {
+export type Walled = { x: number; y: number; r: number; shape?: Shape; rot?: number };
+export function corners(b: Walled): Pt[] | null {
   if (b.shape !== "prism" && b.shape !== "cushion") return null;
   let vs = cornerMemo.get(b);
   if (!vs) { vs = polygon(b.shape === "prism" ? 3 : 6, b, b.r, b.rot ?? 0); cornerMemo.set(b, vs); }
@@ -295,7 +296,7 @@ export function corners(b: { x: number; y: number; r: number; shape?: Shape; rot
 }
 
 /** How far `p` is outside the base's wall (negative: inside). */
-export function wallGap(b: Base, p: Pt) {
+export function wallGap(b: Walled, p: Pt) {
   const vs = corners(b);
   if (!vs) return dist(b, p) - b.r;
   const d = Math.min(...vs.map((v, i) => segDist(p, v, vs[(i + 1) % vs.length])));
@@ -332,7 +333,7 @@ export function alive(s: GameState, p: Player) {
 const onRoad = (s: GameState, x: Soldier) => x.convoy !== undefined && s.convoys[x.convoy]?.state === "road";
 
 /** Is this point inside the base's wall? Dots drawn on the line count. `slack` scales the wall about its centre. */
-export function inside(b: Base, p: Pt, slack = 1.05) {
+export function inside(b: Walled, p: Pt, slack = 1.05) {
   const vs = corners(b);
   if (!vs) return dist(b, p) <= b.r * slack;
   return insidePoly({ x: b.x + (p.x - b.x) / slack, y: b.y + (p.y - b.y) / slack }, vs);

@@ -9,7 +9,7 @@ import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
-  act, baseAt, canArrange, canSend, corners, garrison, illegal, inLastStand, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax,
+  act, baseAt, canArrange, canSend, corners, garrison, illegal, inLastStand, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax, wallGap,
   type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
@@ -2342,7 +2342,7 @@ function ownBaseAt(w: Pt) {
   for (const b of s.bases) {
     if (b.owner !== s.current) continue;
     const d = Math.hypot(b.x - w.x, b.y - w.y);
-    if (d <= b.r + slack && d < bd) { bd = d; best = b.id; }
+    if (wallGap(b, w) <= slack && d < bd) { bd = d; best = b.id; }
   }
   return best;
 }
@@ -3001,7 +3001,7 @@ function currentFrame(): Frame {
   }
   if (human && s.phase === "play" && selected === undefined && !aim && !res && !busy) {
     const mine = s.soldiers.filter((x) => x.alive && x.owner === s.current && turn.canFlick(s, x.id));
-    if (!sending) f.hint = { p: fx.p("hint", T), bases: s.bases.filter((b) => b.owner === s.current && inBase(mine, b).length) };
+    if (!sending) f.hint = { p: fx.p("hint", T), bases: s.bases.filter((b) => b.owner === s.current && inBase(mine, b).length).map((b) => ({ id: b.id, x: b.x, y: b.y, r: b.r, ...(corners(b) && { pts: corners(b)! }) })) };
   }
   const note = waitNote();
   if (note) {
@@ -3029,7 +3029,7 @@ function currentFrame(): Frame {
       const sh = LIFE.pen && lively() && pl.live ? shiver(T, pl.power) : 0;
       f.pen = tip(leaning(me.x, me.y, ang + sh * 3, pl.live ? penLean(pl.power) + sh : 0.04, owner, ink), ang, penSide);
       // a lunger landing among their men is shot: those camps are hatched while you aim one
-      if (kind === "lunge" && c0) f.danger = c0.bases.filter((b) => b.owner !== c0.current && garrison(c0, b).length).map((b) => ({ x: b.x, y: b.y, r: b.r }));
+      if (kind === "lunge" && c0) f.danger = c0.bases.filter((b) => b.owner !== c0.current && garrison(c0, b).length).map((b) => ({ x: b.x, y: b.y, r: b.r, ...(corners(b) && { pts: corners(b)! }) }));
     } else if (botAim) {
       const k = Math.min(1, (T - botAim.t0) / 700);
       const pw = botAim.power * (1 - Math.pow(1 - k, 2));
