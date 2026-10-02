@@ -36,7 +36,7 @@ import { boil, boilSeen, boilTick, field, standRays, streak as streakLayer, forg
 
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
-import { keepIcon, paperIcon, tearIcon } from "./icons";
+import { keepIcon, levelIcon, paperIcon, tearIcon } from "./icons";
 import { orderGames, type GameLine } from "./games";
 import { forgetRoom, listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
 import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
@@ -1314,7 +1314,25 @@ function titleDesk(saved = load()) {
 }
 
 let tearing: string | null = null; // a cover row waiting on "tear it out?"
-let showDone = false;
+let coverDraw: (() => void) | null = null; // redraws the slip to fit, while it shows the main menu
+
+// The cover is the outside of the book: it never scrolls. Whatever is on the slip is
+// drawn smaller until the whole leaf fits between the boards.
+function fitLeaf() {
+  const leaf = $("#cover .leaf");
+  leaf.style.removeProperty("--fit");
+  for (let i = 0; i < 3 && leaf.scrollHeight > leaf.clientHeight + 1; i++) {
+    const z = +(leaf.style.getPropertyValue("--fit") || 1);
+    leaf.style.setProperty("--fit", Math.max(0.5, z * leaf.clientHeight / leaf.scrollHeight - 0.005).toFixed(3));
+  }
+}
+const coverFits = () => { const leaf = $("#cover .leaf"); return leaf.scrollHeight <= leaf.clientHeight + 1; };
+function refitCover() {
+  if (screen !== "title" || $("#cover").hidden) return;
+  if (coverDraw) coverDraw(); else fitLeaf();
+}
+window.addEventListener("resize", refitCover);
+void document.fonts.ready.then(refitCover);
 
 function showTitle() {
   screen = "title";
@@ -1326,10 +1344,10 @@ function showTitle() {
   closeSheet();
   restoreKindBar();
   dawn.set(0);
-  coverMenu();
   const cover = $("#cover");
-  cover.hidden = false;
+  cover.hidden = false; // shown first: the slip measures itself to fit
   cover.classList.remove("open");
+  coverMenu();
   // the lamp comes on
   if (lampOn.to < 1 && !later.some((l) => l.fn === switchOn)) whenever(450, switchOn);
 }
@@ -1359,14 +1377,24 @@ function coverMenu() {
         <span class="carry-icon">${paperIcon(themeOf(saved!.s.page?.theme).paper, -2)}</span><button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>
         <button data-a="ask" data-code="local" class="x" aria-label="tear this page out">×</button>
       </div>`) : "";
-    menu.innerHTML = `${carry}${friendsList()}
+    const slip = (rows: number) => `${carry}${friendsList(rows)}
     <h2 class="sect">new game</h2>
     ${sizeRow()}
-    <button data-a="bot" class="ink red">play Dawood-bot</button>
-    <p class="levels">${LEVELS.map((l, i) => `<button data-lvl="${i}" class="${i === botLevel ? "on" : ""}">${l}</button>`).join("")}</p>
-    <button data-a="pnp" class="ink blue">pass &amp; play<small>two of you, one phone</small></button>
-    <button data-a="friend" class="ink blue">play a friend<small>send a link: each on your own phone</small></button>`;
+    <div class="bot">
+      <button data-a="bot" class="ink red">play Dawood-bot<small>${LEVELS[botLevel]}</small></button>
+      <p class="levels" role="radiogroup" aria-label="How well Dawood-bot flicks">${LEVELS.map((l, i) => `<button data-lvl="${i}" role="radio" aria-checked="${i === botLevel}" aria-label="${l}" class="${i === botLevel ? "on" : ""}">${levelIcon(i as Level)}</button>`).join("")}</p>
+    </div>
+    <div class="duo">
+      <button data-a="pnp" class="ink blue">pass &amp; play<small>one phone</small></button>
+      <button data-a="friend" class="ink blue">play a friend<small>send a link</small></button>
+    </div>`;
+    // as many friends' games as fit; the rest wait in the drawer
+    $("#cover .leaf").style.removeProperty("--fit");
+    let rows = COVER_GAMES;
+    do menu.innerHTML = slip(rows); while (!coverFits() && rows-- > 0);
+    fitLeaf();
   };
+  coverDraw = draw;
   draw();
   menu.onclick = (e) => {
     const b = (e.target as HTMLElement).closest("button");
@@ -1387,12 +1415,12 @@ function coverMenu() {
       tearing = null;
       sfx.rustle();
       draw();
-    } else if (a === "more") { showDone = !showDone; draw(); }
+    } else if (a === "more") showDrawer();
     else if (b.dataset.room) { const x = readRoom(localStorage, b.dataset.room); if (x) enterRoom(x); }
     else if (b.dataset.lvl) {
       botLevel = +b.dataset.lvl as Level;
       localStorage.setItem("pft:lvl", String(botLevel));
-      for (const x of menu.querySelectorAll<HTMLElement>("[data-lvl]")) x.classList.toggle("on", x === b);
+      draw();
     } else if (b.dataset.size) {
       sizeName = b.dataset.size as Size["name"];
       localStorage.setItem("pft:size", sizeName);
@@ -1626,7 +1654,12 @@ function showDrawer() {
     <h2>The drawer</h2>
     <p class="sub">${d.length ? "every page you've finished" : "nothing filed yet. Finish a war and it lands here."}</p>
     <div class="pages"></div>
+    <div class="friends"></div>
     <button class="act" data-a="back">back</button>`, "drawer");
+  // every game with a friend on this phone: the cover only has room for a few
+  const friends = card.querySelector(".friends")!;
+  const games = () => { friends.innerHTML = friendsList(Infinity, true); };
+  games();
   const grid = card.querySelector(".pages")!;
   d.forEach((r, i) => {
     const b = document.createElement("button");
@@ -1644,8 +1677,15 @@ function showDrawer() {
     const b = (e.target as HTMLElement).closest("button");
     if (!b) return;
     sfx.tap();
-    if (b.dataset.a === "back") return closeSheet();
-    if (b.dataset.i) viewPage(d[+b.dataset.i]);
+    const a = b.dataset.a;
+    if (a === "back") { tearing = null; return closeSheet(); }
+    if (b.dataset.i) return viewPage(d[+b.dataset.i]);
+    if (a === "ask") tearing = b.dataset.code!;
+    else if (a === "keep") tearing = null;
+    else if (a === "tear") { forgetRoom(localStorage, b.dataset.code!); tearing = null; sfx.rustle(); coverDraw?.(); }
+    else if (b.dataset.room) { const x = readRoom(localStorage, b.dataset.room); tearing = null; if (x) enterRoom(x); return; }
+    else return;
+    games();
   };
 }
 
@@ -1944,7 +1984,12 @@ function coverNote(t: string) {
   n.textContent = t;
 }
 
-function friendsList() {
+/** The cover lists at most this many games with friends; fewer on a short phone. */
+const COVER_GAMES = 4;
+
+// Games with friends: the first `max` still running go on the cover's slip, and the
+// drawer (`all`) lists every one, finished ones last.
+function friendsList(max: number, drawerList = false) {
   const all = listRooms(localStorage);
   const rooms = new Map(all.map((r) => [r.code, r]));
   const { running, finished } = orderGames(all);
@@ -1964,13 +2009,12 @@ function friendsList() {
       <button data-a="ask" data-code="${esc(g.code)}" class="x" aria-label="tear ${esc(g.foe)}'s game out of this phone">×</button>
     </li>`;
   };
-  // up to four running games show; the rest (more running ones, then the finished) fold under one line
-  const shown = running.slice(0, 4);
-  const rest = [...running.slice(4), ...finished];
-  const open = showDone || !shown.length;
-  return `<h2 class="sect">games with friends</h2>
-    <ul class="games">${shown.map(row).join("")}
-    ${rest.length ? (open ? rest.map(row).join("") : `<li class="more"><button data-a="more" class="pencil">${running.length > 4 ? `more games (${rest.length})` : `finished games (${rest.length})`}</button></li>`) : ""}</ul>`;
+  if (drawerList) return `<h3>games with friends</h3><ul class="games">${[...running, ...finished].map(row).join("")}</ul>`;
+  if (!running.length) return ""; // finished games are in the drawer
+  const shown = running.slice(0, max);
+  const rest = running.length - shown.length + finished.length;
+  return `<h2 class="sect">games with friends${rest ? `<button data-a="more" class="pencil" aria-label="${rest} more in the drawer">+${rest}</button>` : ""}</h2>
+    <ul class="games">${shown.map(row).join("")}</ul>`;
 }
 
 function newRoomOnCover() {
@@ -1978,10 +2022,12 @@ function newRoomOnCover() {
   const entry = roomEntry = new AbortController();
   const input = nameOnLabel();
   const menu = $("#cover .menu");
+  coverDraw = null;
   menu.innerHTML = `
     <p class="note">write your name on the label</p>
     <button data-a="make" class="ink blue">start a page for two<small>you get a link to send</small></button>
     <p class="row"><button data-a="back" class="pencil">back</button></p>`;
+  fitLeaf();
   input.focus();
   const go = async (b: HTMLButtonElement) => {
     const who = cleanName(input.value);
@@ -2023,7 +2069,9 @@ async function openRoom(code: string) {
   const menu = $("#cover .menu");
   const home = (why: string) => { history.replaceState(null, "", "/"); showTitle(); coverNote(why); };
   menu.onclick = null;
+  coverDraw = null;
   menu.innerHTML = `<p class="note">opening the page…</p>`;
+  fitLeaf();
   let v: RoomView;
   try {
     v = await roomApi.read(code);
@@ -2042,6 +2090,7 @@ async function openRoom(code: string) {
     : `<p class="note">${esc(host)} v ${esc(v.names[1] ?? "")}</p>
       <button data-a="watch" class="ink blue">watch the war<small>both pens are taken</small></button>
       <p class="row"><button data-a="back" class="pencil">back</button></p>`;
+  fitLeaf();
   const saved = (seat: RoomSaved["seat"], secret: string | null, names: RoomSaved["names"]): RoomSaved => ({
     v: 1, code, seat, secret, engine: v.engine, setup: v.setup as RoomSaved["setup"], theme: v.theme, names,
     // arriving late, only the last couple of moves are drawn in
