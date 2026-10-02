@@ -1382,7 +1382,7 @@ function coverMenu() {
     ${sizeRow()}
     <div class="bot">
       <button data-a="bot" class="ink red">play Dawood-bot</button>
-      <p class="levels" role="radiogroup" aria-label="How well Dawood-bot flicks">${LEVELS.map((l, i) => `<button data-lvl="${i}" role="radio" aria-checked="${i === botLevel}" aria-label="${l}" class="${i === botLevel ? "on" : ""}">${levelIcon(i as Level)}</button>`).join("")}</p>
+      <button data-lvl="next" class="level" aria-label="Dawood-bot flicks ${LEVELS[botLevel]}: tap to change">${LEVELS[botLevel]}${levelIcon(botLevel)}</button>
     </div>
     <div class="duo">
       <button data-a="pnp" class="ink blue">pass &amp; play<small>one phone</small></button>
@@ -1418,7 +1418,7 @@ function coverMenu() {
     } else if (a === "more") showDrawer();
     else if (b.dataset.room) { const x = readRoom(localStorage, b.dataset.room); if (x) enterRoom(x); }
     else if (b.dataset.lvl) {
-      botLevel = +b.dataset.lvl as Level;
+      botLevel = (botLevel + 1) % LEVELS.length as Level; // one word, tapped round: sloppy, steady, sharp
       localStorage.setItem("pft:lvl", String(botLevel));
       draw();
     } else if (b.dataset.size) {

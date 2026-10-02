@@ -25,9 +25,9 @@ export const tearIcon = () => svg(30, 30, `<path d="M6 4h12l6 6v16H6z"/><path d=
 /** A hand-drawn tick: keep it. */
 export const keepIcon = () => svg(30, 30, `<path d="M5 16c3 2 5 5 7 8 4-9 8-15 14-19"/>`, "hand-icon");
 
-/** How Dawood-bot flicks, as three pen strokes: a wobble, a ruled line, a line that finds its mark. */
-export const levelIcon = (level: 0 | 1 | 2) => svg(30, 30, [
-  `<path d="M3 19c2-9 5-9 6-1s4 7 6-2 4-8 5 0 3 6 7-3"/>`,
-  `<path d="M3 17c8-2 16-3 24-4"/>`,
-  `<path d="M3 23 24 8"/><path d="M16 7.5 25 7 22.5 16" stroke-width="2.6"/>`,
+/** How Dawood-bot flicks, as the stroke that underlines the word: a wobble, a ruled line, a line that finds its mark. */
+export const levelIcon = (level: 0 | 1 | 2) => svg(60, 14, [
+  `<path d="M2 8c3-8 6-8 8 0s5 6 7-1 5-7 7 0 4 5 7-1 5-6 7 0 4 4 7-1 5-4 9-2"/>`,
+  `<path d="M2 8c18-2 38-3 56-3"/>`,
+  `<path d="M2 10 55 5"/><path d="M47 1.5 56 5 48 10.5" stroke-width="2.4"/>`,
 ][level], "hand-icon");
