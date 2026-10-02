@@ -975,13 +975,25 @@ export function sendMax(s: GameState, from: number) {
   return Math.min(s.rules.sendMax, sendable(s, a).length);
 }
 
-/** The road between two bases: wall to wall. */
-export function roadBetween(a: Pt & { r: number }, b: Pt & { r: number }): [Pt, Pt] {
+/** How far out from a base's centre, along unit direction `u`, its wall is `gap` behind you (a circle: `r + gap`). */
+function standoff(b: Walled, u: Pt, gap: number): number {
+  if (!corners(b)) return b.r + gap;
+  let lo = 0, hi = b.r + gap; // a corner is never further than r, so `hi` is clear by `gap`
+  for (let i = 0; i < 40; i++) {
+    const t = (lo + hi) / 2;
+    if (wallGap(b, { x: b.x + u.x * t, y: b.y + u.y * t }) < gap) lo = t; else hi = t;
+  }
+  return hi;
+}
+
+/** The road between two bases: wall to wall (a triangle's or hexagon's wall, where it is). */
+export function roadBetween(a: Walled, b: Walled): [Pt, Pt] {
   const l = dist(a, b) || 1;
   const ux = (b.x - a.x) / l, uy = (b.y - a.y) / l;
+  const ta = standoff(a, { x: ux, y: uy }, 6), tb = standoff(b, { x: -ux, y: -uy }, 6);
   return [
-    { x: a.x + ux * (a.r + 6), y: a.y + uy * (a.r + 6) },
-    { x: b.x - ux * (b.r + 6), y: b.y - uy * (b.r + 6) },
+    { x: a.x + ux * ta, y: a.y + uy * ta },
+    { x: b.x - ux * tb, y: b.y - uy * tb },
   ];
 }
 

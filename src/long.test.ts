@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { act, canArrange, columnAt, capacity, corners, illegal, inside, newGame, preview, scatterIn, trace, wallGap, wallStrength, type Base, type Flick, type GameState, type Player } from "./game";
+import { act, canArrange, roadBetween, columnAt, capacity, corners, illegal, inside, newGame, preview, scatterIn, trace, wallGap, wallStrength, type Base, type Flick, type GameState, type Player } from "./game";
 import { inBase, pickSoldier } from "./hand";
 import { passesAll } from "./life";
 import { dist, insidePoly, offsetPolygon, pathLen, polyHits, polygon, type Pt } from "./geom";
@@ -285,6 +285,17 @@ describe("long roads", () => {
     return s;
   };
   const handover = (s: GameState) => act(s, { t: "stop" });
+
+  it("a road starts and ends six units off the walls, whatever the shape; a circle keeps r + 6", () => {
+    const s = field([["prism", 0, 200, 1500, 0.4], ["cushion", 0, 900, 1100, 0.2], ["camp", 0, 600, 300]]);
+    for (const [i, j] of [[0, 1], [1, 0], [0, 2], [2, 1]]) {
+      const [p, q] = roadBetween(s.bases[i], s.bases[j]);
+      expect(wallGap(s.bases[i], p)).toBeCloseTo(6, 4);
+      expect(wallGap(s.bases[j], q)).toBeCloseTo(6, 4);
+    }
+    const [a, b] = [{ x: 0, y: 0, r: 80 }, { x: 300, y: 0, r: 80 }];
+    expect(roadBetween(a, b)).toEqual([{ x: 86, y: 0 }, { x: 214, y: 0 }]);
+  });
 
   it("a convoy walks the pace at every hand-over, exposed all the way, and goes in at the far wall", () => {
     const s = page();
