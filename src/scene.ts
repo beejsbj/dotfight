@@ -427,7 +427,7 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
   const px = 1 / v.z;
   for (const z of f.zones ?? []) {
     // dashed pencil: how far out his men may stand
-    const ring = outline(z, 36);
+    const ring = z.pts ? evenly(z.pts, 48) : outline(z, 36); // a rounded outline's dashes are even all the way round
     for (let i = 0; i < ring.length - 1; i += 2) pencilLine(g, ring[i], ring[i + 1], Math.max(1.4, px), 300 + i, false);
     box.add(z.x, z.y, z.r + 6);
   }
@@ -533,6 +533,20 @@ function outline(o: { x: number; y: number; r: number; pts?: Pt[] }, n: number):
   const vs = o.pts, per = Math.max(2, Math.round(n / vs.length)), out: Pt[] = [];
   vs.forEach((a, k) => { const b = vs[(k + 1) % vs.length]; for (let j = 0; j < per; j++) out.push({ x: a.x + ((b.x - a.x) * j) / per, y: a.y + ((b.y - a.y) * j) / per }); });
   out.push(vs[0]);
+  return out;
+}
+
+/** A closed outline of `pts`, resampled into `n` runs of equal length (first point repeated at the end). */
+function evenly(pts: Pt[], n: number): Pt[] {
+  const closed = [...pts, pts[0]], cum = [0];
+  for (let i = 1; i < closed.length; i++) cum.push(cum[i - 1] + Math.hypot(closed[i].x - closed[i - 1].x, closed[i].y - closed[i - 1].y));
+  const out: Pt[] = [];
+  for (let k = 0, i = 1; k <= n; k++) {
+    const d = (cum[cum.length - 1] * k) / n;
+    while (i < cum.length - 1 && cum[i] < d) i++;
+    const u = (d - cum[i - 1]) / Math.max(1e-9, cum[i] - cum[i - 1]), a = closed[i - 1], b = closed[i];
+    out.push({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
+  }
   return out;
 }
 

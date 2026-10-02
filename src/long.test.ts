@@ -396,6 +396,21 @@ describe("walls, not circumcircles", () => {
     expect(pickSoldier(view, out, { soldier: 3, base: 20 })).toBe(me);
   });
 
+  it("the positioning zone is exactly where canArrange lets a man stand, corners rounded", () => {
+    const s = field([["prism", 0, 500, 1300, Math.PI / 2]]);
+    s.phase = "position";
+    const b = s.bases[0], reach = s.rules.positionReach;
+    const ring = offsetPolygon(corners(b)!, reach);
+    for (const p of ring) expect(wallGap(b, p)).toBeCloseTo(reach, 6);
+    const me = man(s, 0, 500, 1300, 0);
+    // just inside the drawn corner is allowed; just outside it is refused
+    const c = ring.reduce((a, p) => (p.y > a.y ? p : a));
+    const dir = { x: c.x - b.x, y: c.y - b.y }, l = Math.hypot(dir.x, dir.y);
+    const at = (k: number) => ({ x: c.x + (dir.x / l) * k, y: c.y + (dir.y / l) * k });
+    expect(canArrange(s, me, at(-1).x, at(-1).y)).toBeNull();
+    expect(canArrange(s, me, at(2).x, at(2).y)).not.toBeNull();
+  });
+
   it("offsetPolygon is the set within pad of the wall, whichever way the corners run", () => {
     const sq = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
     for (const vs of [sq, [...sq].reverse()]) {

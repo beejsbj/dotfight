@@ -12,6 +12,7 @@ import {
   act, baseAt, canArrange, canSend, corners, garrison, illegal, inLastStand, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax, wallGap,
   type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
 } from "./game";
+import { offsetPolygon } from "./geom";
 import { jotOrder, pickSoldier, inBase } from "./hand";
 import { DETENTS, Dial, haptic, haptics, Ratchet } from "./haptics";
 import { inkTime, wallTime, type Snag } from "./inkclock";
@@ -1846,14 +1847,6 @@ function dropCard(e: PointerEvent) {
   dirty = true;
 }
 
-/** A triangle or hexagon grown `pad` out from each wall (its corners pushed out to match). */
-function grown(b: Base, pad: number) {
-  const vs = corners(b)!;
-  const inr = b.r * Math.cos(Math.PI / vs.length);
-  const k = (inr + pad) / inr;
-  return vs.map((v) => ({ x: b.x + (v.x - b.x) * k, y: b.y + (v.y - b.y) * k }));
-}
-
 // The whole war, drawn again: the page fills itself in, move by move.
 let replayQueue: Step[] = [];
 function replay(r: Filed) {
@@ -2952,7 +2945,7 @@ function currentFrame(): Frame {
   }
   const c0 = core();
   if (c0 && human && c0.phase === "position" && !busy) {
-    f.zones = c0.bases.filter((b) => b.owner === c0.current).map((b) => ({ x: b.x, y: b.y, r: b.r + c0.rules.positionReach, ...(corners(b) && { pts: grown(b, c0.rules.positionReach) }) }));
+    f.zones = c0.bases.filter((b) => b.owner === c0.current).map((b) => ({ x: b.x, y: b.y, r: b.r + c0.rules.positionReach, ...(corners(b) && { pts: offsetPolygon(corners(b)!, c0.rules.positionReach) }) }));
     if (dragging) f.drag = dragging;
     if (!taught("arrange") && !dragging) {
       const ownY = mode.kind === "pnp" && c0.current === 1 ? 0.3 : 0.7;
