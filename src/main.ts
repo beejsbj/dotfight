@@ -326,9 +326,9 @@ function canSendAny(c0: GameState) {
 // downward pull left after a real pull, the ring firms up (and ticks): let go
 // and the aim is dropped, nothing fired. One small fixed DOM element in screen
 // space, so no page or canvas layer is touched.
-// Under the ring hangs the pull's rule: a faint pencil line down to full power
-// with a notch at each detent (the ones the ratchet clicks), drawn over as far
-// as the thumb has pulled. The guide on the page is under the pen; this is
+// Under the ring hangs the pull's power bar: a groove down to full power, filled
+// in the side's ink as far as the thumb has pulled, with a notch at each detent
+// (the ones the ratchet clicks), and lit at the end at full power. The guide on the page is under the pen; this is
 // where the thumb is, so how hard you're pulling, of how hard you can, reads
 // at a glance.
 let ringOn = false; // the thumb is inside the ring
@@ -353,6 +353,7 @@ function syncRing() {
     ringEl.style.width = ringEl.style.height = `${r * 2}px`;
     (ringEl.firstElementChild as HTMLElement).style.transform = `translate(${g.sx - thumbX}px, 0)`; // the dot stays where the thumb began
     drawnEl().style.height = `${Math.max(0, Math.min(FEEL.maxPullPx, byThumb.dist) - r)}px`;
+    ringEl.classList.toggle("full", byThumb.dist >= FEEL.maxPullPx);
   }
   if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
   const on = shown && !!aim && aim.charged && !pull(aim).live;

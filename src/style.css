@@ -426,10 +426,14 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 }
 #cancel-ring.in { border-style: solid; border-color: rgba(var(--desk-rgb), .95); background: rgba(var(--desk-rgb), .16); }
 #cancel-ring[hidden] { display: none; }
-/* the pull's rule: a faint pencil line from the ring down to full power, drawn over as far as the thumb has pulled,
-   with a notch at each detent you can feel and a bar at the end. Heights are set from script; no transitions, so it never lags the thumb */
-#cancel-ring .rule, #cancel-ring .drawn { position: absolute; left: 50%; top: 100%; width: 0; margin-left: -1px; border-left: 2px dashed rgba(var(--desk-rgb), .3); box-sizing: border-box; }
-#cancel-ring .drawn { border-left-style: solid; border-left-color: rgba(var(--desk-rgb), .62); }
-#cancel-ring .tick { position: absolute; left: 50%; width: 8px; height: 0; margin-left: -4px; border-top: 1.5px solid rgba(var(--desk-rgb), .38); }
-#cancel-ring .stop { position: absolute; left: 50%; width: 16px; height: 0; margin-left: -8px; border-top: 2.5px solid rgba(var(--desk-rgb), .55); transform: rotate(-3deg); }
+/* the pull's power bar: a groove from the ring down to full power, filled in the side's ink as far as the thumb has pulled,
+   with a notch at each detent you can feel and a bar at the end. A dark edge and a paper-pale rim keep it plain over
+   the paper, the pen and the dark desk alike. Heights are set from script; no transitions, so it never lags the thumb */
+#cancel-ring .rule, #cancel-ring .drawn { position: absolute; left: 50%; top: 100%; width: 8px; margin-left: -4px; border-radius: 4px; box-sizing: border-box; }
+#cancel-ring .rule { background: rgba(var(--desk-rgb), .22); border: 1px solid rgba(0, 0, 0, .45); box-shadow: 0 0 0 1px rgba(var(--desk-rgb), .3); }
+#cancel-ring .drawn { background: var(--ink); border: 1.5px solid rgba(var(--desk-rgb), .85); box-shadow: 0 0 3px rgba(0, 0, 0, .55); }
+#cancel-ring .tick { position: absolute; left: 50%; width: 14px; height: 0; margin-left: -7px; border-top: 2px solid rgba(var(--desk-rgb), .7); filter: drop-shadow(0 0 1px rgba(0, 0, 0, .8)); }
+#cancel-ring .stop { position: absolute; left: 50%; width: 26px; height: 0; margin-left: -13px; border-top: 3.5px solid rgba(var(--desk-rgb), .85); transform: rotate(-3deg); filter: drop-shadow(0 0 1px rgba(0, 0, 0, .8)); }
+/* at full power the bar's end lights up in the side's ink */
+#cancel-ring.full .stop { border-top-color: var(--ink); border-top-width: 5px; filter: drop-shadow(0 0 2px rgba(var(--desk-rgb), .95)); }
 #cancel-ring.in .rule, #cancel-ring.in .drawn, #cancel-ring.in .tick, #cancel-ring.in .stop { visibility: hidden; }
