@@ -39,7 +39,7 @@ import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, 
 import { keepIcon, paperIcon, tearIcon } from "./icons";
 import { orderGames, type GameLine } from "./games";
 import { forgetRoom, listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
-import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted as roomDrifted, ENGINE, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
+import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted as roomDrifted, engineFor, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
 import { Timeline, reachFraction, signable, walkerAt } from "./timeline";
 import * as turn from "./turn";
@@ -1992,8 +1992,9 @@ function newRoomOnCover() {
     try {
       const setup = setupOf(newGame(pickedSize(), undefined, pageStamp()));
       const theme = currentTheme();
-      const c = await roomApi.create({ name: who, engine: ENGINE, setup, theme }, entry.signal);
-      const d: RoomSaved = { v: 1, code: c.code, seat: 0, secret: c.secret, engine: ENGINE, setup, theme, names: [who, null], log: [], applied: 0, pending: [], updated: Date.now() };
+      const engine = engineFor(setup.rules);
+      const c = await roomApi.create({ name: who, engine, setup, theme }, entry.signal);
+      const d: RoomSaved = { v: 1, code: c.code, seat: 0, secret: c.secret, engine, setup, theme, names: [who, null], log: [], applied: 0, pending: [], updated: Date.now() };
       new RoomLink(d, { api: roomApi, storage: localStorage }).save();
       if (entry.signal.aborted) return;
       restoreLabel();
