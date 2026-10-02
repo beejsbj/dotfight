@@ -134,13 +134,23 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   transform: rotate(-4deg); opacity: .85;
 }
 #kind.off { opacity: .3; pointer-events: none; }
-/* the long war's setup: three cards, one for each shape */
+/* the long war's setup: three cards, each a base drawn in ink with its men;
+   press one and drag a copy of it onto the page */
 #kind.shapes { grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
-#kind.shapes button { padding: 6px 8px 7px 9px; }
-#kind.shapes button b { font-size: 26px; }
-#kind.shapes button i { font-size: 13px; white-space: normal; line-height: 1.05; }
-#kind.shapes button:nth-child(3) { transform: translateY(7px) rotate(-.5deg); }
-#kind.shapes button.on:nth-child(3) { transform: translateY(-3px) rotate(-1deg); }
+#kind.shapes button {
+  height: 84px; padding: 6px 7px 7px 8px; opacity: .9; touch-action: none;
+  display: grid; grid-template-columns: 36px 1fr; grid-template-rows: 38px 1fr; column-gap: 5px; align-items: center;
+  transform: translateY(2px) rotate(-.8deg);
+  transition: transform .09s ease-out, opacity .15s, box-shadow .09s;
+}
+#kind.shapes button:nth-child(2) { transform: translateY(2px) rotate(.9deg); }
+#kind.shapes button:nth-child(3) { transform: translateY(2px) rotate(-.5deg); }
+#kind.shapes button canvas { width: 36px; height: 36px; transition: opacity .15s; }
+#kind.shapes button b { font-size: 25px; color: var(--pencil, var(--fine)); padding: 0; }
+#kind.shapes button i { grid-column: 1 / -1; align-self: start; font-size: 13px; white-space: normal; line-height: 1.05; }
+#kind.shapes.carrying button { opacity: .35; }
+#kind.shapes button.held { opacity: 1; transform: translateY(10px) scale(.97); box-shadow: 0 2px 5px rgba(0,0,0,.4); }
+#kind.shapes button.held canvas { opacity: .22; }
 #kind button.barred { opacity: .25; }
 #kind button.barred b { text-decoration: line-through; text-decoration-thickness: 2px; }
 

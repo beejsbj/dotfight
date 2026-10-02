@@ -9,7 +9,7 @@ import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
-  act, baseAt, canArrange, canSend, corners, garrison, illegal, inLastStand, newGame, other, pathLen, radiusOf, sendMax,
+  act, baseAt, canArrange, canSend, corners, garrison, illegal, inLastStand, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax,
   type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
@@ -18,7 +18,7 @@ import { inkTime, wallTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
-import { drawPaper, drawYellow, CLARITY, PageLayer, SETTLED, type Ink } from "./page";
+import { drawDot, drawPaper, drawYellow, CLARITY, PageLayer, SETTLED, type Ink } from "./page";
 import { LIFT_MS, SETTLE_MS, leaning, lift, PEN, settle, shiver, type PenPose } from "./pen";
 import { gunPull, tip, type Pose as Held } from "./motion";
 import * as motion from "./motion-input";
@@ -275,11 +275,8 @@ function hud() {
   if (screen === "game") {
     // drawing a long war's bases: the cards are the three shapes
     const shaping = turn.shaped(s) && s.phase === "setup";
-    if (shaping !== ($("#kind").dataset.bar === "shapes")) { if (shaping) shapeBar(); else restoreKindBar(); }
-    if (shaping) {
-      for (const b of document.querySelectorAll<HTMLButtonElement>("#kind button[data-shape]")) { b.classList.toggle("on", b.dataset.shape === shape); b.setAttribute("aria-checked", String(b.dataset.shape === shape)); }
-      $("#kind").classList.toggle("off", away(s.current) || busy);
-    }
+    if (shaping !== ($("#kind").dataset.bar === "shapes") || (shaping && cardPen !== s.current && !carrying)) { if (shaping) shapeBar(); else restoreKindBar(); }
+    if (shaping) $("#kind").classList.toggle("off", away(s.current) || busy);
   }
   for (const b of document.querySelectorAll<HTMLButtonElement>("#kind button[data-kind]")) {
     const k = b.dataset.kind as Kind;
@@ -1704,22 +1701,128 @@ function restoreKindBar() {
   bindKind();
 }
 
-// The long war's setup: which shape the next base is drawn in.
+// The long war's setup: three shape cards, each the base drawn in ink with
+// its men jotted in. Press one and drag a copy of it up onto the page; let go
+// to draw it there, or back over the cards to put it back. `shape` is the one in hand.
 let shape: Shape = "camp";
 const SHAPE_CARD: Record<Shape, string> = { camp: "12 men · bends lines round it", prism: "6 men · splits your shots", cushion: "8 men · banks glancing lines" };
+const CARD_PX = 36; // the card's drawing
+let cardPen = -1; // whose pen the cards are drawn in
+let carrying: { id: number; off: number; shape: Shape; sx: number; sy: number; moved: boolean; el: HTMLButtonElement } | null = null;
+let ghostWasOk: boolean | undefined;
+
 function shapeBar() {
   const kindEl = $("#kind");
   kindEl.dataset.bar = "shapes";
   kindEl.classList.add("shapes");
-  kindEl.innerHTML = (["camp", "prism", "cushion"] as const).map((k) => `<button data-shape="${k}" role="radio"><b>${k}</b><i>${SHAPE_CARD[k]}</i></button>`).join("");
-  kindEl.onclick = (e) => {
-    const b = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-shape]");
-    if (!b) return;
-    if (shape !== b.dataset.shape) sfx.tap();
-    shape = b.dataset.shape as Shape;
-    hud();
+  kindEl.onclick = null;
+  cardPen = s.current;
+  kindEl.innerHTML = (["camp", "prism", "cushion"] as const).map((k) => `<button data-shape="${k}" aria-label="drag a ${k} onto the page"><canvas></canvas><b>${k}</b><i>${SHAPE_CARD[k]}</i></button>`).join("");
+  for (const b of kindEl.querySelectorAll<HTMLButtonElement>("button[data-shape]")) {
+    drawCard(b.querySelector("canvas")!, b.dataset.shape as Shape);
+    b.onpointerdown = (e) => pickCard(e, b);
+    b.onpointermove = (e) => carryCard(e);
+    b.onpointerup = b.onpointercancel = (e) => dropCard(e);
+  }
+}
+
+/** A shape card's drawing: the base in the current player's ink, its full garrison jotted in, a prism point up. */
+function drawCard(cv: HTMLCanvasElement, k: Shape) {
+  const d = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = cv.height = Math.round(CARD_PX * d);
+  cv.style.width = cv.style.height = `${CARD_PX}px`;
+  const ctx = cv.getContext("2d")!;
+  const L = LONG.long!, owner = s.current as Player;
+  const r = RULES.baseRadius * L.shapes[k].size, k0 = 15 / RULES.baseRadius;
+  const b: Base = { id: 0, owner, x: 0, y: 0, r, seed: 4243 + k.length * 31, shape: k, ...(k !== "camp" && { rot: k === "prism" ? -Math.PI / 2 : 0 }) };
+  ctx.scale(d, d);
+  ctx.translate(CARD_PX / 2, CARD_PX / 2 + (k === "prism" ? r * k0 * 0.22 : 0));
+  ctx.scale(k0, k0);
+  const vs = corners(b), w = (2.8 / k0) * 0.5 * theme.ink.width;
+  if (vs) inkLib.inkPolygon(ctx, vs, INK.pens[owner], b.seed, w, 2);
+  else inkLib.inkCircle(ctx, 0, 0, r, INK.pens[owner], b.seed, w, 2);
+  scatterIn(b, L.shapes[k].soldiers, 99).forEach((p, i) => {
+    const man = { id: 900 + i, owner, x: p.x, y: p.y, shape: k, rot: b.rot };
+    drawDot(ctx, man, 1, 1, p, 0, 1.6);
+  });
+}
+
+/** The cards wiggle: what you tapped is something you drag. */
+function nudgeCards(only?: HTMLElement) {
+  if (reduced || slow) return;
+  for (const c of document.querySelectorAll<HTMLElement>("#kind button[data-shape]")) if (!only || c === only) c.animate([{ rotate: "0deg" }, { rotate: "1.5deg" }, { rotate: "-1.5deg" }, { rotate: "0deg" }], { duration: 240 });
+}
+
+/** The drawing lifting off a card toward (x, y) on screen, or settling back onto it. */
+function flyCopy(card: HTMLElement, x: number, y: number, back = false) {
+  if (reduced || slow) return;
+  const src = card.querySelector("canvas")!, at = src.getBoundingClientRect();
+  const fly = document.createElement("canvas");
+  fly.width = src.width; fly.height = src.height;
+  fly.getContext("2d")!.drawImage(src, 0, 0);
+  Object.assign(fly.style, { position: "fixed", left: `${at.left}px`, top: `${at.top}px`, width: `${at.width}px`, height: `${at.height}px`, pointerEvents: "none", zIndex: "30" });
+  document.body.appendChild(fly);
+  const scale = Math.max(1, (RULES.baseRadius * cam.cur.m * 2) / CARD_PX);
+  const there = `translate(${x - at.left - at.width / 2}px, ${y - at.top - at.height / 2}px) scale(${scale})`;
+  const frames = [{ transform: "none", opacity: 1 }, { transform: there, opacity: 0.15 }];
+  fly.animate(back ? frames.reverse() : frames, { duration: back ? 140 : 160, easing: "cubic-bezier(.2,.9,.3,1.1)" }).onfinish = () => fly.remove();
+}
+
+function pickCard(e: PointerEvent, b: HTMLButtonElement) {
+  if (!humanTurn() || s.phase !== "setup" || carrying) return;
+  e.preventDefault();
+  b.setPointerCapture(e.pointerId);
+  sfx.unlock();
+  sfx.pick();
+  haptic("pickup");
+  carrying = { id: e.pointerId, off: e.pointerType === "touch" ? 80 : 0, shape: b.dataset.shape as Shape, sx: e.clientX, sy: e.clientY, moved: false, el: b };
+  shape = carrying.shape;
+  ghostWasOk = undefined;
+  $("#kind").classList.add("carrying");
+  b.classList.add("held");
+  status("drag it onto the page");
+}
+
+function carryCard(e: PointerEvent) {
+  const c = carrying;
+  if (!c || e.pointerId !== c.id) return;
+  if (!c.moved) {
+    if (Math.hypot(e.clientX - c.sx, e.clientY - c.sy) < TAP) return;
+    c.moved = true;
+    flyCopy(c.el, e.clientX, e.clientY - c.off);
+  }
+  moveGhost(e.clientX, e.clientY - c.off);
+  if (ghost && ghostWasOk === true && !ghost.ok) haptic("notch", 1);
+  ghostWasOk = ghost?.ok;
+}
+
+function dropCard(e: PointerEvent) {
+  const c = carrying;
+  if (!c || e.pointerId !== c.id) return;
+  carrying = null;
+  $("#kind").classList.remove("carrying");
+  c.el.classList.remove("held");
+  // let go well inside the cards, off the page, or somewhere it can't go: it goes back
+  const cards = $("#kind").getBoundingClientRect();
+  const back = e.clientY > cards.top + 24 || !ghost?.ok || e.type !== "pointerup" || !humanTurn();
+  if (!c.moved) { ghost = undefined; nudgeCards(c.el); status(`drag a ${c.shape} onto the page`); dirty = true; return; }
+  if (back) {
+    if (ghost && e.type === "pointerup") flyCopy(c.el, e.clientX, e.clientY - c.off, true);
+    sfx.tap();
+    ghost = undefined;
+    status();
     dirty = true;
-  };
+    return;
+  }
+  learn("place");
+  fx.clear();
+  const at = ghost!;
+  ghost = undefined;
+  drawBase(at.x, at.y, 1, c.shape);
+  haptic("settle");
+  afterBase();
+  status();
+  dirty = true;
 }
 
 /** A triangle or hexagon grown `pad` out from each wall (its corners pushed out to match). */
@@ -2289,7 +2392,11 @@ over.addEventListener("pointerdown", (e) => {
   }
   if (ptrs.size > 2) return;
   const w = cam.toWorld(e.clientX, e.clientY);
-  if (humanTurn() && s.phase === "setup") {
+  if (humanTurn() && s.phase === "setup" && turn.shaped(s)) {
+    // a long war's bases come from the cards, not the page
+    nudgeCards();
+    status("drag a base up from the cards");
+  } else if (humanTurn() && s.phase === "setup") {
     // hold to see the camp, drag to adjust, lift to draw it. On touch the
     // circle floats above the finger so you can see where it goes.
     const off = e.pointerType === "touch" ? 80 : 0;
@@ -2341,8 +2448,10 @@ function moveGhost(sx: number, sy: number) {
   const sh = turn.shaped(s) ? shape : undefined;
   const why = turn.canPlaceBase(s, w.x, w.y, sh);
   const b = turn.isLegacy(s) ? undefined : baseAt(s, w.x, w.y, sh);
-  ghost = { x: w.x, y: w.y, ok: !why, owner: s.current, r: b?.r ?? RULES.baseRadius, ...(b && corners(b) && { pts: corners(b)! }) };
-  status(why ? `can't draw here: ${why}` : `lift to draw the ${sh ?? "camp"}`);
+  // a long war's base shows its men pencilled in, exactly where they'll be jotted
+  const men = b && sh ? scatterIn(b, turn.perBase(s, sh), b.seed).map((p) => ({ ...p, shape: sh, rot: b.rot })) : undefined;
+  ghost = { x: w.x, y: w.y, ok: !why, owner: s.current, r: b?.r ?? RULES.baseRadius, ...(b && corners(b) && { pts: corners(b)! }), ...(men && { men }) };
+  status(why ? `can't draw here: ${why}` : `${sh ? "let go" : "lift"} to draw the ${sh ?? "camp"}`);
   dirty = true;
 }
 
@@ -3113,9 +3222,14 @@ if (import.meta.env.DEV) {
      * not: `maxTurns` stops it early). Returns the record.
      */
     fileWar: (seed = 7, maxTurns = 400, size: Size["name"] = "quick") => {
-      const st = newGame(sizeFor(size, custom), seed, pageStamp());
+      const sz = sizeFor(size, custom);
+      const st = newGame(sz, seed, pageStamp(), rulesFor(sz));
       let k = seed;
-      while (st.phase === "setup") { const spot = botBase(st, (x, y) => !turn.canPlaceBase(st, x, y), k++)!; act(st, { t: "base", x: spot.x, y: spot.y }); }
+      while (st.phase === "setup") {
+        const sh = st.rules.long ? botShape(rng(k++)) : undefined;
+        const spot = botBase(st, (x, y) => !turn.canPlaceBase(st, x, y, sh), k++)!;
+        act(st, { t: "base", x: spot.x, y: spot.y, ...(sh && { shape: sh }) });
+      }
       while (st.phase === "position") for (const a of botArrange(st, k++)) { if (!illegal(st, a)) act(st, a); if (a.t === "ready") break; }
       while (st.phase === "play" && st.turn < maxTurns) act(st, turn.botMove(st, 1, k++));
       const r = file(st, { kind: "bot", level: 1 });

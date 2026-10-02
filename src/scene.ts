@@ -16,6 +16,8 @@ import { walkerAt } from "./timeline";
 import { BoilLayer, planBoil, type Plan } from "./boil";
 import type { Anchor, Mood } from "./bubble";
 import { rng, type Pt } from "./game";
+import { polygon } from "./geom";
+import type { Shape } from "./rules";
 import type { AnyState as GameState } from "./record";
 import { INK, arcText, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilStroke, rubOut } from "./ink";
 import { Life } from "./life";
@@ -60,7 +62,7 @@ export interface Frame {
   selected?: number;
   aim?: Aim;
   /** The base about to be drawn; `pts`: a long war's triangle or hexagon (else a circle of `r`). */
-  ghost?: { x: number; y: number; ok: boolean; owner: 0 | 1; r: number; pts?: Pt[] };
+  ghost?: { x: number; y: number; ok: boolean; owner: 0 | 1; r: number; pts?: Pt[]; men?: (Pt & { shape?: Shape; rot?: number })[] };
   /** Setup: the no-go rings round enemy bases, faintly hatched. */
   keepOut?: { x: number; y: number; r: number }[];
   mover?: { id: number; at: Pt; angle?: number; stretch?: number };
@@ -458,6 +460,13 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
     for (let i = 0; i < ring.length - 1; i++) {
       if (!f.ghost.ok && i % 2) continue;
       pencilLine(g, ring[i], ring[i + 1], Math.max(2, px * 1.4), i, false);
+    }
+    // its men, pencilled in where they'll be jotted
+    g.globalAlpha = f.ghost.ok ? 0.55 : 0.3;
+    for (const [k, m] of (f.ghost.men ?? []).entries()) {
+      const n = m.shape === "prism" ? 3 : m.shape === "cushion" ? 6 : 0;
+      const o = outline({ x: m.x, y: m.y, r: RULES.soldierRadius * 0.8, ...(n && { pts: polygon(n, m, n === 3 ? 8 : 7, m.rot ?? 0) }) }, 8);
+      for (let i = 0; i < o.length - 1; i++) pencilLine(g, o[i], o[i + 1], Math.max(1.2, px), 700 + k * 13 + i, false);
     }
     g.globalAlpha = 1;
   }

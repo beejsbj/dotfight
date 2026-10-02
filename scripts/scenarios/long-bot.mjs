@@ -1,8 +1,8 @@
 // A long war against Dawood-bot, by real touch where it matters: the long
-// war picked on the cover, six bases drawn in three shapes from the shape
-// cards, a snipe from inside our prism (it splits), then the rest played out
+// war picked on the cover, six bases dragged up from the shape cards in
+// three shapes, a snipe from inside our prism (it splits), then the rest played out
 // (the human seat by the bot's own choices) to dawn.
-import { flickAt, idle, placeAt } from "../lib/phone.mjs";
+import { flickAt, idle } from "../lib/phone.mjs";
 
 export default async function (T, out) {
   const { page } = T;
@@ -17,16 +17,13 @@ export default async function (T, out) {
   const spots = [[500, 1250], [230, 1250], [780, 1250], [250, 1480], [760, 1490], [500, 1500]];
   for (const [k, [x, y]] of kit.map((sh, i) => [i, spots[i]])) {
     await idle(T);
-    await page.click(`#kind [data-shape=${kit[k]}]`);
-    await page.waitForTimeout(150);
-    if (k === 0) {
-      // hold the first one up before drawing it: the ghost takes the card's shape
-      const p = await T.world(x, y);
-      await T.drag(p.x, p.y + 90, p.x, p.y + 80, { steps: 4, ms: 120, release: false });
-      await page.waitForTimeout(350);
-      await T.shot(`${out}/l1-ghost-prism.png`);
-      await T.touch("touchEnd", []);
-    } else await placeAt(T, x, y);
+    // press the card and drag a copy of it up onto the page (it rides 80 px above the finger)
+    const card = await page.evaluate((sh) => { const r = document.querySelector(`#kind [data-shape=${sh}]`).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, kit[k]);
+    const p = await T.world(x, y);
+    await T.drag(card.x, card.y, p.x, p.y + 80, { steps: 16, ms: 420, release: false });
+    await page.waitForTimeout(250);
+    if (k === 0) await T.shot(`${out}/l1-drag-prism.png`);
+    await T.touch("touchEnd", []);
   }
   await idle(T, 90000);
   await page.waitForTimeout(400);
