@@ -1367,14 +1367,13 @@ function coverMenu() {
   mark.textContent = d.length ? String(d.length) : "";
   const where = (x: AnyState) => x.phase === "setup" ? "still drawing camps" : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
   const draw = () => {
-    // "tear it out?" is a bar laid over its row, so asking never moves the rest of the slip
+    // "tear it out?" is written over its row, which fades underneath: asking never moves the slip
     const carry = canResume ? `
       <div class="carry">
         <span class="carry-icon">${paperIcon(themeOf(saved!.s.page?.theme).paper, -2)}</span><button data-a="resume" class="ink blue">carry on ${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}<small>${where(saved!.s)}${elsewhere}</small></button>
         <button data-a="ask" data-code="local" class="x" aria-label="tear this page out">×</button>${tearing === "local" ? `
         <div class="tearing">
-          <div class="say"><p class="struck">${saved!.s.page ? `page ${saved!.s.page.no}` : "this page"}</p>
-          <p class="ask">tear this page out for good?</p></div>
+          <p class="ask">tear it out<br>for good?</p>
           <span class="acts"><button data-a="tear" data-code="local" class="ico rip" aria-label="tear this page out for good">${tearIcon()}</button><button data-a="keep" class="ico" aria-label="keep it">${keepIcon()}</button></span>
         </div>` : ""}
       </div>` : "";
@@ -2004,8 +2003,7 @@ function friendsList(max: number, drawerList = false) {
       <button data-room="${esc(g.code)}" class="go">${paperIcon(themeOf(r.theme ?? r.setup?.page?.theme).paper, tilt(g.code))}<b>${esc(g.foe)}</b>${g.standing ? `<span>${g.standing}</span>` : ""}${g.turn && g.running ? `<small>turn ${g.turn}</small>` : ""}</button>
       <button data-a="ask" data-code="${esc(g.code)}" class="x" aria-label="tear ${esc(g.foe)}'s game out of this phone">×</button>${tearing === g.code ? `
       <div class="tearing">
-        <div class="say"><p class="struck">${esc(g.foe)}</p>
-        <p class="ask">tear it out of this phone? ${esc(g.foe)} keeps theirs.</p></div>
+        <p class="ask">tear it out?<br>${esc(g.foe)} keeps theirs</p>
         ${acts(g.code, `tear ${esc(g.foe)}'s game out of this phone`, "keep it")}
       </div>` : ""}
     </li>`;

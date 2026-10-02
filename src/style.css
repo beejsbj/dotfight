@@ -246,6 +246,10 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .menu .ink.red { color: var(--red); }
 .menu .ink:active { transform: translateX(3px); }
 /* Dawood-bot and how well he flicks, on one line: a wobble, a ruled line, a line that finds its mark */
+/* on the slip the name matters more than the turn; the drawer has room for both */
+.menu .game .go small { display: none; }
+.menu .game .go b { font-size: 24px; }
+.menu .game.yours .go span { font-size: 20px; padding: 1px 7px 2px; }
 .menu .bot { display: flex; align-items: center; gap: 2px; margin: 2px 0 0; }
 .menu .bot .ink { flex: none; font-size: 29px; padding-left: 14px; }
 .menu .levels { flex: 1; min-width: 0; display: flex; justify-content: flex-end; margin: 0; }
@@ -293,16 +297,12 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 :is(.menu, .card) .game.done .go b { color: var(--fine); font-weight: 400; font-size: 22px; opacity: .8; }
 :is(.menu, .card) .game.done .go span { color: var(--fine); font-size: 19px; opacity: .8; }
 :is(.menu, .card) .game.done .x { opacity: .5; }
-/* "tear it out?": a strip of the same paper laid over the row, so nothing under it moves */
-:is(.menu, .card) .tearing {
-  position: absolute; z-index: 1; left: -4px; right: -6px; top: -1px; min-height: calc(100% + 2px);
-  display: flex; align-items: center; gap: 6px; padding: 2px 2px 2px 10px;
-  background: var(--paper); box-shadow: 0 2px 7px rgba(0,0,0,.35), 0 0 0 1px rgba(0,0,0,.06); transform: rotate(-.5deg);
-}
-:is(.menu, .card) .tearing .say { flex: 1; min-width: 0; }
-:is(.menu, .card) .tearing p { margin: 0; }
-:is(.menu, .card) .tearing .struck { font-family: var(--hand); font-size: 22px; line-height: 1.2; font-weight: 700; color: var(--pencil); width: fit-content; max-width: 100%; background: linear-gradient(var(--red), var(--red)) 0 58% / 100% 2.5px no-repeat; }
-:is(.menu, .card) .tearing .ask { font-family: var(--hand); font-size: 15px; line-height: 1.1; color: var(--pencil); opacity: .85; margin-top: 1px; }
+/* "tear it out?": written in red over the row, which fades underneath; nothing moves */
+:is(.menu, .card) .tearing { position: absolute; z-index: 1; inset: 0; display: flex; align-items: center; gap: 4px; padding-left: 8px; }
+:is(.menu, .card) .tearing .ask { position: relative; flex: 1; min-width: 0; margin: 0; font-family: var(--hand); font-weight: 700; font-size: 17px; line-height: .98; color: var(--red); transform: rotate(-2deg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu .carry .tearing .ask { font-size: 22px; }
+:is(.menu, .card) :has(> .tearing) > :not(.tearing) { opacity: .22; }
+:is(.menu, .card) :has(> .tearing) > .x { visibility: hidden; }
 :is(.menu, .card) .tearing .acts { flex: none; display: flex; gap: 0; }
 :is(.menu, .card) .ico { width: 42px; height: 44px; display: grid; place-items: center; color: var(--pencil); }
 :is(.menu, .card) .ico .hand-icon { width: 28px; height: 28px; }
@@ -418,7 +418,6 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   .menu .duo .ink { font-size: 21px; }
   .menu .ink small { font-size: 15px; }
   .menu .levels button { flex-basis: 32px; }
-  .menu .game .go small { display: none; } /* the name matters more than the turn */
   .menu .custom { flex-wrap: wrap; gap: 0 10px; margin-left: 12px; }
   .menu .custom .step small { white-space: nowrap; }
 }
