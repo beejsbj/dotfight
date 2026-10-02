@@ -1,12 +1,13 @@
 // The power bar while aiming: pick a man up, pull a quarter, half and all the
 // way, and shoot each, to see how plainly the pull reads.
-//   node scripts/playtest.mjs power <url> <outdir>
+//   [THEME=<id>] node scripts/playtest.mjs power <url> <outdir>
 import { idle } from "../lib/phone.mjs";
 
 export default async function (T, out) {
   const { page } = T;
   page.setDefaultTimeout(120000);
   const feel = await page.evaluate(async () => (await import("/src/rules.ts")).FEEL);
+  if (process.env.THEME) await page.evaluate((id) => window.pft.theme.choose(id), process.env.THEME);
   await page.waitForTimeout(1500);
   await page.evaluate(() => { const r = window.pft.fileWar(7, 6); r.mode = { kind: "pnp" }; window.pft.resumeRecord(r); });
   await idle(T);
@@ -18,7 +19,7 @@ export default async function (T, out) {
     if (await page.waitForFunction(() => window.pft.selected !== undefined, undefined, { timeout: 5000 }).then(() => true, () => false)) break;
   }
   await page.waitForFunction(() => window.pft.cam.settled);
-  const x0 = 195, y0 = 300;
+  const x0 = 280, y0 = 540; // where a thumb sits, clear of the pen
   await T.touch("touchStart", [[x0, y0]]);
   await page.waitForTimeout(80);
   let y = y0;

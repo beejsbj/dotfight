@@ -24,6 +24,8 @@ export interface PenPose {
   alpha: number;
   /** How much ink is left in the refill, 0..1. */
   ink: number;
+  /** While a flick is pulled back: its power, 0..1, shown as the refill filling from the tip in place of `ink`. */
+  charge?: number;
 }
 
 /** A pen leaning `lean` radians off vertical, its top toward page direction `toward`. */
@@ -112,15 +114,20 @@ export function drawPen(g: CanvasRenderingContext2D, p: PenPose, v: View) {
   quad(cone, capA, R, R);
   g.fillStyle = grad;
   g.fill();
-  // the refill inside, with its ink showing how much war is left in it
-  const tubeEnd = P(0.085 + 0.6 * Math.max(0.04, p.ink));
+  // the refill inside, with its ink showing how much war is left in it; while a
+  // flick is pulled back it shows the power instead, filling up from the tip
+  const charging = p.charge !== undefined;
+  const fill = charging ? Math.max(0, Math.min(1, p.charge!)) : Math.max(0.04, p.ink);
+  const tubeEnd = P(0.085 + 0.6 * fill);
   const tubeTop = P(0.69);
   g.strokeStyle = "rgba(235,235,230,0.8)";
-  g.lineWidth = R * 0.34 * mid.k;
+  g.lineWidth = R * (charging ? 0.5 : 0.34) * mid.k;
   g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeTop.x, tubeTop.y); g.stroke();
-  g.strokeStyle = mark;
-  g.lineWidth = R * 0.26 * mid.k;
-  g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeEnd.x, tubeEnd.y); g.stroke();
+  if (fill > 0 && !charging) {
+    g.strokeStyle = mark;
+    g.lineWidth = R * 0.26 * mid.k;
+    g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeEnd.x, tubeEnd.y); g.stroke();
+  }
   // facet edges
   g.strokeStyle = "rgba(255,255,255,0.7)";
   g.lineWidth = Math.max(0.6, 0.12 * R * mid.k);
@@ -150,6 +157,28 @@ export function drawPen(g: CanvasRenderingContext2D, p: PenPose, v: View) {
       const q = P(0.1 + i * 0.025);
       g.beginPath(); g.moveTo(q.x + nx * R * 1.06 * q.k, q.y + ny * R * 1.06 * q.k); g.lineTo(q.x - nx * R * 1.06 * q.k, q.y - ny * R * 1.06 * q.k); g.stroke();
     }
+  }
+
+  // the charge, drawn over the grip: you see the ink through a gel pen's rubber
+  if (charging && fill > 0) {
+    if (fill >= 1) {
+      // full: the ink brims and glows through the plastic
+      g.strokeStyle = mark;
+      g.globalAlpha = p.alpha * 0.45;
+      g.lineWidth = R * 1.5 * mid.k;
+      g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeEnd.x, tubeEnd.y); g.stroke();
+      g.globalAlpha = p.alpha;
+    }
+    g.strokeStyle = mark;
+    g.lineWidth = R * 0.42 * mid.k;
+    g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeEnd.x, tubeEnd.y); g.stroke();
+    // a glint down the ink, so it reads as liquid in a tube
+    g.strokeStyle = "rgba(255,255,255,0.45)";
+    g.lineWidth = Math.max(0.6, R * 0.08 * mid.k);
+    g.beginPath();
+    g.moveTo(cone.x - nx * R * 0.1 * cone.k, cone.y - ny * R * 0.1 * cone.k);
+    g.lineTo(tubeEnd.x - nx * R * 0.1 * tubeEnd.k, tubeEnd.y - ny * R * 0.1 * tubeEnd.k);
+    g.stroke();
   }
 
   // the cap, posted on the back: opaque coloured plastic with a clip

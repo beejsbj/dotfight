@@ -2845,6 +2845,7 @@ function currentFrame(): Frame {
       // at full pull it shivers under the finger (the pen only: the aim is the hand's)
       const sh = LIFE.pen && lively() && pl.live ? shiver(T, pl.power) : 0;
       f.pen = tip(leaning(me.x, me.y, ang + sh * 3, pl.live ? penLean(pl.power) + sh : 0.04, owner, ink), ang, penSide);
+      f.pen.charge = pl.live ? pl.power : 0; // the refill fills with the pull
       // a lunger landing among their men is shot: those camps are hatched while you aim one
       if (kind === "lunge" && c0) f.danger = c0.bases.filter((b) => b.owner !== c0.current && garrison(c0, b).length).map((b) => ({ x: b.x, y: b.y, r: b.r }));
     } else if (botAim) {
@@ -2853,6 +2854,7 @@ function currentFrame(): Frame {
       const tremble = Math.sin(T / 1000 * 7.3) * 0.02 * pw;
       f.aim = { soldierId: selected, angle: botAim.angle + tremble, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind };
       f.pen = leaning(me.x, me.y, botAim.angle + tremble, penLean(pw), owner, ink);
+      f.pen.charge = pw;
     } else if (motion.gun) {
       // the pen points where the phone does; the sight closes as you hold still
       const ang = gunFwd + motion.gun.delta, pw = 0.6;
