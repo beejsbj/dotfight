@@ -127,15 +127,18 @@ export interface Garrison {
 
 export type CoreRules = typeof CORE;
 
-/** A long war base's shape: a circle (camp), a triangle (prism), a hexagon (cushion). */
-export type Shape = "camp" | "prism" | "cushion";
-export const SHAPES: readonly Shape[] = ["camp", "prism", "cushion"];
+/** A long war base's shape: a circle (camp), a triangle (prism), a hexagon (cushion), a square (the ruler). */
+export type Shape = "camp" | "prism" | "cushion" | "square";
+export const SHAPES: readonly Shape[] = ["camp", "prism", "cushion", "square"];
 
 /** The long war's numbers (RULES.md, "Long war rules"). All (to test): lab guesses, for round 5 to tune. */
 export interface Long {
   /** Bumped when a long-war rule's *logic* changes. */
   version: number;
-  /** Per shape: soldiers jotted in it (also what "full" means for its wall), and its size as a multiple of `RULES.baseRadius` (circumradius for polygons). */
+  /**
+   * Per shape: soldiers jotted in it (also what "full" means for its wall), and its size as a multiple of `RULES.baseRadius` (circumradius for polygons).
+   * The square (6 men, size 1.0) is the ruler: a man standing in his own square flicks ruled lines (dead straight; see `traceLong`). Both numbers (to test).
+   */
   shapes: Record<Shape, { soldiers: number; size: number }>;
   /**
    * A camp's gravity well. Outside the wall and within `reach` × its radius, a
@@ -172,7 +175,7 @@ export const LONG: CoreRules = {
   ...CORE,
   long: {
     version: 1,
-    shapes: { camp: { soldiers: 12, size: 1 }, prism: { soldiers: 6, size: 1.35 }, cushion: { soldiers: 8, size: 1.1 } },
+    shapes: { camp: { soldiers: 12, size: 1 }, prism: { soldiers: 6, size: 1.35 }, cushion: { soldiers: 8, size: 1.1 }, square: { soldiers: 6, size: 1.0 } },
     well: { pull: 0.004, reach: 3.5, floor: 0.12, maxTurn: 1.2 },
     prism: { spread: 0.2, ownFree: true },
     cushion: { glance: 0.6, maxBanks: 3 },

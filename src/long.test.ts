@@ -432,3 +432,158 @@ describe("walls, not circumcircles", () => {
     }
   });
 });
+
+describe("a square rules its lines", () => {
+  // our square at (150, 1000) with its flat walls facing the axes; a full enemy camp passing 110 units above the line's path
+  const page = (from: "inside" | "outside" | "theirs") => {
+    const s = field([["square", from === "theirs" ? 1 : 0, 150, 1000, Math.PI / 4], ["camp", 1, 500, 1110]]);
+    fill(s, 1);
+    if (from === "inside" || from === "theirs") fill(s, 0, 1);
+    const me = man(s, 0, from === "outside" ? 300 : 150, 1000, from === "outside" ? undefined : 0);
+    s.soldiers[me].x = from === "outside" ? 300 : 150;
+    s.soldiers[me].y = 1000;
+    return { s, me };
+  };
+  const ruledPage = () => {
+    const s = field([["square", 0, 150, 1000, Math.PI / 4]]);
+    return { s, me: man(s, 0, 150, 1000, 0) };
+  };
+
+  it("from inside his own square a line passing a full camp isn't bent; from outside it is", () => {
+    const { s, me } = page("inside");
+    const tr = trace(s, shot(me, 0, 700));
+    expect(tr.ruled).toBe(true);
+    expect(heading(tr.pts)).toBeCloseTo(0, 9);
+    for (const p of tr.pts) expect(p.y).toBeCloseTo(1000, 9);
+    const out = page("outside");
+    const bent = trace(out.s, shot(out.me, 0, 550));
+    expect(bent.ruled).toBeUndefined();
+    expect(heading(bent.pts)).toBeGreaterThan(0.02);
+  });
+
+  it("ignores the flick's bend; the release error in the angle stays", () => {
+    const { s, me } = ruledPage();
+    const tr = trace(s, { ...shot(me, 0.1, 500), bend: 0.3 });
+    expect(heading(tr.pts)).toBeCloseTo(0.1, 9);
+    expect(pathLen(tr.pts)).toBeCloseTo(500, 6);
+  });
+
+  it("an old groove doesn't carry it", () => {
+    const run = (ink: Player | null, from: "ruled" | "free") => {
+      const s = field([["square", 0, 150, 1000, Math.PI / 4]]);
+      const me = from === "ruled" ? man(s, 0, 150, 1000, 0) : man(s, 0, 300, 1000);
+      if (ink !== null) stroke(s, ink, [{ x: 100, y: 1002 }, { x: 1000, y: 1002 }]);
+      const tr = trace(s, shot(me, 0, 600));
+      return { len: pathLen(tr.pts), heading: heading(tr.pts) };
+    };
+    expect(run(0, "ruled").len).toBeCloseTo(600, 6);
+    expect(run(1, "ruled").len).toBeCloseTo(600, 6);
+    expect(run(0, "ruled").heading).toBeCloseTo(0, 9);
+    expect(run(0, "free").len).toBeGreaterThan(650); // the same shot from outside rides your groove further
+  });
+
+  it("old ink doesn't jolt it; outside the square it does", () => {
+    const run = (from: "ruled" | "free") => {
+      const s = field([["square", 0, 150, 1000, Math.PI / 4]]);
+      const me = from === "ruled" ? man(s, 0, 150, 1000, 0) : man(s, 0, 260, 1000);
+      stroke(s, 1, [{ x: 400, y: 900 }, { x: 400, y: 1100 }]);
+      stroke(s, 1, [{ x: 600, y: 900 }, { x: 600, y: 1100 }]);
+      return trace(s, shot(me, 0, 700, "snipe", 12345));
+    };
+    const ruled = run("ruled");
+    expect(ruled.events.filter((e) => e.kind === "ink")).toHaveLength(0);
+    expect(heading(ruled.pts)).toBeCloseTo(0, 9);
+    expect(run("free").events.filter((e) => e.kind === "ink")).toHaveLength(1);
+  });
+
+  it("a ruled line still pays a wall: a full enemy camp in the lane takes its share", () => {
+    const s = field([["square", 0, 150, 1000, Math.PI / 4], ["camp", 1, 500, 1000]]);
+    fill(s, 1);
+    const me = man(s, 0, 150, 1000, 0);
+    const tr = trace(s, shot(me, 0, 900));
+    const walls = tr.events.filter((e) => e.kind === "wall" && !e.free);
+    expect(tr.ruled).toBe(true);
+    expect(walls.length).toBeGreaterThan(0);
+    expect(walls[0].cost!).toBeGreaterThan(0.5);
+    expect(pathLen(tr.pts)).toBeLessThan(700); // the camp, full, ate most of what was left of 900
+    // and a lunge is shaken at the wall the same way
+    const lunge = trace(s, shot(me, 0, 900, "lunge", 3));
+    expect(lunge.events.find((e) => e.kind === "wall" && !e.free)!.jolt).not.toBe(0);
+  });
+
+  it("a ruled line still banks off a cushion", () => {
+    const s = field([["cushion", 1, 500, 800, Math.PI / 6]]);
+    const wallX = 500 + s.bases[0].r * Math.cos(Math.PI / 6);
+    const y = 800 - (800 - wallX) * Math.tan(0.9);
+    s.bases.push({ id: 1, owner: 0, x: 800, y, r: RULES.baseRadius * L.shapes.square.size, seed: 1, shape: "square", rot: Math.PI / 4 });
+    const me = man(s, 0, 800, y, 1);
+    const tr = trace(s, shot(me, Math.PI - 0.9, 600));
+    expect(tr.ruled).toBe(true);
+    expect(tr.events.map((e) => e.kind)).toEqual(["wall", "bank"]);
+    expect(heading(tr.pts)).toBeCloseTo(0.9, 6);
+  });
+
+  it("an enemy's square doesn't rule your line", () => {
+    const { s, me } = page("theirs");
+    const tr = trace(s, shot(me, 0, 550));
+    expect(tr.ruled).toBeUndefined();
+    expect(heading(tr.pts)).toBeGreaterThan(0.02);
+  });
+
+  it("a lunge from inside his square is ruled too, and the outcome says so", () => {
+    const { s, me } = ruledPage();
+    const o = preview(s, shot(me, 0.05, 300, "lunge"));
+    expect(o.ruled).toBe(true);
+    expect(o.movedTo!.y - 1000).toBeCloseTo(Math.sin(0.05) * 300, 6);
+    expect(preview(s, shot(me, 0.05, 300, "snipe")).ruled).toBe(true);
+  });
+
+  it("a man on open paper, or in a camp, isn't ruled", () => {
+    const s = field([["camp", 0, 500, 1000]]);
+    const a = man(s, 0, 500, 1000, 0), b = man(s, 0, 300, 700);
+    expect(trace(s, shot(a, 0, 300)).ruled).toBeUndefined();
+    expect(trace(s, shot(b, 0, 300)).ruled).toBeUndefined();
+  });
+});
+
+describe("a square on the page", () => {
+  it("is jotted with 6 men inside its walls", () => {
+    const s = newGame(SIZES.long, 6, undefined, LONG);
+    act(s, { t: "base", x: 500, y: 1300, shape: "square" });
+    const b = s.bases[0], men = s.soldiers.filter((x) => x.home === 0);
+    expect(L.shapes.square.soldiers).toBe(6);
+    expect(men).toHaveLength(6);
+    expect(capacity(s, b)).toBe(6);
+    expect(corners(b)).toHaveLength(4);
+    expect(b.r).toBe(RULES.baseRadius * L.shapes.square.size);
+    expect(b.rot).toBeTypeOf("number");
+    for (const m of men) { expect(m.shape).toBe("square"); expect(wallGap(b, m)).toBeLessThan(-RULES.soldierRadius * 2); }
+    expect(wallStrength(s, b)).toBe(1);
+  });
+
+  // flat walls: the apothem is r·cos 45° from the centre
+  const flat = () => field([["square", 0, 500, 1300, Math.PI / 4]]);
+
+  it("positioning measures the reach from its walls, not its corners", () => {
+    const s = flat();
+    s.phase = "position";
+    const b = s.bases[0], apo = b.r * Math.cos(Math.PI / 4), reach = s.rules.positionReach;
+    const me = man(s, 0, 500, 1300, 0);
+    expect(canArrange(s, me, 500 + apo + reach - 1, 1300)).toBeNull();
+    expect(canArrange(s, me, 500 + apo + reach + 2, 1300)).toBe("too far from his base");
+    const ring = offsetPolygon(corners(b)!, reach);
+    for (const p of ring) expect(wallGap(b, p)).toBeCloseTo(reach, 6);
+  });
+
+  it("a tap or a count inside its circumcircle but past a flat wall misses; inside the wall hits", () => {
+    const s = flat();
+    const me = man(s, 0, 500, 1300, 0);
+    const apo = s.bases[0].r * Math.cos(Math.PI / 4);
+    expect(inBase([{ x: 500 + apo + 6, y: 1300 }], s.bases[0])).toHaveLength(0);
+    expect(inBase([{ x: 500 + apo - 1, y: 1300 }], s.bases[0])).toHaveLength(1);
+    const view = { current: 0 as Player, soldiers: s.soldiers, bases: s.bases };
+    const out = { x: 500 + apo + 15, y: 1300 };
+    expect(pickSoldier(view, out, { soldier: 3, base: 5 })).toBeUndefined();
+    expect(pickSoldier(view, out, { soldier: 3, base: 40 })).toBe(me);
+  });
+});

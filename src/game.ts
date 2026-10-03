@@ -148,6 +148,8 @@ export interface Outcome {
   path: Pt[];
   /** The long war: the other half of a line your prism split. */
   branches?: Pt[][];
+  /** The long war: a ruled line, flicked from inside the shooter's own square. */
+  ruled?: boolean;
   killed: number[];
   /** A lunger who lived: where he stands now. */
   movedTo?: Pt;
@@ -276,7 +278,7 @@ export function scatterIn(b: { x: number; y: number; r: number; shape?: Shape; r
     const a = rand() * Math.PI * 2;
     const d = Math.sqrt(rand()) * inner;
     const p = { x: b.x + Math.cos(a) * d, y: b.y + Math.sin(a) * d };
-    if (vs && !(insidePoly(p, vs) && vs.every((v, i) => segDist(p, v, vs[(i + 1) % vs.length]) >= dot * 2.2))) continue; // a triangle's or hexagon's corners are cut off
+    if (vs && !(insidePoly(p, vs) && vs.every((v, i) => segDist(p, v, vs[(i + 1) % vs.length]) >= dot * 2.2))) continue; // a polygon's corners are cut off
     if (pts.every((q) => dist(q, p) >= minD) && avoid.every((q) => dist(q, p) >= minD)) pts.push(p);
   }
   return pts;
@@ -285,13 +287,14 @@ export function scatterIn(b: { x: number; y: number; r: number; shape?: Shape; r
 // --- shapes -----------------------------------------------------------------
 
 const cornerMemo = new WeakMap<object, Pt[]>();
+const SIDES: Record<Exclude<Shape, "camp">, number> = { prism: 3, square: 4, cushion: 6 };
 
-/** A triangle's or hexagon's corners, in order; null for a circle (a camp, or any core base). */
+/** A triangle's, square's or hexagon's corners, in order; null for a circle (a camp, or any core base). */
 export type Walled = { x: number; y: number; r: number; shape?: Shape; rot?: number };
 export function corners(b: Walled): Pt[] | null {
-  if (b.shape !== "prism" && b.shape !== "cushion") return null;
+  if (!b.shape || b.shape === "camp") return null;
   let vs = cornerMemo.get(b);
-  if (!vs) { vs = polygon(b.shape === "prism" ? 3 : 6, b, b.r, b.rot ?? 0); cornerMemo.set(b, vs); }
+  if (!vs) { vs = polygon(SIDES[b.shape], b, b.r, b.rot ?? 0); cornerMemo.set(b, vs); }
   return vs;
 }
 
@@ -562,6 +565,8 @@ export interface Trace {
   offPage: boolean;
   /** The long war: a prism's split-off halves. */
   branches?: Pt[][];
+  /** The long war: the line was ruled (flicked from inside the shooter's own square). */
+  ruled?: boolean;
 }
 
 // --- the long war's ink -----------------------------------------------------------
@@ -582,7 +587,10 @@ function traceLong(s: GameState, f: Flick): Trace {
   const R = s.rules, L = R.long!;
   const me = s.soldiers[f.soldier];
   const snipe = f.kind === "snipe";
-  const raw = flickPath(me, f);
+  // a man standing in his own square rules his line: no arc, no well, no groove, no jolts. Walls, men and banks act as ever.
+  const free = new Set(s.bases.filter((b) => wallGap(b, me) < 0).map((b) => b.id));
+  const ruled = s.bases.some((b) => b.shape === "square" && b.owner === me.owner && free.has(b.id));
+  const raw = flickPath(me, ruled ? { ...f, bend: 0 } : f);
   // the arc as the turtle walks it: each step's turn (from the one before) and length
   const turn: number[] = [], len: number[] = [];
   let h0 = f.angle, prev = NaN;
@@ -661,7 +669,7 @@ function traceLong(s: GameState, f: Flick): Trace {
       const seg = Math.min(rem, SUB);
       let wellTurn = 0, grooveTurn = 0; // what the well and the groove turned the pen for this step
       // a camp's well: lines outside its wall turn toward it, as hard as its garrison
-      if (well < L.well.maxTurn) {
+      if (!ruled && well < L.well.maxTurn) {
         let dh = 0;
         for (const c of camps) {
           if (free.has(c.b.id)) continue; // still leaving his own camp
@@ -680,7 +688,7 @@ function traceLong(s: GameState, f: Flick): Trace {
       }
       // a groove: nearly parallel to old ink, the pen is drawn along it; riding it, the line runs further or shorter
       let k = 1;
-      if (branch || d >= Math.max(L.ink.clear, L.ink.grooveReach * 1.5)) {
+      if (!ruled && (branch || d >= Math.max(L.ink.clear, L.ink.grooveReach * 1.5))) {
         const g = pull(pos, h, budget, seg);
         h += g.turn;
         grooveTurn = g.turn;
@@ -713,7 +721,7 @@ function traceLong(s: GameState, f: Flick): Trace {
         if (!branch && d + t * seg <= RULES.soldierRadius * 1.5) continue; // the first sliver sits on the shooter's own dot
         bt = t; ev0 = { kind: "kill", soldier: o.id };
       }
-      if (ink.size && jolts < L.ink.joltMax) {
+      if (!ruled && ink.size && jolts < L.ink.joltMax) {
         for (const r of ink.near(Math.min(pos.x, nxt.x) - 1, Math.min(pos.y, nxt.y) - 1, Math.max(pos.x, nxt.x) + 1, Math.max(pos.y, nxt.y) + 1, runs)) {
           const t = segT(pos, nxt, r.a, r.b);
           if (t === null || t > tEnd || t >= bt) continue;
@@ -811,9 +819,8 @@ function traceLong(s: GameState, f: Flick): Trace {
     return pts;
   };
 
-  const free = new Set(s.bases.filter((b) => wallGap(b, me) < 0).map((b) => b.id));
   const pts = walk({ at: { x: me.x, y: me.y }, h: h0, sign: 1, j: 0, rem: len[0] ?? 0, budget: pathLen(raw), d: 0, free, banks: 0, jolts: 0, well: 0, skipBase: -1 }, 0, true);
-  return { pts, events, hits, offPage, ...(branches.length && { branches }) };
+  return { pts, events, hits, offPage, ...(branches.length && { branches }), ...(ruled && { ruled }) };
 }
 
 const empty = (): Outcome => ({ path: [], killed: [], lost: false, events: [], again: true, earned: false, stood: [], walked: [], arrived: [], handover: false });
@@ -821,7 +828,7 @@ const empty = (): Outcome => ({ path: [], killed: [], lost: false, events: [], a
 /** What a flick would do, without doing it. */
 export function preview(s: GameState, f: Flick): Outcome {
   const tr = trace(s, f);
-  const o: Outcome = { ...empty(), path: tr.pts, killed: tr.hits, events: tr.events, ...(tr.branches && { branches: tr.branches }) };
+  const o: Outcome = { ...empty(), path: tr.pts, killed: tr.hits, events: tr.events, ...(tr.branches && { branches: tr.branches }), ...(tr.ruled && { ruled: true }) };
   if (f.kind === "lunge") {
     const end = tr.pts[tr.pts.length - 1];
     if (tr.offPage) o.lost = true;
