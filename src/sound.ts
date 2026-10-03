@@ -109,6 +109,18 @@ export const snag = (last = false) => {
   scratch(0.06, last ? 0.8 : 0.55, 2400, 0, 1.4);
   knock(last ? 110 : 150, last ? 0.35 : 0.12, last ? 0.5 : 0.25, 0, "sine");
 };
+// The long war: a shape acting on the line, heard as the ink gets there. Each its
+// own and all of them quiet, under the stroke already playing.
+/** A bank: the ball comes off the cushion, a soft thump and the pen carrying on. */
+export const bank = () => { knock(520, 0.06, 0.2, 0, "sine"); stroke(0.035, 0.28, 3000, 0.01); };
+/** A split: the nib parts, two quick scratches a hair apart. */
+export const split = () => { stroke(0.04, 0.3, 3200, 0, 1.2); stroke(0.05, 0.3, 3700, 0.05, 1.2); };
+/** A rule: the ruler's edge set down, then the pen running along it, an even hiss. */
+export const rule = () => { knock(1300, 0.03, 0.14, 0, "triangle"); stroke(0.14, 0.16, 4300, 0.03, 0.5); };
+/** A homing turn: the line swings round on a man, two rising ticks. */
+export const home = () => { knock(1900, 0.02, 0.1); knock(2600, 0.025, 0.12, 0.055); stroke(0.03, 0.2, 3400, 0.06); };
+/** A jolt: the ball crossing a ridge of dried ink, the faintest tick. */
+export const jolt = () => { knock(3000, 0.01, 0.07); stroke(0.015, 0.18, 5000, 0.004); };
 /** A flicked pen falls over and rattles to rest. */
 export const clatter = (hard = 0.6) => {
   const hits = [0, 0.07, 0.12, 0.155, 0.18];
