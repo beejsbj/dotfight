@@ -1,7 +1,8 @@
 // A long war against Dawood-bot, by real touch where it matters: the long
 // war picked on the cover, six bases dragged up from the shape cards in
-// three shapes, a snipe from inside our prism (it splits), then the rest played out
-// (the human seat by the bot's own choices) to dawn.
+// four shapes, a snipe from inside our prism (it splits), a ruled snipe from
+// inside our square past their camp, then the rest played out (the human seat
+// by the bot's own choices) to dawn. CARDS_ONLY=1 stops after the cards (run it at W=360 too).
 import { flickAt, idle } from "../lib/phone.mjs";
 
 export default async function (T, out) {
@@ -13,7 +14,9 @@ export default async function (T, out) {
   await T.shot(`${out}/l0-cover.png`);
   await page.getByText("play Dawood-bot").click();
   await page.waitForTimeout(900);
-  const kit = ["prism", "camp", "cushion", "camp", "cushion", "camp"];
+  const kit = ["prism", "camp", "cushion", "square", "cushion", "camp"];
+  await T.shot(`${out}/l0-cards.png`);
+  if (process.env.CARDS_ONLY) return;
   const spots = [[500, 1250], [230, 1250], [780, 1250], [250, 1480], [760, 1490], [500, 1500]];
   for (const [k, [x, y]] of kit.map((sh, i) => [i, spots[i]])) {
     await idle(T);
@@ -46,6 +49,28 @@ export default async function (T, out) {
   await idle(T, 90000);
   await log("after the split + bot");
   await T.shot(`${out}/l6-bot-went.png`);
+  // a ruled snipe from inside our square, aimed to pass just outside their nearest camp's wall: a camp's well would bend it onto the camp
+  const ruled = await page.evaluate(() => {
+    const s = window.pft.s;
+    if (s.current !== 0 || s.phase !== "play") return null;
+    const sq = s.bases.find((b) => b.owner === 0 && b.shape === "square");
+    const men = s.soldiers.filter((x) => x.alive && x.owner === 0 && x.home === sq?.id);
+    const camps = s.bases.filter((b) => b.owner === 1 && b.shape === "camp");
+    if (!sq || !men.length || !camps.length) return null;
+    const m = men[0], c = camps.sort((p, q) => Math.hypot(p.x - m.x, p.y - m.y) - Math.hypot(q.x - m.x, q.y - m.y))[0];
+    const dx = c.x - m.x, dy = c.y - m.y, l = Math.hypot(dx, dy), off = c.r * 1.7;
+    // the lane: the camp's centre pushed sideways by 1.7 radii, then on past it
+    const tx = c.x - (dy / l) * off, ty = c.y + (dx / l) * off, k = 900 / Math.hypot(tx - m.x, ty - m.y);
+    return { id: m.id, tx: m.x + (tx - m.x) * k, ty: m.y + (ty - m.y) * k };
+  });
+  console.log("ruled snipe plan", JSON.stringify(ruled));
+  if (ruled) {
+    await flickAt(T, ruled.id, ruled.tx, ruled.ty, 150, { kind: "snipe", shot: `${out}/l5b-ruled-aim.png` });
+    await page.waitForTimeout(700);
+    await T.shot(`${out}/l5c-ruled-ink.png`);
+    await idle(T, 90000);
+    await log("after the ruled snipe + bot");
+  }
   // the rest: the human seat plays the bot's choices, fast
   await page.evaluate(() => { window.pft.speed = 5; });
   let mid = false;
