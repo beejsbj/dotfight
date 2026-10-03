@@ -286,6 +286,40 @@ describe("long roads", () => {
   };
   const handover = (s: GameState) => act(s, { t: "stop" });
 
+  it("a convoy walks its stretch in real time: a line drawn later in the turn finds it further on", () => {
+    const s = page();
+    act(s, { t: "send", from: 0, to: 1, n: 1 });
+    handover(s); // out it goes; now it's their turn, and it walks
+    const c = s.convoys[0];
+    const L = LONG.long!;
+    const ahead = columnAt(c.road, c.at! + L.sendPace / 2, 1)[0]; // where its head is halfway through the walk
+    const up = Math.atan2(c.road[1].y - c.road[0].y, c.road[1].x - c.road[0].x) - Math.PI / 2; // across the road
+    const foe = man(s, 1, ahead.x - Math.cos(up) * 120, ahead.y - Math.sin(up) * 120);
+    const across = (ms: number) => ({ t: "flick" as const, ...shot(foe, up, 240), ms });
+    expect(preview(s, across(0)).killed).toEqual([]); // he hasn't got there yet
+    expect(preview(s, across(L.walkMs / 2)).killed).toEqual(c.ids); // halfway through, he's in the line
+    expect(preview(s, across(L.walkMs * 3)).killed).toEqual([]); // long gone past
+    s.left = 2; // a flick to spare, so the pen stays and the clock with it
+    const o = act(s, across(L.walkMs / 2));
+    expect(o.killed).toEqual(c.ids);
+    expect(s.clock).toBe(L.walkMs / 2);
+    expect(dist(s.soldiers[c.ids[0]], ahead)).toBeLessThan(1e-6); // and he lies where he fell
+  });
+
+  it("the turn's clock only runs forward, and starts again at the hand-over", () => {
+    const s = page();
+    act(s, { t: "send", from: 0, to: 1, n: 1 });
+    handover(s);
+    const foe = man(s, 1, 500, 900);
+    s.left = 3;
+    act(s, { t: "flick", ...shot(foe, 0, 200), ms: 2000 });
+    expect(illegal(s, { t: "flick", ...shot(foe, 0, 200), ms: 1000 })).toBe("time runs one way");
+    expect(illegal(s, { t: "flick", ...shot(foe, 0, 200), ms: 2000 })).toBeNull();
+    s.left = 1;
+    act(s, { t: "flick", ...shot(foe, Math.PI, 200), ms: 2500 });
+    expect(s.clock).toBeUndefined();
+  });
+
   it("a road starts and ends six units off the walls, whatever the shape; a circle keeps r + 6", () => {
     const s = field([["prism", 0, 200, 1500, 0.4], ["cushion", 0, 900, 1100, 0.2], ["camp", 0, 600, 300]]);
     for (const [i, j] of [[0, 1], [1, 0], [0, 2], [2, 1]]) {
@@ -314,7 +348,7 @@ describe("long roads", () => {
     }
     expect(c.state).toBe("arrived");
     expect(o.arrived).toEqual([0]);
-    const legs = [Math.min(l, pace)];
+    const legs = [Math.min(l, 2 * RULES.soldierRadius * 2.6)]; // the head steps onto the road with the column (3 men) behind it
     while (legs[legs.length - 1] + pace < l) legs.push(legs[legs.length - 1] + pace);
     expect(seen).toEqual(legs);
     for (const id of c.ids) expect(inside(s.bases[1], s.soldiers[id])).toBe(true);

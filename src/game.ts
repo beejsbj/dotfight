@@ -81,6 +81,12 @@ export interface Flick {
   bend: number;
   /** Seed for the jolts a lunger's hand takes crossing walls and soldiers (uint32). */
   wob: number;
+  /**
+   * The long war: the moment it was released, ms on this turn's clock. Convoys
+   * walk their road in real time, so this says where every walker stood when
+   * the line was drawn. Never earlier than the turn's last flick.
+   */
+  ms?: number;
 }
 
 /**
@@ -191,6 +197,8 @@ export interface GameState {
   sent: boolean;
   /** Positioning: which sides are done. */
   ready: [boolean, boolean];
+  /** The long war: this turn's clock at its last flick (ms); convoys on the road stand where it put them. */
+  clock?: number;
   /** The turn each side's last stand began (0: not yet). */
   stand: [number, number];
   bases: Base[];
@@ -588,7 +596,7 @@ const LOOK = 20, RIDING = 5; // a groove leans the pen in over this run; it's ri
  * page's own pull (wells, banks, grooves, splits), without the jolts a hand
  * takes at walls, men and old ink. The aim guide draws this. (Core: null.)
  */
-export const steadyTrace = (s: GameState, f: Flick): Trace | null => (s.rules.long ? traceLong(s, f, true) : null);
+export const steadyTrace = (s: GameState, f: Flick): Trace | null => (s.rules.long ? traceLong(marchView(s, f.ms), f, true) : null);
 
 function traceLong(s: GameState, f: Flick, steady = false): Trace {
   const R = s.rules, L = R.long!;
@@ -858,7 +866,9 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
 const empty = (): Outcome => ({ path: [], killed: [], lost: false, events: [], again: true, earned: false, stood: [], walked: [], arrived: [], handover: false });
 
 /** What a flick would do, without doing it. */
-export function preview(s: GameState, f: Flick): Outcome {
+export function preview(s0: GameState, f: Flick): Outcome {
+  // the long war: convoys stand where they'd walked to when this line is released
+  const s = marchView(s0, f.ms);
   const tr = trace(s, f);
   const o: Outcome = { ...empty(), path: tr.pts, killed: tr.hits, events: tr.events, ...(tr.branches && { branches: tr.branches }), ...(tr.ruled && { ruled: true }) };
   if (f.kind === "lunge") {
@@ -921,6 +931,7 @@ export function illegal(s: GameState, a: Action): string | null {
       if (!canFlick(s, a.soldier, a.kind)) return s.chain ? "an earned lunge is his to take" : "not his to flick";
       if (a.kind !== "snipe" && a.kind !== "lunge") return "unknown flick";
       if (![a.angle, a.length, a.bend].every(Number.isFinite) || a.length <= 0) return "bad numbers";
+      if (s.rules.long && a.ms !== undefined && !(Number.isFinite(a.ms) && a.ms >= (s.clock ?? 0))) return "time runs one way";
       return null;
     }
     case "send": return canSend(s, a.from, a.to, a.n);
@@ -930,6 +941,11 @@ export function illegal(s: GameState, a: Action): string | null {
 }
 
 function flick(s: GameState, f: Flick, seed: number): Outcome {
+  if (s.rules.long) {
+    // the convoys walk on to the moment it's released, and stand there
+    s.clock = Math.max(s.clock ?? 0, f.ms ?? 0);
+    marchTo(s, s.clock);
+  }
   const o = preview(s, f);
   const me = s.soldiers[f.soldier];
   const who = me.owner;
@@ -1104,9 +1120,34 @@ function endTurn(s: GameState, seed: number, o: Outcome) {
 // walks `sendPace` further (going in if that reaches the far wall), and the
 // outgoing side's sends walk out. They're exposed the whole way, and always
 // for at least one enemy turn.
+/** Where a long-war convoy's head stands `ms` into the turn: walking its stretch from `at`, then waiting at its end (or the far wall). */
+export function headAt(s: GameState, c: Convoy, ms: number) {
+  const L = s.rules.long!;
+  return Math.min(dist(c.road[0], c.road[1]), c.at! + L.sendPace * Math.min(1, Math.max(0, ms) / L.walkMs));
+}
+
+/** Put every long-war convoy on the road where it has walked to `ms` into this turn. */
+export function marchTo(s: GameState, ms: number) {
+  if (!s.rules.long) return;
+  for (const c of s.convoys) {
+    if (c.state !== "road") continue;
+    const go = c.ids.map((id) => s.soldiers[id]).filter((x) => x.alive && x.convoy === c.id);
+    columnAt(c.road, headAt(s, c, ms), go.length).forEach((p, k) => { go[k].x = p.x; go[k].y = p.y; });
+  }
+}
+
+/** The page as it stands `ms` into this turn, convoys walked on; the same state when nothing walks. */
+export function marchView(s: GameState, ms: number | undefined): GameState {
+  if (!s.rules.long || ms === undefined || !s.convoys.some((c) => c.state === "road")) return s;
+  const v = { ...s, soldiers: s.soldiers.map((x) => ({ ...x })) };
+  marchTo(v, Math.max(s.clock ?? 0, ms));
+  return v;
+}
+
 function endLongTurn(s: GameState, seed: number, o: Outcome) {
   const who = s.current, foe = other(who), pace = s.rules.long!.sendPace;
   o.advanced = [];
+  s.clock = undefined; // a fresh clock for the next turn
   for (const c of s.convoys) {
     if (c.state !== "road") continue;
     const go = c.ids.map((id) => s.soldiers[id]).filter((x) => x.alive && x.convoy === c.id);
@@ -1123,7 +1164,8 @@ function endLongTurn(s: GameState, seed: number, o: Outcome) {
     if (c.owner !== who || c.state !== "ordered") continue;
     const go = c.ids.map((id) => s.soldiers[id]).filter((x) => x.alive);
     if (!go.length) { c.state = "cut"; continue; }
-    c.at = Math.min(dist(c.road[0], c.road[1]), pace);
+    // the head steps onto the road with the column behind it, and walks on during their turn
+    c.at = Math.min(dist(c.road[0], c.road[1]), (go.length - 1) * RULES.soldierRadius * 2.6);
     const spots = columnAt(c.road, c.at, go.length);
     go.forEach((x, k) => {
       s.marks.push({ t: "cross", kind: "moved", owner: c.owner, x: x.x, y: x.y, seed: seed + 11 + x.id, turn: s.turn, id: x.id });

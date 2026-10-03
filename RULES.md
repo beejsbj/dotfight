@@ -124,7 +124,7 @@ Players take turns drawing six bases each. Each is dragged onto the page from a 
 
 ## Sends in the long war
 
-A convoy walks its road a stretch every time the pen changes hands (lab: 150 units, so a road takes two or three hand-overs), and goes in when it reaches the far wall. It's exposed the whole way, and always for at least one enemy turn; its road is pencilled ahead of it with the hand-overs left. Still up to 5 at a time, once a turn. (to test)
+_Burooj, 2026-10-03: they walk while you aim._ A convoy walks its road **in real time**: each turn it walks a stretch (lab: 150 units over 6 seconds of the turn's clock), then waits, and goes in at the hand-over that would carry it to the far wall (two or three hand-overs). Where it stands when a line is let go is where it is, so you lead a moving target, and taking your time changes the shot. The turn's clock runs only while the pen is in hand (not while ink lands or the page is put down), and every flick records its moment, so replays and shared rooms are exact. It's exposed the whole way, and always for at least one enemy turn; its road is pencilled ahead of it with the hand-overs left. Still up to 5 at a time, once a turn. (to test)
 
 ## Ink on the page
 

@@ -451,8 +451,12 @@ export function botAction(s: GameState, level: Level | Skill = 1, seed = Date.no
   // an earned lunge can be turned down: stopping is worth nothing either way
   if (s.chain && (!best || best.v < 0)) return { t: "stop" };
   const f = shake(s, best!.it, sk, rand);
-  return { t: "flick", ...f };
+  // the long war: it lets go a moment after the turn's last flick (main.ts stamps the real moment when it plays)
+  return { t: "flick", ...f, ...(s.rules.long && { ms: (s.clock ?? 0) + BOT_THINK_MS }) };
 }
+
+/** How long Dawood-bot takes over a flick in the long war, on the turn's clock: convoys walk on meanwhile. */
+export const BOT_THINK_MS = 1200;
 
 // --- positioning ----------------------------------------------------------------
 

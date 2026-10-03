@@ -171,8 +171,14 @@ export interface Long {
    * Ink within `clear` of where a line starts doesn't count.
    */
   ink: { jolt: number; joltMax: number; groove: number; grooveReach: number; groovePull: number; grooveOwn: number; grooveEnemy: number; clear: number };
-  /** How far a convoy walks along its road at each hand-over of the pen. */
+  /**
+   * How far a convoy walks along its road each turn. It walks it in real time,
+   * over `walkMs` of the turn's clock, then waits; where it stands when a line
+   * is released is where it is (each flick records its moment, `Flick.ms`).
+   */
   sendPace: number;
+  /** How long a convoy takes to walk a turn's stretch, ms of the turn's clock (to test). */
+  walkMs: number;
 }
 
 /**
@@ -191,6 +197,7 @@ export const LONG: CoreRules = {
     cushion: { glance: 0.6, maxBanks: 3 },
     ink: { jolt: 0.03, joltMax: 1, groove: 0.12, grooveReach: 12, groovePull: 0.02, grooveOwn: 0.7, grooveEnemy: 1.4, clear: 14 },
     sendPace: 150,
+    walkMs: 6000,
   },
 };
 

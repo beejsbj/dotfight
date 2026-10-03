@@ -9,7 +9,7 @@ import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
-  act, baseAt, canArrange, steadyTrace, canSend, corners, garrison, illegal, inLastStand, inside, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax, wallGap,
+  act, baseAt, canArrange, marchView, steadyTrace, canSend, corners, garrison, illegal, inLastStand, inside, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax, wallGap,
   type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
 } from "./game";
 import { offsetPolygon } from "./geom";
@@ -531,13 +531,14 @@ function next() {
     if (a.t !== "flick") return;
     const { t: _t, ...f } = a;
     void _t;
-    showFlick(f);
+    showFlick(f, true);
   });
 }
 
 // Someone else's flick, played out: the pen goes down on the soldier, pulls
 // back, and lets go. You watch from above, the way you'd lean over a friend's.
-function showFlick(f: Flick) {
+// `ours`: the bot playing on this phone, so the flick takes this turn's clock as it's let go; a room peer's keeps its own moment.
+function showFlick(f: Flick, ours = false) {
   selected = f.soldier;
   pickUp(f.soldier);
   kind = f.kind;
@@ -551,7 +552,7 @@ function showFlick(f: Flick) {
       const pw = botAim?.power ?? 0.5;
       const lean = penLean(pw);
       botAim = null;
-      fire(f, pw, lean);
+      fire(ours ? stamped(f) : f, pw, lean);
     });
   });
 }
@@ -717,6 +718,31 @@ function afterBase() {
   after(1000, () => handOver());
 }
 
+// The long war's turn clock: ms the pen has been in hand this turn. Convoys on
+// the road walk on it, so where a walker stands depends on when a line is let
+// go; every flick played here records the moment (`Flick.ms`). It runs while
+// whoever holds the pen can act: not while ink lands, convoys march at the
+// hand-over, a sheet is up, or the phone is away.
+let turnClock = 0;
+let clockTurn = -1;
+let clockHeld = false; // dev: hold the clock still, for captures and the redraw check
+/** The page's march steps at the boil's 8 fps, so the page and its layers settle between steps. */
+const MARCH_STEP = 125;
+function stepClock(dt: number) {
+  const c0 = core();
+  if (!c0?.rules.long || c0.phase !== "play") return false;
+  if (c0.turn !== clockTurn) { clockTurn = c0.turn; turnClock = c0.clock ?? 0; }
+  turnClock = Math.max(turnClock, c0.clock ?? 0);
+  if (screen !== "game" || res || lapse || lapseDue || document.hidden || !$("#sheet").hidden) return false;
+  const walking = c0.convoys.some((c) => c.state === "road" && turnClock < c0.rules.long!.walkMs);
+  if (!clockHeld) turnClock += dt;
+  return walking;
+}
+/** The moment a flick played on this phone is let go. */
+const momentNow = () => Math.max(turnClock, core()?.clock ?? 0);
+/** A flick of ours, stamped with its moment (the long war). */
+const stamped = (f: Flick): Flick => (core()?.rules.long ? { ...f, ms: momentNow() } : f);
+
 // The long war's aim guide follows the ink a steady hand would draw: round a
 // camp's well, off a cushion, along a groove, and a prism's other half. Traced
 // again only when the aim moves past a hair or the page changes.
@@ -725,9 +751,11 @@ let guideVal: { path?: Pt[]; branches?: Pt[][] } = {};
 function guide(id: number, k: Kind, angle: number, length: number) {
   const c0 = core();
   if (!c0?.rules.long || c0.phase !== "play") return {};
-  const key = `${c0.actions.length}|${id}|${k}|${angle.toFixed(3)}|${Math.round(length)}`;
+  const ms = momentNow();
+  const walking = c0.convoys.some((c) => c.state === "road") && ms < c0.rules.long.walkMs;
+  const key = `${c0.actions.length}|${id}|${k}|${angle.toFixed(3)}|${Math.round(length)}|${walking ? Math.round(ms / 100) : "-"}`;
   if (key !== guideKey) {
-    const tr = steadyTrace(c0, { soldier: id, kind: k, angle, length, bend: 0, wob: 0 });
+    const tr = steadyTrace(c0, { soldier: id, kind: k, angle, length, bend: 0, wob: 0, ms });
     guideKey = key;
     guideVal = tr ? { path: tr.pts, ...(tr.branches && { branches: tr.branches }) } : {};
   }
@@ -890,6 +918,18 @@ function campOf(id: number) {
   return own[0]?.id;
 }
 /** One departure snapshot per pending march; the reducer remains at the destination. */
+/** What the page shows: convoys held back for a march, or (the long war) walked on to this moment of the turn. Once a frame. */
+let shown: { at: number; s: AnyState; n: number; v: AnyState } | null = null;
+function shownState(): AnyState {
+  const p = pendingState();
+  if (turn.isLegacy(p) || p !== s || !p.rules.long) return p;
+  // the march in steps, and still once every convoy has walked its stretch
+  const at = Math.min(Math.floor(turnClock / MARCH_STEP) * MARCH_STEP, p.rules.long.walkMs);
+  if (shown && shown.at === at && shown.s === p && shown.n === p.actions.length) return shown.v;
+  shown = { at, s: p, n: p.actions.length, v: marchView(p, at) };
+  return shown.v;
+}
+
 function pendingState(): AnyState {
   if (!lapseDue) return s;
   return lapseDue.seen ??= beforeMarch(s, lapseDue.walkers);
@@ -904,7 +944,7 @@ function displayedAt(id: number): Pt {
   const pending = lapseDue?.walkers.find((w) => w.id === id);
   if (pending) return pending.from;
   const w = lapse?.walkers.find((w) => w.id === id);
-  if (!w || !lapse) return s.soldiers[id];
+  if (!w || !lapse) return shownState().soldiers[id];
   const p = Math.min(1, Math.max(0.001, (T - lapse.t0) / lapse.dur));
   return walkerAt(w.from, w.to, p);
 }
@@ -2610,7 +2650,7 @@ function stepGun() {
     learn("aim");
     const f = release(gunPull(id, kind, gunFwd + e.delta, e.power, T), T, (pw) => turn.lengthFor(s, kind, pw), turn.handFor(s, id, kind))!;
     haptic("flick", e.power);
-    return fire(f, e.power, penLean(e.power));
+    return fire(stamped(f), e.power, penLean(e.power));
   }
   const armed = motion.gun!.armed >= 1;
   // the sight has closed: a detent you feel
@@ -2685,7 +2725,7 @@ function up(e: PointerEvent) {
       aim = null;
       sfx.creak(0);
       if (f && !leanedIn(f.soldier)) { standUp(); status(); }
-      else if (f && turn.canFlick(s, f.soldier, f.kind)) { learn("aim"); haptic("flick", pw); fire(f, pw, lean); }
+      else if (f && turn.canFlick(s, f.soldier, f.kind)) { learn("aim"); haptic("flick", pw); fire(stamped(f), pw, lean); }
       else { status("too soft: pull back further"); if (selected !== undefined) lastPull = { id: selected, angle: aimAngle }; }
     } else if (tapped && gunTap) {
       // that tap put the raised phone down
@@ -2806,6 +2846,7 @@ function frame(now: number) {
   if (handClock) { dt = handClock.due; handClock.due = 0; }
   last = now;
   T += dt;
+  const marching = stepClock(dt);
   // due callbacks (from this game only)
   if (later.length) {
     const due = later.filter((l) => l.at <= T);
@@ -2813,7 +2854,7 @@ function frame(now: number) {
     for (const l of due) if (l.g === gen || l.g === ROOM) l.fn();
   }
   const moving = cam.tick(dt);
-  let active = moving;
+  let active = moving || marching;
   if (moving && !slow && probeSlow) {
     moveTimes.push(frameTimes[frameTimes.length - 1]);
     if (moveTimes.length > 40) moveTimes.shift();
@@ -2931,7 +2972,7 @@ function currentFrame(): Frame {
     ink = { p: (k) => (inkTL.pending(k, it) ? inkTL.p(k, it) : fx.p(k, T)), live: liveSet };
   }
   const f: Frame = {
-    s: pendingState(), pageSource: s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
+    s: shownState(), pageSource: s, view: v, lamp, ink, dpr: sdpr, sw: W, cw: W + cam.ox * 2, ch: H + cam.oy + cam.ob,
     selected, ghost, sig: signable(screen, signing) ? signatureFor(s, mode) : undefined, lean: leanOf(), boil: { on: boilWas, ms: wall, bold: boldAt(cam.cur.m) },
   };
   const bb = heard() && !slow && !boil.tooDear ? bubbles.showing(wall) : null;
@@ -3177,7 +3218,7 @@ if (roomPath) void openRoom(roomPath);
 if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
-    get selected() { return selected; }, get res() { return res; }, get lapse() { return lapse; }, haptics, get link() { return link; }, get mode() { return mode; }, get roomDrift() { return roomDrift; },
+    get selected() { return selected; }, get turnClock() { return turnClock; }, get shown() { return shownState(); }, set clockHeld(v: boolean) { clockHeld = v; }, get res() { return res; }, get lapse() { return lapse; }, haptics, get link() { return link; }, get mode() { return mode; }, get roomDrift() { return roomDrift; },
     get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; },
     /** A camp turns on an intruder (the lunge rule's execution, by hand): `pft.volley(baseId, soldierId)`. */
     volley: (base: number, id: number) => { const x = s.soldiers[id]; return startVolley(base, { id, x: x.x, y: x.y }); }, set hidePen(v: boolean) { hidePen = v; dirty = true; },
