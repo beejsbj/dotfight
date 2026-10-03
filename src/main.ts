@@ -9,8 +9,8 @@ import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
-  act, baseAt, canArrange, marchView, steadyTrace, canSend, corners, garrison, illegal, inLastStand, inside, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax, wallGap,
-  type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
+  act, baseAt, canArrange, marchView, steadyTrace, canSend, corners, garrison, illegal, inLastStand, inside, newGame, other, pathLen, preview, radiusOf, rng, scatterIn, sendMax, wallGap,
+  type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier, type StarKind,
 } from "./game";
 import { offsetPolygon } from "./geom";
 import { jotOrder, pickSoldier, inBase } from "./hand";
@@ -100,6 +100,9 @@ function after(ms: number, fn: () => void) { later.push({ at: T + ms, fn, g: gen
 // the room's own business (the lamp) outlives any one game
 const ROOM = -1;
 function whenever(ms: number, fn: () => void) { later.push({ at: T + ms, fn, g: ROOM }); }
+
+/** How long the ink catches (wall ms) at each of the long war's pencil notes: shorter than a kill's snag. */
+const STAR_HOLD: Record<StarKind, number> = { bank: 60, split: 70, rule: 40, home: 60 };
 
 // the flick resolving now
 interface Resolve {
@@ -823,6 +826,17 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
       stands.push({ i, owner: m.owner });
       continue;
     }
+    if (m.t === "star") {
+      // the long war: the pencil note goes down as the ink gets there, with a beat in the
+      // ink, a sound, and (your own line) one tick under the thumb; the beat is skipped under
+      // reduced motion, the note and the sound stay
+      const kind = m.kind, ev = o.events.find((e) => (e.kind === kind || e.kind === "wall") && e.at.x === m.x && e.at.y === m.y);
+      const at = inkAt(o, dur, ev?.branch ?? 0, m);
+      inkTL.add(`m${i}`, 0, at, 220 * quick);
+      if (!reduced) snags.push({ at, hold: STAR_HOLD[kind] * quick });
+      moments.push({ at, fn: () => { sfx[kind](); if (live) { cue(kind, ev?.base); if (!away(who)) haptic(kind); } } });
+      continue;
+    }
     if (m.t !== "cross") continue;
     if (m.kind === "kill") {
       // a man the prism's other half crosses out falls when that ink reaches him
@@ -837,6 +851,11 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
       inkTL.add(`m${i}`, 0, m.kind === "lost" ? dur + 40 * quick : dur + 160 * quick, 150 * quick);
       if (m.kind === "moved") after(((dur + 160 * quick) + snags.reduce((a, b) => a + b.hold, 0)), () => sfx.cross(0, 0.5));
     }
+  }
+  // the long war: old ink crossed steeply kinks the line (no mark, it would litter the page): the faintest tick
+  for (const e of o.events) if (e.kind === "ink") {
+    const at = inkAt(o, dur, e.branch ?? 0, e.at);
+    moments.push({ at, fn: () => { sfx.jolt(); if (live) { cue("jolt"); if (!away(who)) haptic("jolt"); } } });
   }
   snags.sort((a, b) => a.at - b.at);
   const seen = pendingState();
@@ -3317,7 +3336,7 @@ if (import.meta.env.DEV) {
     cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
     get slow() { return slow; }, set slow(v: boolean) { slow = v; cam.quick = v ? 1.8 : 1; probeSlow = v; },
     start, showTitle, replay: () => replay(file(s, mode)), apply: (st: Step) => { apply(s, st); dirty = true; },
-    unfile, file: () => file(s, mode), flick: (f: Flick) => fire(f, 0.6, 0.3),
+    unfile, file: () => file(s, mode), flick: (f: Flick) => fire(f, 0.6, 0.3), preview: (f: Flick) => { const c = core(); return c ? preview(c, f) : null; },
     /** What Dawood-bot would do now (for driving a human seat in playtests). */
     botMove: (level: Level = 1) => turn.botMove(s, level, (Math.random() * 2 ** 32) >>> 0),
     /** Apply an action as the flow would (flicks resolve on screen). */

@@ -67,7 +67,22 @@ export type Mark =
   // a convoy's footprints, from `a` to `b`
   | { t: "walk"; owner: Player; a: Pt; b: Pt; n: number; seed: number; turn: number }
   // a side's last stand begins: its survivors are ringed where they stand
-  | { t: "stand"; owner: Player; at: Pt[]; seed: number; turn: number };
+  | { t: "stand"; owner: Player; at: Pt[]; seed: number; turn: number }
+  // the long war: a pencil note where a shape acted on a line, at the point the ink
+  // banked off a cushion, split leaving a prism, was ruled by a square or homed from a
+  // pentagon (the rulebook's star). `h`: the line's heading leaving the point
+  | { t: "star"; kind: StarKind; owner: Player; x: number; y: number; h: number; seed: number; turn: number };
+
+export type StarKind = "bank" | "split" | "rule" | "home";
+const STARRED: ReadonlySet<TraceEvent["kind"]> = new Set<TraceEvent["kind"]>(["bank", "split", "rule", "home"]);
+
+/** The line's heading leaving `p` (the point of an event along it): the segment out of the nearest point, or into it at the end. */
+export function headingFrom(pts: Pt[], p: Pt): number {
+  let bi = 0, bd = Infinity;
+  pts.forEach((q, i) => { const dd = Math.hypot(q.x - p.x, q.y - p.y); if (dd < bd) { bd = dd; bi = i; } });
+  const a = pts[bi < pts.length - 1 ? bi : Math.max(0, bi - 1)], b = pts[bi < pts.length - 1 ? bi + 1 : bi];
+  return Math.atan2(b.y - a.y, b.x - a.x);
+}
 
 /** A flick, randomness already resolved: exactly what the ink will do. */
 export interface Flick {
@@ -951,6 +966,22 @@ function flick(s: GameState, f: Flick, seed: number): Outcome {
   const who = me.owner;
   s.marks.push({ t: "stroke", kind: f.kind, owner: who, pts: o.path, seed, turn: s.turn });
   o.branches?.forEach((pts, k) => s.marks.push({ t: "stroke", kind: f.kind, owner: who, pts, seed: seed + 3 + k, turn: s.turn }));
+  // the long war: a pencil star where a shape acted on the line, so a finished page tells it (a core page gains nothing).
+  // A line flicked from inside your square has no `rule` event: its ruler's edge goes at the wall it left by, once
+  if (s.rules.long) {
+    let ruled = false;
+    o.events.forEach((e, k) => {
+      let kind = STARRED.has(e.kind) ? (e.kind as StarKind) : undefined;
+      if (!kind && o.ruled && e.kind === "wall" && e.free && !e.branch) {
+        const b = s.bases[e.base!];
+        if (b.shape === "square" && b.owner === who) kind = "rule";
+      }
+      if (!kind) return;
+      if (kind === "rule") { if (ruled) return; ruled = true; }
+      const pts = e.branch && o.branches ? o.branches[e.branch - 1] : o.path;
+      s.marks.push({ t: "star", kind, owner: who, x: e.at.x, y: e.at.y, h: headingFrom(pts, e.at), seed: seed + 700 + k, turn: s.turn });
+    });
+  }
   for (const id of o.killed) {
     const v = s.soldiers[id];
     v.alive = false;

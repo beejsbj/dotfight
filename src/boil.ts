@@ -19,7 +19,7 @@ import type { Soldier } from "./game";
 import type { AnyState as GameState } from "./record";
 import { inBase } from "./hand";
 import { INK, inkCircle, inkOp } from "./ink";
-import { CLARITY, dotSpots, drawBase, drawDot, drawMark, manR, wentTo, type Ink, type Spot } from "./page";
+import { CLARITY, STAR, dotSpots, drawBase, drawDot, drawMark, manR, starPoints, wentTo, type Ink, type Spot } from "./page";
 import { FPS as LIFE_FPS, FRAME as LIFE_FRAME, lifeBox, type Life, type Pose } from "./life";
 import { theme } from "./theme";
 import { RULES, type Shape } from "./rules";
@@ -364,9 +364,9 @@ class BoilCanvas {
     for (const { i, boils } of rings ? [] : plan.marks) {
       const m = s.marks[i];
       let x0: number, y0: number, x1: number, y1: number;
-      const pts = m.t === "stroke" ? m.pts : m.t === "walk" ? [m.a, m.b] : m.t === "stand" ? m.at : null;
+      const pts = m.t === "stroke" ? m.pts : m.t === "walk" ? [m.a, m.b] : m.t === "stand" ? m.at : m.t === "star" ? starPoints(m) : null;
       if (pts) {
-        const e = m.t === "stand" ? RULES.soldierRadius + 16 : 10;
+        const e = m.t === "stand" ? RULES.soldierRadius + 16 : m.t === "star" ? STAR.arm + 6 : 10;
         x0 = Math.min(...pts.map((p) => p.x)) - e; x1 = Math.max(...pts.map((p) => p.x)) + e;
         y0 = Math.min(...pts.map((p) => p.y)) - e; y1 = Math.max(...pts.map((p) => p.y)) + e;
       } else if (m.t === "cross") {

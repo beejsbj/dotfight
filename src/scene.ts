@@ -23,7 +23,7 @@ import { INK, arcText, bowed, handText, inkCross, inkFlick, lead, pencilArrow, p
 import { Life } from "./life";
 import { PencilLayer } from "./pencil-layer";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
-import { MAN, drawBase, drawDot, drawMark, drawSignature, wentTo, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
+import { MAN, STAR, drawBase, drawDot, drawMark, drawSignature, starPoints, wentTo, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
 import { cssMatrix, layerMatrix, project, stageCss, toLocal, unproject, type View } from "./projection";
 import { RULES } from "./rules";
@@ -330,6 +330,7 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     if (m.t === "stroke") for (const p of m.pts) box.add(p.x, p.y, 8);
     else if (m.t === "walk") { box.add(m.a.x, m.a.y, 10); box.add(m.b.x, m.b.y, 10); }
     else if (m.t === "stand") for (const p of m.at) box.add(p.x, p.y, 24);
+    else if (m.t === "star") for (const p of starPoints(m)) box.add(p.x, p.y, STAR.arm + 6);
     else box.add(m.x, m.y, 34);
   });
   const walking = new Set(f.walkers?.map((w) => w.id));
@@ -826,6 +827,7 @@ function noteSpot(f: Frame, b: Note, fits: Fit[], angK = 1) {
     if (m.t === "cross") { if (near(m)) { const q = L_(m); grid.disc(q.x, q.y, 9, 6); } }
     else if (m.t === "walk") { if (near(m.a) || near(m.b)) grid.seg(L_(m.a), L_(m.b), 0.6); }
     else if (m.t === "stand") { for (const p of m.at) if (near(p)) { const q = L_(p); grid.disc(q.x, q.y, 9, 6); } }
+    else if (m.t === "star") { for (const p of starPoints(m)) if (near(p)) { const q = L_(p); grid.disc(q.x, q.y, STAR.arm, 4); } }
     else if (m.pts.some(near)) { const pts = thin(m.pts, cell).map(L_); for (let j = 1; j < pts.length; j++) grid.seg(pts[j - 1], pts[j], 0.6); }
   }
   // an exchange: the other man's ring is taken, and so is the line he's already said

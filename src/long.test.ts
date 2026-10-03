@@ -819,3 +819,98 @@ describe("a pentagon on the page", () => {
     expect(pickSoldier(view, { x: 500 + apo + 15, y: 1300 }, { soldier: 3, base: 40 })).toBe(me);
   });
 });
+
+describe("the page's pencil notes: a star where a shape acted on a line", () => {
+  const stars = (s: GameState) => s.marks.filter((m) => m.t === "star");
+  const flick = (s: GameState, f: Flick) => act(s, { t: "flick", ...f });
+
+  it("a bank files one star at the bank, in the shooter's pen, headed the way the ink left; the ink and the star are filed together", () => {
+    const s = field([["cushion", 1, 500, 800, Math.PI / 6]]);
+    const wallX = 500 + s.bases[0].r * Math.cos(Math.PI / 6);
+    const me = man(s, 0, 800, 800 - (800 - wallX) * Math.tan(0.9));
+    const f = shot(me, Math.PI - 0.9, 600);
+    const bank = preview(s, f).events.find((e) => e.kind === "bank")!;
+    flick(s, f);
+    expect(stars(s)).toHaveLength(1);
+    const [m] = stars(s);
+    expect(m).toMatchObject({ t: "star", kind: "bank", owner: 0, x: bank.at.x, y: bank.at.y, turn: 1 });
+    expect((m as { h: number }).h).toBeCloseTo(0.9, 6);
+    expect(s.marks.slice(0, 2).map((x) => x.t)).toEqual(["stroke", "star"]);
+  });
+
+  it("a split files its star where the line parted, and a bank on the other half is noted too", () => {
+    const s = field([["prism", 0, 500, 1300, Math.PI / 2], ["camp", 1, 500, 300]]);
+    const me = man(s, 0, 500, 1300, 0);
+    const f = shot(me, -Math.PI / 2, 800);
+    const split = preview(s, f).events.find((e) => e.kind === "split")!;
+    flick(s, f);
+    expect(stars(s)).toHaveLength(1);
+    expect(stars(s)[0]).toMatchObject({ kind: "split", x: split.at.x, y: split.at.y, owner: 0 });
+    expect(s.marks.filter((m) => m.t === "stroke")).toHaveLength(2);
+  });
+
+  it("a line passing out through your square files the ruler's edge where it was ruled, headed dead along the line", () => {
+    const s = field([["square", 0, 300, 1000, Math.PI / 4]]);
+    const me = man(s, 0, 150, 1000);
+    const f = shot(me, 0, 600);
+    const rule = preview(s, f).events.find((e) => e.kind === "rule")!;
+    expect(rule).toBeDefined();
+    flick(s, f);
+    expect(stars(s)).toHaveLength(1);
+    expect(stars(s)[0]).toMatchObject({ kind: "rule", x: rule.at.x, y: rule.at.y });
+    expect((stars(s)[0] as { h: number }).h).toBeCloseTo(0, 9);
+  });
+
+  it("a line flicked from inside your square (no rule event) gets its ruler's edge at the wall it left by, once", () => {
+    const s = field([["square", 0, 150, 1000, Math.PI / 4]]);
+    const me = man(s, 0, 150, 1000, 0);
+    const f = shot(me, 0, 500);
+    const o = preview(s, f);
+    expect(o.ruled).toBe(true);
+    expect(o.events.some((e) => e.kind === "rule")).toBe(false);
+    const wall = o.events.find((e) => e.kind === "wall" && e.free)!;
+    flick(s, f);
+    expect(stars(s)).toHaveLength(1);
+    expect(stars(s)[0]).toMatchObject({ kind: "rule", x: wall.at.x, y: wall.at.y });
+    expect((stars(s)[0] as { x: number }).x).toBeCloseTo(150 + s.bases[0].r * Math.cos(Math.PI / 4), 6);
+    // an enemy's square, or a camp of your own left the same way, rules nothing and notes nothing
+    const t2 = field([["square", 1, 150, 1000, Math.PI / 4], ["camp", 0, 150, 1300]]);
+    fill(t2, 0, 1);
+    const you = man(t2, 0, 150, 1300, 1);
+    flick(t2, shot(you, 0, 500));
+    expect(stars(t2)).toHaveLength(0);
+  });
+
+  it("a homing turn files its star at the pentagon's wall, headed at the man it turned on", () => {
+    const rot = Math.PI / 5;
+    const s = field([["pentagon", 0, 150, 1000, rot]]);
+    const me = man(s, 0, 150, 1000, 0);
+    const exitX = 150 + s.bases[0].r * Math.cos(Math.PI / 5);
+    const foe = man(s, 1, exitX + 200, 1000 + 200 * Math.tan(0.4));
+    const f = shot(me, 0, 600);
+    flick(s, f);
+    expect(s.soldiers[foe].alive).toBe(false);
+    expect(stars(s)).toHaveLength(1);
+    expect(stars(s)[0]).toMatchObject({ kind: "home", owner: 0 });
+    expect((stars(s)[0] as { x: number }).x).toBeCloseTo(exitX, 6);
+    expect((stars(s)[0] as { h: number }).h).toBeCloseTo(0.4, 6);
+  });
+
+  it("a plain wall, a kill or an edge leaves no star; nor does a core page, ever", () => {
+    const s = field([["camp", 1, 500, 800]]);
+    fill(s, 0);
+    const me = man(s, 0, 800, 800);
+    flick(s, shot(me, Math.PI, 900));
+    expect(stars(s)).toHaveLength(0);
+    // a core page: the same shot past a full camp, on the core rules, files its stroke and nothing else
+    const c = newGame(SIZES.quick, 1);
+    c.bases = [{ id: 0, owner: 1, x: 500, y: 800, r: RULES.baseRadius, seed: 0 }];
+    Object.assign(c, { phase: "play", turn: 1, current: 0, left: 1, ready: [true, true] });
+    fill(c, 0);
+    const you = man(c, 0, 800, 800);
+    flick(c, shot(you, Math.PI, 900));
+    expect(c.rules.long).toBeNull();
+    expect(c.marks[0].t).toBe("stroke");
+    expect(c.marks.some((m) => m.t === "star")).toBe(false);
+  });
+});

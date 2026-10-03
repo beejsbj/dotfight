@@ -4,7 +4,7 @@ import {
   TAPPED, type Backend, type BackendKind, type HapticEvent, type Pattern,
 } from "./haptics";
 
-const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "brink", "dial", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "cheer", "flinch", "unitcam", "volley", "over"];
+const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "brink", "dial", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "bank", "split", "rule", "home", "jolt", "cheer", "flinch", "unitcam", "volley", "over"];
 
 describe("pattern", () => {
   it("allows the unit-camera second tap to earn an iPhone tick, while drag and timed events cannot", () => {
@@ -54,6 +54,8 @@ describe("pattern", () => {
     expect(pr("flick")).toBeGreaterThan(pr("notch"));
     expect(pr("tap")).toBe(1);
     expect(pr("settle")).toBe(1);
+    // the long war's shapes: under a cross, never above the flick itself
+    for (const ev of ["bank", "split", "rule", "home", "jolt"] as HapticEvent[]) { expect(pr(ev), ev).toBeLessThan(pr("kill")); expect(pr(ev), ev).toBeLessThan(pr("flick")); }
   });
 
   it("measures how long a pattern keeps the motor busy", () => {
