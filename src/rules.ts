@@ -137,7 +137,7 @@ export interface Long {
   version: number;
   /**
    * Per shape: soldiers jotted in it (also what "full" means for its wall), and its size as a multiple of `RULES.baseRadius` (circumradius for polygons).
-   * The square (6 men, size 1.0) is the ruler: a man standing in his own square flicks ruled lines (dead straight; see `traceLong`). Both numbers (to test).
+   * The square (6 men, size 1.0) is the ruler: your lines passing out through it are ruled from its wall on, a man standing in it from the start (dead straight; see `traceLong`). Both numbers (to test).
    * The pentagon (8 men, size 1.05) is the star: your lines passing out through it home on the nearest enemy man ahead (see `pentagon`). Both numbers (to test).
    */
   shapes: Record<Shape, { soldiers: number; size: number }>;
