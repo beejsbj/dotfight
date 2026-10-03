@@ -134,20 +134,22 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   transform: rotate(-4deg); opacity: .85;
 }
 #kind.off { opacity: .3; pointer-events: none; }
-/* the long war's setup: three cards, each a base drawn in ink with its men;
-   press one and drag a copy of it onto the page */
-#kind.shapes { grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
+/* the long war's setup: four cards, each a base drawn in ink with its men;
+   press one and drag a copy of it onto the page. The drawing sits over the
+   name, the gloss under it, so four fit across a 360 px phone */
+#kind.shapes { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
 #kind.shapes button {
-  height: 84px; padding: 6px 7px 7px 8px; opacity: .9; touch-action: none;
-  display: grid; grid-template-columns: 36px 1fr; grid-template-rows: 38px 1fr; column-gap: 5px; align-items: center;
+  height: 96px; padding: 5px 4px 5px 6px; opacity: .9; touch-action: none; min-width: 0;
+  display: grid; grid-template-columns: 1fr; grid-template-rows: 30px 20px 1fr; justify-items: start; align-items: center;
   transform: translateY(2px) rotate(-.8deg);
   transition: transform .09s ease-out, opacity .15s, box-shadow .09s;
 }
 #kind.shapes button:nth-child(2) { transform: translateY(2px) rotate(.9deg); }
 #kind.shapes button:nth-child(3) { transform: translateY(2px) rotate(-.5deg); }
-#kind.shapes button canvas { width: 36px; height: 36px; transition: opacity .15s; }
-#kind.shapes button b { font-size: 25px; color: var(--pencil, var(--fine)); padding: 0; }
-#kind.shapes button i { grid-column: 1 / -1; align-self: start; font-size: 13px; white-space: normal; line-height: 1.05; }
+#kind.shapes button:nth-child(4) { transform: translateY(2px) rotate(.7deg); }
+#kind.shapes button canvas { width: 30px; height: 30px; transition: opacity .15s; }
+#kind.shapes button b { font-size: 21px; line-height: 1; color: var(--pencil, var(--fine)); padding: 0; max-width: 100%; }
+#kind.shapes button i { align-self: start; font-size: 12px; white-space: normal; line-height: 1.05; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 #kind.shapes.carrying button { opacity: .35; }
 #kind.shapes button.held { opacity: 1; transform: translateY(10px) scale(.97); box-shadow: 0 2px 5px rgba(0,0,0,.4); }
 #kind.shapes button.held canvas { opacity: .22; }

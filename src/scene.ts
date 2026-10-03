@@ -23,7 +23,7 @@ import { INK, arcText, bowed, handText, inkCross, inkFlick, lead, pencilArrow, p
 import { Life } from "./life";
 import { PencilLayer } from "./pencil-layer";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
-import { drawBase, drawDot, drawMark, drawSignature, wentTo, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
+import { MAN, drawBase, drawDot, drawMark, drawSignature, wentTo, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
 import { cssMatrix, layerMatrix, project, stageCss, toLocal, unproject, type View } from "./projection";
 import { RULES } from "./rules";
@@ -476,7 +476,7 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
     // its men, pencilled in where they'll be jotted
     g.globalAlpha = f.ghost.ok ? 0.55 : 0.3;
     for (const [k, m] of (f.ghost.men ?? []).entries()) {
-      const n = m.shape === "prism" ? 3 : m.shape === "cushion" ? 6 : 0;
+      const n = m.shape ? MAN[m.shape].n : 0;
       const o = outline({ x: m.x, y: m.y, r: RULES.soldierRadius * 0.8, ...(n && { pts: polygon(n, m, n === 3 ? 8 : 7, m.rot ?? 0) }) }, 8);
       for (let i = 0; i < o.length - 1; i++) pencilLine(g, o[i], o[i + 1], Math.max(1.2, px), 700 + k * 13 + i, false);
     }

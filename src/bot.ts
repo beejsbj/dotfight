@@ -251,7 +251,31 @@ function intents(c: Ctx, rand: () => number): Intent[] {
       out.push({ kind, soldier: me.id, angle: rand() * Math.PI * 2, power: rand() });
     }
   }
-  if (s.rules.long && foes.length) out.push(...bentIntents(c, rand, pickMine, pickFoe, must));
+  if (s.rules.long && foes.length) {
+    out.push(...bentIntents(c, rand, pickMine, pickFoe, must));
+    out.push(...ruledIntents(c, rand, mine, pickFoe, must));
+  }
+  return out;
+}
+
+/**
+ * A man standing in his own square is the sharpshooter: his line goes exactly
+ * where he points (no well, no groove, no jolt), so he gets extra looks, aimed
+ * straight at the men worth most. The engine's preview says which come off.
+ */
+function ruledIntents(c: Ctx, rand: () => number, mine: GameState["soldiers"], pickFoe: (r: () => number) => Pt, must: boolean): Intent[] {
+  const s = c.s, R = s.rules;
+  const snipers = mine.filter((x) => s.bases.some((b) => b.shape === "square" && b.owner === c.me && inside(b, x)));
+  const out: Intent[] = [];
+  if (!snipers.length) return out;
+  for (let i = 0; i < Math.round(c.sk.tries * 0.5); i++) {
+    const me = snipers[Math.floor(rand() * snipers.length)];
+    const kind: Kind = must || rand() < 0.3 ? "lunge" : "snipe";
+    const foe = pickFoe(rand);
+    const d = dist(me, foe);
+    const want = rand() < 0.5 ? d + 40 + rand() * 60 : d + 150 + rand() * Math.max(0, maxReach(R) - d);
+    out.push({ kind, soldier: me.id, angle: Math.atan2(foe.y - me.y, foe.x - me.x) + gauss(rand) * 0.015, power: powerFor(R, want) });
+  }
   return out;
 }
 
@@ -486,10 +510,10 @@ function edgeAt(b: Base, a: number) {
 
 // --- setup ------------------------------------------------------------------
 
-/** The bot's shape for its next long-war base: mostly camps, some cushions, the odd prism. */
+/** The bot's shape for its next long-war base: camp 0.38, cushion 0.27, square 0.18, prism 0.17. */
 export function botShape(rand: () => number): Shape {
   const u = rand();
-  return u < 0.45 ? "camp" : u < 0.8 ? "cushion" : "prism";
+  return u < 0.38 ? "camp" : u < 0.65 ? "cushion" : u < 0.83 ? "square" : "prism";
 }
 
 /** Where the bot draws its next base: its own half, spread out. */

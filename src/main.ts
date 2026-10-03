@@ -26,7 +26,7 @@ import * as motion from "./motion-input";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, settleSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
-import { CORE, CUSTOM, FEEL, LONG, RULES, SIZES, type Shape, type Size } from "./rules";
+import { CORE, CUSTOM, FEEL, LONG, RULES, SHAPES, SIZES, type Shape, type Size } from "./rules";
 import { boldAt, lifeOf } from "./boil";
 import { beforeMarch, comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
@@ -1729,12 +1729,12 @@ function restoreKindBar() {
   bindKind();
 }
 
-// The long war's setup: three shape cards, each the base drawn in ink with
+// The long war's setup: four shape cards, each the base drawn in ink with
 // its men jotted in. Press one and drag a copy of it up onto the page; let go
 // to draw it there, or back over the cards to put it back. `shape` is the one in hand.
 let shape: Shape = "camp";
-const SHAPE_CARD: Record<Shape, string> = { camp: "12 men · bends lines round it", prism: "6 men · splits your shots", cushion: "8 men · banks glancing lines" };
-const CARD_PX = 36; // the card's drawing
+const SHAPE_CARD: Record<Shape, string> = { camp: "12 men · bends lines round it", prism: "6 men · splits your shots", cushion: "8 men · banks glancing lines", square: "6 men · rules your lines straight" };
+const CARD_PX = 30; // the card's drawing
 let cardPen = -1; // whose pen the cards are drawn in
 let carrying: { id: number; off: number; shape: Shape; sx: number; sy: number; moved: boolean; el: HTMLButtonElement } | null = null;
 let ghostWasOk: boolean | undefined;
@@ -1745,7 +1745,7 @@ function shapeBar() {
   kindEl.classList.add("shapes");
   kindEl.onclick = null;
   cardPen = s.current;
-  kindEl.innerHTML = (["camp", "prism", "cushion"] as const).map((k) => `<button data-shape="${k}" aria-label="drag a ${k} onto the page"><canvas></canvas><b>${k}</b><i>${SHAPE_CARD[k]}</i></button>`).join("");
+  kindEl.innerHTML = SHAPES.map((k) => `<button data-shape="${k}" aria-label="drag a ${k} onto the page"><canvas></canvas><b>${k}</b><i>${SHAPE_CARD[k]}</i></button>`).join("");
   for (const b of kindEl.querySelectorAll<HTMLButtonElement>("button[data-shape]")) {
     drawCard(b.querySelector("canvas")!, b.dataset.shape as Shape);
     b.onpointerdown = (e) => pickCard(e, b);
@@ -1754,15 +1754,15 @@ function shapeBar() {
   }
 }
 
-/** A shape card's drawing: the base in the current player's ink, its full garrison jotted in, a prism point up. */
+/** A shape card's drawing: the base in the current player's ink, its full garrison jotted in, a prism point up, a square flat. */
 function drawCard(cv: HTMLCanvasElement, k: Shape) {
   const d = Math.min(2, window.devicePixelRatio || 1);
   cv.width = cv.height = Math.round(CARD_PX * d);
   cv.style.width = cv.style.height = `${CARD_PX}px`;
   const ctx = cv.getContext("2d")!;
   const L = LONG.long!, owner = s.current as Player;
-  const r = RULES.baseRadius * L.shapes[k].size, k0 = 15 / RULES.baseRadius;
-  const b: Base = { id: 0, owner, x: 0, y: 0, r, seed: 4243 + k.length * 31, shape: k, ...(k !== "camp" && { rot: k === "prism" ? -Math.PI / 2 : 0 }) };
+  const r = RULES.baseRadius * L.shapes[k].size, k0 = 12.5 / RULES.baseRadius;
+  const b: Base = { id: 0, owner, x: 0, y: 0, r, seed: 4243 + k.length * 31, shape: k, ...(k !== "camp" && { rot: k === "prism" ? -Math.PI / 2 : k === "square" ? Math.PI / 4 : 0 }) };
   ctx.scale(d, d);
   ctx.translate(CARD_PX / 2, CARD_PX / 2 + (k === "prism" ? r * k0 * 0.22 : 0));
   ctx.scale(k0, k0);
