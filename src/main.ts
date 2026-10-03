@@ -13,7 +13,7 @@ import {
   type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
 } from "./game";
 import { jotOrder, pickSoldier, inBase } from "./hand";
-import { DETENTS, Dial, haptic, haptics, Ratchet } from "./haptics";
+import { Dial, haptic, haptics, Ratchet } from "./haptics";
 import { inkTime, wallTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
@@ -325,25 +325,20 @@ function canSendAny(c0: GameState) {
 // page turns as you slide sideways; the pull is only the way down). With no
 // downward pull left after a real pull, the ring firms up (and ticks): let go
 // and the aim is dropped, nothing fired. One small fixed DOM element in screen
-// space, so no page or canvas layer is touched.
-// Under the ring hangs the pull's rule: a faint pencil line down to full power
-// with a notch at each detent (the ones the ratchet clicks), drawn over as far
-// as the thumb has pulled. The guide on the page is under the pen; this is
-// where the thumb is, so how hard you're pulling, of how hard you can, reads
-// at a glance.
+// space, so no page or canvas layer is touched. How hard you're pulling shows
+// in the pen itself: its refill fills with the pull (pen.ts, `charge`). The
+// ring is in the side's ink, and once the thumb has pulled away a light line
+// runs from it back up to the ring, so where to go to stop is never lost.
 let ringOn = false; // the thumb is inside the ring
+/** The line back to the ring: px clear of the ring, px left for the fingertip, and the shortest worth drawing. */
+const BACK_GAP = 4, BACK_FINGER = 26, BACK_MIN = 28;
 let markOn = false;
 let thumbX = 0; // where the thumb is across the screen
 const ringEl = document.createElement("div");
 ringEl.id = "cancel-ring";
 ringEl.hidden = true;
-{
-  const r = FEEL.minPullPx, span = FEEL.maxPullPx - r;
-  ringEl.innerHTML = `<i></i><b class="rule" style="height:${span}px"></b><b class="drawn"></b>` +
-    DETENTS.slice(1, -1).map((d) => `<b class="tick" style="top:${r + r + d * span}px"></b>`).join("") +
-    `<b class="stop" style="top:${r + FEEL.maxPullPx}px"></b>`;
-}
-const drawnEl = () => ringEl.querySelector<HTMLElement>(".drawn")!;
+ringEl.innerHTML = `<i></i><b class="back"></b>`;
+const backEl = ringEl.querySelector<HTMLElement>(".back")!;
 document.body.append(ringEl);
 function syncRing() {
   const shown = !!aim && g.t === "aim";
@@ -352,7 +347,10 @@ function syncRing() {
     ringEl.style.transform = `translate(${thumbX - r}px, ${g.sy - r}px)`;
     ringEl.style.width = ringEl.style.height = `${r * 2}px`;
     (ringEl.firstElementChild as HTMLElement).style.transform = `translate(${g.sx - thumbX}px, 0)`; // the dot stays where the thumb began
-    drawnEl().style.height = `${Math.max(0, Math.min(FEEL.maxPullPx, byThumb.dist) - r)}px`;
+    // the line back: from just above the fingertip up to the ring's edge
+    const len = byThumb.dist - r - BACK_GAP - BACK_FINGER;
+    backEl.style.height = `${Math.max(0, len)}px`;
+    backEl.classList.toggle("on", len > BACK_MIN);
   }
   if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
   const on = shown && !!aim && aim.charged && !pull(aim).live;
@@ -2844,6 +2842,7 @@ function currentFrame(): Frame {
       // at full pull it shivers under the finger (the pen only: the aim is the hand's)
       const sh = LIFE.pen && lively() && pl.live ? shiver(T, pl.power) : 0;
       f.pen = tip(leaning(me.x, me.y, ang + sh * 3, pl.live ? penLean(pl.power) + sh : 0.04, owner, ink), ang, penSide);
+      f.pen.charge = pl.live ? pl.power : 0; // the refill fills with the pull
       // a lunger landing among their men is shot: those camps are hatched while you aim one
       if (kind === "lunge" && c0) f.danger = c0.bases.filter((b) => b.owner !== c0.current && garrison(c0, b).length).map((b) => ({ x: b.x, y: b.y, r: b.r }));
     } else if (botAim) {
@@ -2852,6 +2851,7 @@ function currentFrame(): Frame {
       const tremble = Math.sin(T / 1000 * 7.3) * 0.02 * pw;
       f.aim = { soldierId: selected, angle: botAim.angle + tremble, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind };
       f.pen = leaning(me.x, me.y, botAim.angle + tremble, penLean(pw), owner, ink);
+      f.pen.charge = pw;
     } else if (motion.gun) {
       // the pen points where the phone does; the sight closes as you hold still
       const ang = gunFwd + motion.gun.delta, pw = 0.6;
@@ -3011,7 +3011,7 @@ if (import.meta.env.DEV) {
       };
       return Object.fromEntries(Object.keys(layers).map((k) => [k, differ(a[k], b[k], mask(k))]));
     },
-    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view, bubble: f.bubble, mover: f.mover, stand: f.stand, road: f.road, jabs: f.jabs, stamp: f.stamp }; },
+    frame: () => { const f = currentFrame(); return { lamp: f.lamp, view: f.view, bubble: f.bubble, mover: f.mover, stand: f.stand, road: f.road, jabs: f.jabs, stamp: f.stamp, pen: f.pen }; },
     frames: (reset = false) => {
       const stats = (src: number[]) => {
         const a = [...src].sort((x, y) => x - y);
