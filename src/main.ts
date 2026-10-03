@@ -1750,6 +1750,7 @@ function restoreKindBar() {
 // its men jotted in. Press one and drag a copy of it up onto the page; let go
 // to draw it there, or back over the cards to put it back. `shape` is the one in hand.
 let shape: Shape = "camp";
+/** What each shape does: the card carries only its name and men, this is the status line while it is pressed. */
 const SHAPE_CARD: Record<Shape, string> = { camp: "12 men · bends lines round it", prism: "6 men · splits your shots", cushion: "8 men · banks glancing lines", square: "6 men · rules your lines straight", pentagon: "8 men · homes your lines on them" };
 const CARD_PX = 30; // the card's drawing
 let cardPen = -1; // whose pen the cards are drawn in
@@ -1762,7 +1763,7 @@ function shapeBar() {
   kindEl.classList.add("shapes");
   kindEl.onclick = null;
   cardPen = s.current;
-  kindEl.innerHTML = SHAPES.map((k) => `<button data-shape="${k}" aria-label="drag a ${k} onto the page"><canvas></canvas><b>${k}</b><i>${SHAPE_CARD[k]}</i></button>`).join("");
+  kindEl.innerHTML = SHAPES.map((k) => `<button data-shape="${k}" aria-label="drag a ${k} onto the page"><canvas></canvas><b>${k}</b><i>${LONG.long!.shapes[k].soldiers} men</i></button>`).join("");
   for (const b of kindEl.querySelectorAll<HTMLButtonElement>("button[data-shape]")) {
     drawCard(b.querySelector("canvas")!, b.dataset.shape as Shape);
     b.onpointerdown = (e) => pickCard(e, b);
@@ -1825,7 +1826,7 @@ function pickCard(e: PointerEvent, b: HTMLButtonElement) {
   ghostWasOk = undefined;
   $("#kind").classList.add("carrying");
   b.classList.add("held");
-  status("drag it onto the page");
+  status(`${shape}: ${SHAPE_CARD[shape].split(" · ")[1]}`);
 }
 
 function carryCard(e: PointerEvent) {

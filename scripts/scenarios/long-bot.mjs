@@ -1,7 +1,8 @@
 // A long war against Dawood-bot, by real touch where it matters: the long
 // war picked on the cover, six bases dragged up from the shape cards in
-// four shapes, a snipe from inside our prism (it splits), a ruled snipe from
-// inside our square past their camp, then the rest played out (the human seat
+// five shapes, a snipe from inside our prism (it splits), a ruled snipe from
+// inside our square past their camp, a homing snipe from the camp behind our
+// pentagon through it, then the rest played out (the human seat
 // by the bot's own choices) to dawn. CARDS_ONLY=1 stops after the cards (run it at W=360 too).
 import { flickAt, idle } from "../lib/phone.mjs";
 
@@ -14,7 +15,7 @@ export default async function (T, out) {
   await T.shot(`${out}/l0-cover.png`);
   await page.getByText("play Dawood-bot").click();
   await page.waitForTimeout(900);
-  const kit = ["prism", "camp", "cushion", "square", "cushion", "camp"];
+  const kit = ["prism", "camp", "pentagon", "square", "camp", "cushion"]; // the second camp (760, 1490) stands behind the pentagon (780, 1250)
   await T.shot(`${out}/l0-cards.png`);
   if (process.env.CARDS_ONLY) return;
   const spots = [[500, 1250], [230, 1250], [780, 1250], [250, 1480], [760, 1490], [500, 1500]];
@@ -70,6 +71,29 @@ export default async function (T, out) {
     await T.shot(`${out}/l5c-ruled-ink.png`);
     await idle(T, 90000);
     await log("after the ruled snipe + bot");
+  }
+  // a homing snipe from the camp behind our pentagon, aimed through its middle, off the enemy man it will turn on (within 30° but not dead on)
+  const star = await page.evaluate(() => {
+    const s = window.pft.s;
+    if (s.current !== 0 || s.phase !== "play") return null;
+    const pent = s.bases.find((b) => b.owner === 0 && b.shape === "pentagon");
+    if (!pent) return null;
+    const behind = s.soldiers.filter((x) => x.alive && x.owner === 0 && x.home !== pent.id && x.y > pent.y + pent.r && Math.abs(x.x - pent.x) < pent.r * 2).sort((p, q) => Math.hypot(p.x - pent.x, p.y - pent.y) - Math.hypot(q.x - pent.x, q.y - pent.y));
+    const m = behind[0];
+    if (!m) return null;
+    const h = Math.atan2(pent.y - m.y, pent.x - m.x), ex = { x: pent.x + Math.cos(h) * pent.r, y: pent.y + Math.sin(h) * pent.r };
+    const foes = s.soldiers.filter((x) => x.alive && x.owner === 1).map((x) => ({ x, off: Math.atan2(x.y - ex.y, x.x - ex.x) - h, d: Math.hypot(x.x - ex.x, x.y - ex.y) }))
+      .filter((f) => Math.abs(f.off) > 0.12 && Math.abs(f.off) < 0.45 && f.d < 1000).sort((p, q) => p.d - q.d);
+    const aim = h;
+    return { id: m.id, tx: m.x + Math.cos(aim) * 900, ty: m.y + Math.sin(aim) * 900, foe: foes[0]?.x.id ?? null, off: foes[0]?.off ?? null };
+  });
+  console.log("homing snipe plan", JSON.stringify(star));
+  if (star) {
+    await flickAt(T, star.id, star.tx, star.ty, 150, { kind: "snipe", shot: `${out}/l5d-star-aim.png` });
+    await page.waitForTimeout(700);
+    await T.shot(`${out}/l5e-star-ink.png`);
+    await idle(T, 90000);
+    await log("after the homing snipe + bot");
   }
   // the rest: the human seat plays the bot's choices, fast
   await page.evaluate(() => { window.pft.speed = 5; });
