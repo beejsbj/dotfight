@@ -1447,7 +1447,7 @@ function coverMenu() {
   const menu = $("#cover .menu");
   const mark = $("#cover .tabs .m1 sup");
   mark.textContent = d.length ? String(d.length) : "";
-  const where = (x: AnyState) => x.phase === "setup" ? `still drawing ${baseWord(undefined, x)}s` : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
+  const where = (x: AnyState) => x.phase === "setup" ? `still drawing ${baseWord(undefined, x)}s` : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : turn.shaped(x) ? " · long war" : ""}`;
   const draw = () => {
     const carry = canResume ? (tearing === "local" ? `
       <div class="carry tearing">
@@ -1561,6 +1561,7 @@ function sheet(html: string, cls = "") {
 function closeSheet() { $("#sheet").hidden = true; }
 
 function showHow() {
+  if (turn.shaped(s)) return showHowLong();
   sheet(`
     <h2>How Dawood played it</h2>
     <ol>
@@ -1574,6 +1575,27 @@ function showHow() {
     </ol>
     <p class="fine">Pinch to zoom · tap <b>page</b> to stand up and see everything. The rulebook has it all, with drawings.</p>
     <a class="act" href="/rules">the rulebook</a>
+    <button class="act" data-a="back">back</button>`).onclick = (e) => {
+    if ((e.target as HTMLElement).closest("button")) { closeSheet(); }
+  };
+}
+
+// The long war's help: book 1 still holds; these are what it adds, short enough to read at the desk.
+function showHowLong() {
+  sheet(`
+    <h2>The long war</h2>
+    <ol>
+      <li>Six bases each, dragged up from the shape cards, any mix. Then arrange your men, and flick, snipe or lunge, as in a quick battle.</li>
+      <li><b>Camp</b>, 12 men: lines passing near it bend round it, anyone's, harder the fuller it is.</li>
+      <li><b>Prism</b>, 6: your snipes passing out through it split in two. Its walls don't slow your own lines.</li>
+      <li><b>Cushion</b>, 8: a glancing line banks off it, anyone's; a straight one goes in.</li>
+      <li><b>Square</b>, 6: your lines passing out through it are ruled dead straight, and nothing on the page can bend them.</li>
+      <li><b>Pentagon</b>, 8: your lines passing out through it turn on the nearest enemy man ahead.</li>
+      <li>Old ink jolts a line a little, and draws a shallow one along its groove. Your pencil guide shows where the page will take your line; your hand still wobbles.</li>
+      <li><b>Sends walk while you aim</b>: a convoy walks a stretch of its road each turn, in real time, and is out for two or three. Lead it.</li>
+    </ol>
+    <p class="fine">Men keep their base's shape wherever they go. The second rulebook has it all, with drawings.</p>
+    <a class="act" href="/rules/advanced">the long war rulebook</a>
     <button class="act" data-a="back">back</button>`).onclick = (e) => {
     if ((e.target as HTMLElement).closest("button")) { closeSheet(); }
   };
@@ -1691,7 +1713,7 @@ function showOver() {
   const metres = s.marks.reduce((a, m) => a + (m.t === "stroke" ? pathLen(m.pts) : 0), 0) * 0.21 / RULES.pageW;
   const crossed = (p: Player) => s.marks.filter((m) => m.t === "cross" && m.kind === "kill" && m.owner === p).length;
   sheet(`
-    <p class="sub">morning. page ${s.page?.no ?? ""} is done.</p>
+    <p class="sub">morning. page ${s.page?.no ?? ""} is done${turn.shaped(s) ? ": a long war" : ""}.</p>
     <h2 style="color:${hudPen(w)}">${name(w)} held the page.</h2>
     <p class="stats">${s.turn} turns · ${metres.toFixed(1)} ${theme.ink.tool === "pencil" ? "metres of lead" : "metres of ink"} · ${([0, 1] as Player[]).map((p) => `<span style="color:${hudPen(p)}">${name(p)} crossed out ${crossed(p)}</span>`).join(" · ")}</p>
     <button class="act" data-a="replay">watch the war again</button>
@@ -1736,7 +1758,7 @@ function showDrawer() {
     const names = themeOf(r.page?.theme).ink.names;
     const who = r.mode.kind === "bot" ? [names[0], "Dawood-bot"] : names;
     const cap = document.createElement("span");
-    cap.innerHTML = `No. ${r.page?.no ?? "?"} · ${r.page?.date ?? ""}<br><b style="color:${hudPen(r.winner ?? 0)}">${r.winner !== undefined ? who[r.winner] : "unfinished"}</b> · ${r.turns} turns`;
+    cap.innerHTML = `No. ${r.page?.no ?? "?"} · ${r.page?.date ?? ""}<br><b style="color:${hudPen(r.winner ?? 0)}">${r.winner !== undefined ? who[r.winner] : "unfinished"}</b> · ${r.turns} turns${r.v === 2 && r.rules?.long ? " · long war" : ""}`;
     b.appendChild(cap);
     grid.appendChild(b);
   });
