@@ -491,7 +491,7 @@ export function bowed(a: Pt, b: Pt, bend: number, n = 10): Pt[] {
 // An eraser rubbing out what's already drawn inside the box (x0,y0)-(x1,y1) on
 // this canvas. Two scrubs of zigzag strokes across it, the first leaving a
 // ghost, the second lifting the rest; the lead it drags is a faint smudge
-// along the scrub, and a few crumbs lie where the eraser has been, brushed off
+// over what's left, and a few crumbs lie where the eraser has been, brushed off
 // at the end. `e` (0..1) is how far the rubbing has got; at 1 nothing is left.
 // Seeded, so a frame draws the same way every time.
 export function rubOut(ctx: Ctx, x0: number, y0: number, x1: number, y1: number, seed: number, e: number, size: number, color: string, crumbs = 7) {
@@ -539,9 +539,11 @@ export function rubOut(ctx: Ctx, x0: number, y0: number, x1: number, y1: number,
   };
   // first scrub: most of the lead comes off, a ghost stays
   scrub(one, p1, 0.72, w, "destination-out", "#000");
-  // the lead it dragged: a faint smudge along the strokes, rubbed off in turn by the second scrub
+  // the lead it dragged: a faint smudge along the strokes, rubbed off in turn by
+  // the second scrub. Only over lead still there (source-atop): laid on bare
+  // paper too, it tinted the whole box, a rectangle round the words.
   const smear = 0.04 * Math.min(1, p1 * 1.4) * Math.max(0, 1 - p2 * 1.25);
-  if (smear > 0.003) scrub(one, p1, smear, w * 1.1, "source-over", paint(ctx, color, 0.35));
+  if (smear > 0.003) scrub(one, p1, smear, w * 1.1, "source-atop", paint(ctx, color, 0.35));
   // second scrub: the rest
   scrub(two, p2, 1, w * 1.1, "destination-out", "#000");
   if (p2 >= 1) scrub(one, 1, 1, w * 1.1, "destination-out", "#000");
