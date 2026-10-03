@@ -96,7 +96,7 @@ export function drawPen(g: CanvasRenderingContext2D, p: PenPose, v: View) {
   };
   const R = PEN.R;
   if (theme.ink.tool === "pencil") {
-    drawPencil(g, P, quad, nx, ny, mark, ink);
+    drawPencil(g, P, quad, nx, ny, mark, ink, p.charge);
     g.restore();
     return;
   }
@@ -246,7 +246,7 @@ type Proj = { x: number; y: number; k: number };
 // lead at its point, and a brass ferrule holding a pink eraser at the top.
 function drawPencil(
   g: CanvasRenderingContext2D, P: (t: number) => Proj,
-  quad: (a: Proj, b: Proj, ra: number, rb: number) => void, nx: number, ny: number, mark: string, paintC: string,
+  quad: (a: Proj, b: Proj, ra: number, rb: number) => void, nx: number, ny: number, mark: string, paintC: string, charge?: number,
 ) {
   const R = PEN.R * 0.82;
   const tip = P(0), lead = P(0.035), cone = P(0.13), fer = P(0.86), rub = P(0.93), top = P(1);
@@ -257,9 +257,36 @@ function drawPencil(
   };
   // the painted barrel: three visible facets
   const mid = P(0.5);
-  quad(cone, fer, R, R);
-  g.fillStyle = across(mid, R, [[0, shade(paintC, -0.45)], [0.33, shade(paintC, -0.1)], [0.34, shade(paintC, 0.3)], [0.66, paintC], [0.67, shade(paintC, -0.25)], [1, shade(paintC, -0.5)]]);
-  g.fill();
+  const paint = (c: string) => across(mid, R, [[0, shade(c, -0.45)], [0.33, shade(c, -0.1)], [0.34, shade(c, 0.3)], [0.66, c], [0.67, shade(c, -0.25)], [1, shade(c, -0.5)]]);
+  if (charge === undefined) {
+    quad(cone, fer, R, R);
+    g.fillStyle = paint(paintC);
+    g.fill();
+  } else {
+    // while a flick is pulled back the paint goes dull, and its colour comes
+    // back up from the wood as the pull builds; at full it glows (a pencil has
+    // no refill to fill, and a fill in its own ink wouldn't show on its paint)
+    const k = Math.max(0, Math.min(1, charge)), lit = P(0.13 + (0.86 - 0.13) * k);
+    if (k >= 1) {
+      // a soft round halo in its paint, two passes
+      g.strokeStyle = paintC;
+      g.lineCap = "round";
+      for (const [w, a] of [[3.6, 0.14], [2.6, 0.22]] as const) {
+        g.globalAlpha *= a;
+        g.lineWidth = R * w * mid.k;
+        g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(fer.x, fer.y); g.stroke();
+        g.globalAlpha /= a;
+      }
+    }
+    quad(cone, fer, R, R);
+    g.fillStyle = paint(dull(paintC));
+    g.fill();
+    if (k > 0) {
+      quad(cone, lit, R, R);
+      g.fillStyle = paint(paintC);
+      g.fill();
+    }
+  }
   // the wood cone and the lead
   quad(lead, cone, R * 0.22, R);
   g.fillStyle = across(P(0.08), R, [[0, "#b08a5a"], [0.4, "#ecd2a8"], [1, "#a47c4c"]]);
@@ -274,6 +301,13 @@ function drawPencil(
   quad(rub, top, R * 0.98, R * 0.95);
   g.fillStyle = across(P(0.96), R, [[0, "#b8686a"], [0.35, "#f2a4a2"], [1, "#9c5054"]]);
   g.fill();
+}
+
+/** A pencil's paint gone dull while unlit by the pull: greyed halfway and darkened. */
+function dull(hex: string) {
+  const n = parseInt(hex.slice(1), 16), ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const grey = (ch[0] * 0.3 + ch[1] * 0.59 + ch[2] * 0.11);
+  return "#" + ch.map((c) => Math.round((c * 0.5 + grey * 0.5) * 0.55).toString(16).padStart(2, "0")).join("");
 }
 
 /** Lighten (k>0) or darken (k<0) a hex colour. */
