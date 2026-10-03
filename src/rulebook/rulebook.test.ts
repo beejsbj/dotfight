@@ -57,7 +57,7 @@ describe("the rulebooks", () => {
   it("deep-links every rule", () => {
     const ids = (html: string) => new Set(all(html, /<section id="([^"]+)"/g));
     for (const id of ["setup", "snipe", "lunge", "send", "bases", "last-stand", "winning", "quick-battle", "how-you-play", "open"]) expect(ids(core).has(id), id).toBe(true);
-    for (const id of ["long-war", "send", "ink", "cover", "shapes", "circle", "prism", "cushion", "square", "soldiers", "open"]) expect(ids(advanced).has(id), id).toBe(true);
+    for (const id of ["long-war", "send", "ink", "drawing", "shapes", "circle", "prism", "cushion", "square", "pentagon", "soldiers", "open"]) expect(ids(advanced).has(id), id).toBe(true);
   });
 
   it("calls book 2 the long war rules, at its old address", () => {
@@ -80,10 +80,10 @@ describe("the rulebooks", () => {
   });
 
   it("keeps the long war out of the core rules, apart from the pointer", () => {
-    const longWar = ["groove", "cover", "well", "prism", "cushion", "soldiers", "send-long"];
+    const longWar = ["groove", "well", "prism", "cushion", "ruler", "star", "soldiers", "send-long"];
     for (const f of figs(core)) expect(longWar, f).not.toContain(f);
     for (const word of ["hexagon", "triangle", "gravity", "being designed", 'id="ink"', 'id="shapes"']) expect(core, word).not.toContain(word);
-    for (const f of ["well", "cover", "prism", "cushion", "soldiers", "groove"]) expect(figs(advanced)).toContain(f);
+    for (const f of ["well", "prism", "cushion", "ruler", "star", "soldiers", "groove"]) expect(figs(advanced)).toContain(f);
   });
 
   it("settles the lunge and send rules the core book used to leave open", () => {
