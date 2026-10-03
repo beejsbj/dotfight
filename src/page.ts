@@ -370,7 +370,7 @@ export function drawMark(g: Ctx, m: Mark, p = 1, wob = 0, to?: Pt) {
 
 type Star = Extract<Mark, { t: "star" }>;
 /** The pencil note's reach in units: a star's arm, and the ruler's edge (how long, how far beside the ink). */
-export const STAR = { arm: 9, edge: 46, off: 7 };
+export const STAR = { arm: 11, edge: 58, off: 7 };
 /** Where a star's pencil goes, for dirty rectangles (pad by `STAR.arm` + a little): the point, and the ruler's edge's far end. */
 export function starPoints(m: Star): Pt[] {
   const at = { x: m.x, y: m.y };
@@ -391,7 +391,7 @@ export function drawStar(g: Ctx, m: Star, p = 1) {
   g.lineCap = "round";
   if (m.kind === "rule") {
     // the ruler's edge: dead straight (that's the point), a hair back from the wall, on whichever side the hand had room
-    const side = rand() < 0.5 ? 1 : -1, w = 1.5 * k * (0.9 + rand() * 0.2), a = 0.8 + rand() * 0.15;
+    const side = rand() < 0.5 ? 1 : -1, w = 1.9 * k * (0.9 + rand() * 0.2), a = 0.9 + rand() * 0.1;
     const dx = Math.cos(m.h), dy = Math.sin(m.h), nx = -dy * side * STAR.off, ny = dx * side * STAR.off;
     const x0 = m.x + nx - dx * 3, y0 = m.y + ny - dy * 3, l = (STAR.edge + 3) * Math.min(1, p);
     g.globalAlpha = a;
@@ -405,7 +405,7 @@ export function drawStar(g: Ctx, m: Star, p = 1) {
     const rot = rand() * (Math.PI / 4);
     const arms = Array.from({ length: 4 }, (_, i) => ({
       a: rot + (i * Math.PI) / 4 + (rand() - 0.5) * 0.16, r1: STAR.arm * (0.8 + rand() * 0.4), r2: STAR.arm * (0.8 + rand() * 0.4),
-      alpha: 0.7 + rand() * 0.2, w: 1.3 * k * (0.85 + rand() * 0.3),
+      alpha: 0.8 + rand() * 0.2, w: 1.7 * k * (0.85 + rand() * 0.3),
     }));
     arms.forEach(({ a, r1, r2, alpha, w }, i) => {
       const part = p >= 1 ? 1 : Math.max(0, Math.min(1, (p - i * 0.25) / 0.25));
