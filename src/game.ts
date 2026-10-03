@@ -126,8 +126,8 @@ export interface Convoy {
 
 /** Something that happened along a line, in order. */
 export interface TraceEvent {
-  /** The long war adds: `bank` off a cushion, `split` leaving your prism, `ink` crossing an old line. */
-  kind: "wall" | "kill" | "edge" | "bank" | "split" | "ink";
+  /** The long war adds: `bank` off a cushion, `split` leaving your prism, `ink` crossing an old line, `rule` passing out through your square. */
+  kind: "wall" | "kill" | "edge" | "bank" | "split" | "ink" | "rule";
   at: Pt;
   /** Distance along the line. */
   d: number;
@@ -148,7 +148,7 @@ export interface Outcome {
   path: Pt[];
   /** The long war: the other half of a line your prism split. */
   branches?: Pt[][];
-  /** The long war: a ruled line, flicked from inside the shooter's own square. */
+  /** The long war: a ruled line, straightened by the shooter's own square (flicked from it, or passing out through it). */
   ruled?: boolean;
   killed: number[];
   /** A lunger who lived: where he stands now. */
@@ -565,7 +565,7 @@ export interface Trace {
   offPage: boolean;
   /** The long war: a prism's split-off halves. */
   branches?: Pt[][];
-  /** The long war: the line was ruled (flicked from inside the shooter's own square). */
+  /** The long war: the line was ruled by the shooter's own square (flicked from it, or passing out through it). */
   ruled?: boolean;
 }
 
@@ -594,9 +594,11 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
   const R = s.rules, L = R.long!;
   const me = s.soldiers[f.soldier];
   const snipe = f.kind === "snipe";
-  // a man standing in his own square rules his line: no arc, no well, no groove, no jolts. Walls, men and banks act as ever.
+  // your own square rules your line: from where it passes out through the wall, no arc, no well, no groove, no jolts.
+  // A man standing in it rules his from the start. Walls, men and banks act as ever.
   const free = new Set(s.bases.filter((b) => wallGap(b, me) < 0).map((b) => b.id));
   const ruled = s.bases.some((b) => b.shape === "square" && b.owner === me.owner && free.has(b.id));
+  let anyRuled = ruled;
   const raw = flickPath(me, ruled ? { ...f, bend: 0 } : f);
   // the arc as the turtle walks it: each step's turn (from the one before) and length
   const turn: number[] = [], len: number[] = [];
@@ -658,12 +660,12 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
     return { turn: Math.max(-rate, Math.min(rate, delta)), k: riding ? (own ? L.ink.grooveOwn : L.ink.grooveEnemy) : 1 };
   };
 
-  interface Pen { at: Pt; h: number; sign: number; j: number; rem: number; budget: number; d: number; free: Set<number>; banks: number; jolts: number; well: number; skipBase: number }
+  interface Pen { at: Pt; h: number; sign: number; j: number; rem: number; budget: number; d: number; free: Set<number>; banks: number; jolts: number; well: number; skipBase: number; straight: boolean }
 
   const walk = (pen: Pen, branch: number, canSplit: boolean): Pt[] => {
     let { at: pos, h, sign, j, rem, budget, d } = pen;
     const { free } = pen;
-    let { banks, jolts, well, skipBase } = pen; // the base just met here, not to be met again at once
+    let { banks, jolts, well, skipBase, straight } = pen; // skipBase: the base just met here, not to be met again at once; straight: ruled by a square
     let skipStroke = -1; // likewise the old stroke
     const pts: Pt[] = [pos];
     let lastInk = { stroke: -1, d: -1 };
@@ -671,12 +673,12 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
     for (let guard = 0; budget > 1e-6 && guard < 4000; guard++) {
       if (rem <= 1e-9) {
         j++;
-        if (j < len.length) { h += sign * turn[j]; rem = len[j]; } else rem = Infinity; // past the arc with line to spare (a friendly groove): straight on
+        if (j < len.length) { if (!straight) h += sign * turn[j]; rem = len[j]; } else rem = Infinity; // past the arc with line to spare (a friendly groove): straight on
       }
       const seg = Math.min(rem, SUB);
       let wellTurn = 0, grooveTurn = 0; // what the well and the groove turned the pen for this step
       // a camp's well: lines outside its wall turn toward it, as hard as its garrison
-      if (!ruled && well < L.well.maxTurn) {
+      if (!straight && well < L.well.maxTurn) {
         let dh = 0;
         for (const c of camps) {
           if (free.has(c.b.id)) continue; // still leaving his own camp
@@ -695,7 +697,7 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
       }
       // a groove: nearly parallel to old ink, the pen is drawn along it; riding it, the line runs further or shorter
       let k = 1;
-      if (!ruled && (branch || d >= Math.max(L.ink.clear, L.ink.grooveReach * 1.5))) {
+      if (!straight && (branch || d >= Math.max(L.ink.clear, L.ink.grooveReach * 1.5))) {
         const g = pull(pos, h, budget, seg);
         h += g.turn;
         grooveTurn = g.turn;
@@ -728,7 +730,7 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
         if (!branch && d + t * seg <= RULES.soldierRadius * 1.5) continue; // the first sliver sits on the shooter's own dot
         bt = t; ev0 = { kind: "kill", soldier: o.id };
       }
-      if (!ruled && ink.size && jolts < L.ink.joltMax) {
+      if (!straight && ink.size && jolts < L.ink.joltMax) {
         for (const r of ink.near(Math.min(pos.x, nxt.x) - 1, Math.min(pos.y, nxt.y) - 1, Math.max(pos.x, nxt.x) + 1, Math.max(pos.y, nxt.y) + 1, runs)) {
           const t = segT(pos, nxt, r.a, r.b);
           if (t === null || t > tEnd || t >= bt) continue;
@@ -814,11 +816,17 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
         if (snipe) { budget *= 1 - cost; ev({ kind: "wall", at, d, base: b.id, cost }); }
         else { const a = steady ? 0 : gauss(rand) * cost; h += a; ev({ kind: "wall", at, d, base: b.id, cost, jolt: a }); }
       }
+      if (b.shape === "square" && b.owner === me.owner && leaving && !straight) {
+        // passing out through your own square: ruled from its wall on
+        straight = true;
+        anyRuled = true;
+        ev({ kind: "rule", at, d, base: b.id });
+      }
       if (b.shape === "prism" && b.owner === me.owner && snipe && leaving && canSplit) {
         // leaving your own prism, a snipe splits in two
         canSplit = false;
         ev({ kind: "split", at, d, base: b.id });
-        const half = { at, sign, j, rem, budget, d, free: new Set(free), banks, jolts, well, skipBase: b.id };
+        const half = { at, sign, j, rem, budget, d, free: new Set(free), banks, jolts, well, skipBase: b.id, straight };
         branches.push(walk({ ...half, h: h - L.prism.spread }, branches.length + 1, false));
         h += L.prism.spread;
       }
@@ -826,8 +834,8 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
     return pts;
   };
 
-  const pts = walk({ at: { x: me.x, y: me.y }, h: h0, sign: 1, j: 0, rem: len[0] ?? 0, budget: pathLen(raw), d: 0, free, banks: 0, jolts: 0, well: 0, skipBase: -1 }, 0, true);
-  return { pts, events, hits, offPage, ...(branches.length && { branches }), ...(ruled && { ruled }) };
+  const pts = walk({ at: { x: me.x, y: me.y }, h: h0, sign: 1, j: 0, rem: len[0] ?? 0, budget: pathLen(raw), d: 0, free, banks: 0, jolts: 0, well: 0, skipBase: -1, straight: ruled }, 0, true);
+  return { pts, events, hits, offPage, ...(branches.length && { branches }), ...(anyRuled && { ruled: true }) };
 }
 
 const empty = (): Outcome => ({ path: [], killed: [], lost: false, events: [], again: true, earned: false, stood: [], walked: [], arrived: [], handover: false });

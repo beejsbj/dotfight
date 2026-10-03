@@ -523,6 +523,24 @@ describe("a square rules its lines", () => {
     expect(heading(tr.pts)).toBeCloseTo(0.9, 6);
   });
 
+  it("a line of yours passing out through your square is ruled from its wall on", () => {
+    // our square in the lane at (300, 1000); a man of ours behind it at (150, 1000) fires through it, past a full enemy camp
+    const through = (square: boolean) => {
+      const s = field([...(square ? [["square", 0, 300, 1000, Math.PI / 4]] as [Shape, Player, number, number, number][] : []), ["camp", 1, 650, 1110]]);
+      fill(s, square ? 1 : 0);
+      const me = man(s, 0, 150, 1000);
+      return trace(s, shot(me, 0, 800));
+    };
+    const tr = through(true);
+    expect(tr.ruled).toBe(true);
+    const rule = tr.events.find((e) => e.kind === "rule")!;
+    expect(rule).toMatchObject({ base: 0 });
+    for (const p of tr.pts) if (p.x >= rule.at.x) expect(p.y).toBeCloseTo(1000, 6); // straight on past their well
+    const bare = through(false);
+    expect(bare.ruled).toBeUndefined();
+    expect(heading(bare.pts)).toBeGreaterThan(0.02);
+  });
+
   it("an enemy's square doesn't rule your line", () => {
     const { s, me } = page("theirs");
     const tr = trace(s, shot(me, 0, 550));
