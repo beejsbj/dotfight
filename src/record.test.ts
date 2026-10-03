@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { botAction, botArrange, botBase } from "./bot";
-import { act, canPlaceBase, illegal, newGame, type GameState } from "./game";
+import { botAction, botArrange, botBase, botShape } from "./bot";
+import { act, canPlaceBase, illegal, newGame, rng, type GameState } from "./game";
 import { inkTime, totalHold, wallTime } from "./inkclock";
 import * as legacy from "./legacy";
 import { hash } from "./room-engine";
 import { addToDrawer, apply, blank, file, fromRecord, readDrawer, readSave, settleSave, steps, toRecord, unfile, type Filed, type GameRecord } from "./record";
-import { CORE, SIZES, savedRules } from "./rules";
+import { CORE, LONG, SIZES, savedRules } from "./rules";
 // two wars (Quick, Classic) recorded on origin/main's engine before garrisoned walls, with how they ended
 import beforeRaw from "./__fixtures__/core-v1-wars.json?raw";
 
@@ -204,5 +204,29 @@ describe("ink clock", () => {
   });
   it("wallTime is when the ink first reaches a point", () => {
     for (const ink of [0, 99, 100, 101, 299, 300, 301, 600]) expect(inkTime(wallTime(ink, snags), snags)).toBe(ink);
+  });
+});
+
+describe("record (the long war)", () => {
+  // A long war, bot v bot, seeded: the bot fields every shape and banks on purpose, so the page gains pencil stars.
+  function longWar(seed: number, maxTurns = 400): GameState {
+    const s = newGame(SIZES.long, seed, { no: 5, date: "3 Oct 2026" }, LONG);
+    let k = seed;
+    while (s.phase === "setup") { const sh = botShape(rng(k++)); const p = botBase(s, (x, y) => !canPlaceBase(s, x, y, sh), k++)!; act(s, { t: "base", ...p, shape: sh }); }
+    while (s.phase === "position") for (const a of botArrange(s, k++)) { if (!illegal(s, a)) act(s, a); if (a.t === "ready") break; }
+    while (s.phase === "play" && s.turn < maxTurns) act(s, botAction(s, 1, k++));
+    return s;
+  }
+
+  it("a filed long page replays to the same marks, pencil stars included, whole and step by step", { timeout: 60000 }, () => {
+    const s = longWar(7, 14);
+    const stars = s.marks.filter((m) => m.t === "star");
+    expect(stars.length).toBeGreaterThan(0);
+    expect(fromRecord(JSON.parse(JSON.stringify(toRecord(s))))).toEqual(s);
+    const f = file(s, { kind: "bot", level: 1 });
+    const r = blank(f);
+    for (const st of steps(f)) apply(r, st);
+    expect(r).toEqual(s);
+    expect(r.marks.filter((m) => m.t === "star")).toEqual(stars);
   });
 });
