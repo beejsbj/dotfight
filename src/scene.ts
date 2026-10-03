@@ -43,6 +43,9 @@ export interface Aim {
   sight?: number;
   /** How far out the sight sits (page units), kept on screen. */
   sightAt?: number;
+  /** The long war: where the ink would go with a steady hand (wells, banks, grooves), and a prism's other half. */
+  path?: Pt[];
+  branches?: Pt[][];
 }
 
 export interface Frame {
@@ -483,7 +486,11 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
     g.globalAlpha = 1;
   }
   if (f.teach) { drawTeach(g, f.teach); box.add(f.teach.at.x, f.teach.at.y, 420); }
-  if (f.aim) { drawAim(g, s, f.aim, px); box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + (f.aim.sight !== undefined ? 90 : 24)); }
+  if (f.aim) {
+    drawAim(g, s, f.aim, px);
+    box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + (f.aim.sight !== undefined ? 90 : 24));
+    for (const q of [...(f.aim.path ?? []), ...(f.aim.branches ?? []).flat()]) box.add(q.x, q.y, f.aim.sight !== undefined ? 90 : 24);
+  }
 }
 
 /**
@@ -617,6 +624,7 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   g.arc(me.x, me.y, show, a.angle - a.spread, a.angle + a.spread);
   g.closePath();
   g.fill();
+  if (a.path) return drawPath(g, a, show, px);
   pencilLine(g, me, { x: me.x + dx * show, y: me.y + dy * show }, Math.max(2.2, 1.6 * px), 3);
   if (a.sight !== undefined) return drawSight(g, me.x + dx * show, me.y + dy * show, a.sight, px);
   // power, as ticks along the guide: each is a notch you can feel
@@ -626,6 +634,47 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
     const cx = me.x + dx * t, cy = me.y + dy * t;
     pencilLine(g, { x: cx - dy * 7, y: cy + dx * 7 }, { x: cx + dy * 7, y: cy - dx * 7 }, Math.max(1.8, 1.3 * px), 40 + i, false);
   }
+}
+
+// The long war's guide: the line the page would draw with a steady hand. The
+// first stretch is pencilled firmly, as in the core game; the rest, round a
+// well, off a cushion, along a groove, follows it lightly, dashed, so you see
+// what the page will do to the shot but still judge your own hand. A prism's
+// other half is dashed from where it splits. Power notches sit on the path.
+function drawPath(g: Ctx, a: Aim, show: number, px: number) {
+  const w = Math.max(2.2, 1.6 * px), faint = Math.max(1.7, 1.25 * px);
+  let run = 0, seed = 3;
+  const notches = a.sight === undefined ? Math.floor(a.power * 5 + 1e-6) : 0;
+  let nextTick = 1;
+  const pts = a.path!;
+  let tip = pts[0];
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i - 1], q = pts[i], l = Math.hypot(q.x - p.x, q.y - p.y);
+    if (l < 1e-6) continue;
+    const firm = run < show;
+    if (firm && run + l > show) {
+      const m = { x: p.x + ((q.x - p.x) * (show - run)) / l, y: p.y + ((q.y - p.y) * (show - run)) / l };
+      pencilLine(g, p, m, w, seed++);
+      tip = m;
+      g.globalAlpha = 0.62;
+      pencilLine(g, m, q, faint, seed++, false);
+      g.globalAlpha = 1;
+    } else if (firm) { pencilLine(g, p, q, w, seed++); tip = q; }
+    else if (seed % 2) { g.globalAlpha = 0.62; pencilLine(g, p, q, faint, seed++, false); g.globalAlpha = 1; } // dashed: every other stretch
+    else seed++;
+    // power, as ticks along the firm part of the guide: each is a notch you can feel
+    while (nextTick <= notches && (show * nextTick) / 5.5 <= run + l && (show * nextTick) / 5.5 >= run) {
+      const t = ((show * nextTick) / 5.5 - run) / l, cx = p.x + (q.x - p.x) * t, cy = p.y + (q.y - p.y) * t;
+      const ux = (q.x - p.x) / l, uy = (q.y - p.y) / l;
+      pencilLine(g, { x: cx - uy * 7, y: cy + ux * 7 }, { x: cx + uy * 7, y: cy - ux * 7 }, Math.max(1.8, 1.3 * px), 40 + nextTick, false);
+      nextTick++;
+    }
+    run += l;
+  }
+  g.globalAlpha = 0.62;
+  for (const b of a.branches ?? []) for (let i = 1; i < b.length; i += 2) pencilLine(g, b[i - 1], b[i], faint, 90 + i, false);
+  g.globalAlpha = 1;
+  if (a.sight !== undefined) drawSight(g, tip.x, tip.y, a.sight, px);
 }
 
 // A soldier's line: a word or two pencilled in his side's colour in a gap on
