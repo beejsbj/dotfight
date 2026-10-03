@@ -8,11 +8,12 @@
 //   earned       a flick earned another: a snipe that took two, or a lunge kill (arg: flicks left)
 //   send         a convoy is ordered (arg: how many)
 //   walk-out     convoys walk out onto the road as the pen changes hands (arg: how many soldiers)
+//   walk-on      long-war convoys already on the road walk a stretch further (arg: how many soldiers)
 //   arrive       convoys arrive at their base (arg: how many soldiers)
 //
 // main.ts routes lunge-death → haptic("thud") and last-stand → haptic("stand") (#7).
 
-export type Cue = "lunge-death" | "last-stand" | "earned" | "send" | "walk-out" | "arrive";
+export type Cue = "lunge-death" | "last-stand" | "earned" | "send" | "walk-out" | "walk-on" | "arrive";
 
 type Listener = (c: Cue, arg?: number) => void;
 const listeners = new Set<Listener>();

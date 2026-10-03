@@ -6,11 +6,11 @@
 // they settle gives the same pixels as drawing the page from scratch. The
 // camera can then swoop and chase the ink for the cost of one image draw.
 
-import { rng, type Mark, type Pt } from "./game";
+import { corners, rng, type Mark, type Pt } from "./game";
 import type { AnyState as GameState } from "./record";
-import { INK, handText, inkCircle, inkCross, inkDot, inkFlick, inkLeft, inkOp, inkScribble, paint, paperGrain } from "./ink";
+import { INK, handText, inkCircle, inkCross, inkDot, inkFlick, inkLeft, inkOp, inkPolygon, inkScribble, inkShape, paint, paperGrain, shapeCorners } from "./ink";
 import { GAME } from "./name";
-import { RULES } from "./rules";
+import { RULES, type Shape } from "./rules";
 import type { Hold } from "./boil";
 import { theme, type Theme } from "./theme";
 
@@ -305,11 +305,25 @@ function showThrough(g: Ctx, w: number, h: number) {
   g.restore();
 }
 
-type Dotted = { id: number; owner: 0 | 1 };
+/** What drawing a man needs: who he is, and (the long war) his shape and his base's turn. Not always a real soldier: a card draws its men this way too. */
+type Dotted = { id: number; owner: 0 | 1; shape?: Shape; rot?: number };
+
+/**
+ * A man's mark by his base's shape: corners, and the circumradius that gives a
+ * triangle, square, pentagon or hexagon the visual weight of a dot of `soldierRadius` (a triangle
+ * in a 7-circle is 41 % of its area; at 9 it's 68 %, and its tips carry the
+ * rest; a square at 8.3 is 64 %; a pentagon at 8.0 is 99 %; a hexagon at 7.6 is 98 %). A look, not a rule: the hit radius stays 7.
+ */
+export const MAN: Record<Shape, { n: number; R: number }> = { camp: { n: 0, R: RULES.soldierRadius }, prism: { n: 3, R: 9 }, cushion: { n: 6, R: 7.6 }, square: { n: 4, R: 8.3 }, pentagon: { n: 5, R: 8.0 } };
+/** His mark's circumradius: a plain dot's unless he has a shape. */
+export const manR = (x: { shape?: Shape }): number => (x.shape ? MAN[x.shape].R : RULES.soldierRadius);
 
 // `wob` picks a redrawing for the line boil (0 is the drawing the page keeps), straying `amp` times the usual.
+// A triangle or hexagon (the long war) is inked side by side; each redrawing of the boil is a fresh hand at it.
 export function drawBase(g: Ctx, b: GameState["bases"][number], p = 1, wob = 0, amp = 1) {
-  inkCircle(g, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.8 * theme.ink.width, 2, p, wob, amp);
+  const vs = corners(b);
+  if (vs) inkPolygon(g, vs, INK.pens[b.owner], wob ? (b.seed ^ Math.imul(wob, 0x9e3779b1)) >>> 0 : b.seed, 2.8 * theme.ink.width, 2, p);
+  else inkCircle(g, b.x, b.y, b.r, INK.pens[b.owner], b.seed, 2.8 * theme.ink.width, 2, p, wob, amp);
 }
 
 /**
@@ -379,15 +393,22 @@ export function drawWalk(g: Ctx, a: Pt, b: Pt, color: string, seed: number, p = 
 
 /** The dot a man leaves on the page when he dies or moves on: faded, or hollow (see CLARITY). */
 export function drawSpent(g: Ctx, x: Pt & Dotted, at: Pt) {
+  const m = x.shape ? MAN[x.shape] : undefined, seed = x.id * 131 + 7;
   if (CLARITY.hollow) {
     g.globalAlpha = 0.7;
-    inkCircle(g, at.x, at.y, RULES.soldierRadius * 0.9, INK.pens[x.owner], x.id * 131 + 7, 1.7 * theme.ink.width, 1);
+    // a shaped man leaves a hollow in his shape, its corners where his pressed mark's were
+    if (m && m.n >= 3) inkPolygon(g, shapeCorners(at.x, at.y, m.R * 0.88, m.n, x.rot ?? 0, rng(seed)), INK.pens[x.owner], seed, 1.7 * theme.ink.width, 1);
+    else inkCircle(g, at.x, at.y, RULES.soldierRadius * 0.9, INK.pens[x.owner], seed, 1.7 * theme.ink.width, 1);
     g.globalAlpha = 1;
-  } else inkDot(g, at.x, at.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, CLARITY.fade, 1);
+  } else if (m && m.n >= 3) inkShape(g, at.x, at.y, m.R, m.n, x.rot ?? 0, INK.pens[x.owner], seed, CLARITY.fade, 1);
+  else inkDot(g, at.x, at.y, RULES.soldierRadius, INK.pens[x.owner], seed, CLARITY.fade, 1);
 }
 
+// A man with a shape (the long war) is pressed in it; without one he's the plain dot, exactly as before.
 export function drawDot(g: Ctx, x: Pt & Dotted, alpha = 1, grow = 1, at: { x: number; y: number } = x, wob = 0, amp = 1) {
-  inkDot(g, at.x, at.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, alpha, grow, wob, amp);
+  const m = x.shape ? MAN[x.shape] : undefined;
+  if (m && m.n >= 3) inkShape(g, at.x, at.y, m.R, m.n, x.rot ?? 0, INK.pens[x.owner], x.id * 131 + 7, alpha, grow, wob, amp);
+  else inkDot(g, at.x, at.y, RULES.soldierRadius, INK.pens[x.owner], x.id * 131 + 7, alpha, grow, wob, amp);
 }
 
 export function drawSignature(g: Ctx, sig: Signature, p = 1) {

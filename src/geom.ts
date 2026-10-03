@@ -130,3 +130,31 @@ export function segDist(p: Pt, a: Pt, b: Pt) {
   const t = Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / l2));
   return Math.hypot(p.x - (a.x + vx * t), p.y - (a.y + vy * t));
 }
+
+/**
+ * The convex polygon pushed out `pad` from every edge: each edge moved out
+ * by `pad`, each corner rounded with an arc of that radius (`arc` runs to a
+ * quarter turn). It is exactly the set of points within `pad` of the
+ * polygon, which is what `wallGap <= pad` allows. Corners may come in either order.
+ */
+export function offsetPolygon(verts: Pt[], pad: number, arc = Math.PI / 12): Pt[] {
+  const n = verts.length;
+  const area = verts.reduce((a, v, i) => { const w = verts[(i + 1) % n]; return a + (v.x * w.y - w.x * v.y); }, 0);
+  const out = area >= 0 ? 1 : -1; // outward normal of an edge a -> b is (dy, -dx) for the area's sign
+  const normal = (a: Pt, b: Pt) => Math.atan2(-(b.x - a.x) * out, (b.y - a.y) * out);
+  const pts: Pt[] = [];
+  verts.forEach((v, i) => {
+    const a0 = normal(verts[(i + n - 1) % n], v);
+    let a1 = normal(v, verts[(i + 1) % n]);
+    // sweep the short way round the corner, in the polygon's turning direction
+    let sweep = a1 - a0;
+    while (sweep > Math.PI) sweep -= Math.PI * 2;
+    while (sweep < -Math.PI) sweep += Math.PI * 2;
+    const steps = Math.max(1, Math.ceil(Math.abs(sweep) / arc));
+    for (let k = 0; k <= steps; k++) {
+      const a = a0 + (sweep * k) / steps;
+      pts.push({ x: v.x + Math.cos(a) * pad, y: v.y + Math.sin(a) * pad });
+    }
+  });
+  return pts;
+}

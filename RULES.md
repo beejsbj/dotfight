@@ -4,12 +4,12 @@ _Dotfight. Consolidated 2026-09-26 from Burooj's decisions and three rounds of t
 
 This is Dawood's game. He made it up at school, and he and Burooj played it in grades 5 and 6 with ballpoint pens on the back pages of their exercise books. Nobody wrote the rules down. What follows is the game remembered, argued over and rebuilt.
 
-**The game plays the core rules below** (Quick battle). Old saves and pages filed before the port keep the first, simpler rules (shoot or move, see [the appendix](#appendix-the-rules-from-memory)) and still replay by them. The long war rules are still to be ported. The numbers are in `src/rules.ts`; round 3 of the rules lab measured them on the game's own engine ([report](docs/rules-lab/round-3.md)), and round 4 tuned garrisoned walls ([report](docs/rules-lab/round-4.md)). Games and pages begun before garrisoned walls keep the flat walls they were played with.
+**The game plays the core rules below** (Quick battle), and **the long war** (pick it on the cover). Old saves and pages filed before the port keep the first, simpler rules (shoot or move, see [the appendix](#appendix-the-rules-from-memory)) and still replay by them. The numbers are in `src/rules.ts`; round 3 of the rules lab measured them on the game's own engine ([report](docs/rules-lab/round-3.md)), and round 4 tuned garrisoned walls ([report](docs/rules-lab/round-4.md)). Games and pages begun before garrisoned walls keep the flat walls they were played with.
 
 Anything marked **(to test)** has a number or strength nobody has felt at a real table yet. **(being designed)** means the idea exists and the rule doesn't. Lab values are what the simulations used, on a page 1000 units wide and 1700 tall.
 
 - [Core rules](#core-rules-quick-battle): Dawood's game, played as a Quick battle. Everything you need to play.
-- [Long war rules](#long-war-rules): book 2, which adds shaped bases and a page that fights back.
+- [Long war rules](#long-war-rules): book 2, which adds five shapes of base, a page that fights back a little, and longer roads.
 - [Open / to test](#open--to-test)
 
 # Core rules (Quick battle)
@@ -108,41 +108,47 @@ _Plays that fall out of the rules, for players. Also the outline for the Core tu
 
 # Long war rules
 
-For players who like long games. Everything in the core rules still holds. The Long war adds:
+For players who like long games. Everything in the core rules still holds. The long war adds:
 
-- **shaped bases** (below), each with its own walls;
-- **full pen physics**: grooves, jolts, wall friction and ink cover;
-- **bigger armies** than a Classic battle (to test);
-- **longer roads**: sends walk for several turns.
+- **six bases a side**, each drawn in one of **five shapes**, any mix (below);
+- **each shape does one thing to a line**: a camp bends it, a prism splits it, a cushion banks it, a square rules it, a pentagon aims it;
+- **a page that fights back a little**: old ink jolts and grooves a line;
+- **longer roads**: sends walk for several turns;
+- **bigger armies** than a Classic battle: about 57 men a side, by the shapes picked (to test).
+
+While you aim, the pencil guide follows the line the page will draw (wells, banks, grooves, splits, the star's turn), without the hand's own error.
+
+## Drawing the bases
+
+Players take turns drawing six bases each. Each is dragged onto the page from a shape card and jotted with its own garrison, which is what "full" means for its wall (lab: camp 12, cushion 8, pentagon 8, prism 6, square 6; to test). Every wall still costs a line by its garrison, as in the core rules, whatever its shape.
 
 ## Sends in the long war
 
-A convoy walks over several turns, in real time during each turn, (lab: 150 units a turn, so a road takes two to four turns), exposed to any line the whole way. Still up to 5 at a time, once a turn. (to test)
+A convoy walks its road a stretch every time the pen changes hands (lab: 150 units, so a road takes two or three hand-overs), and goes in when it reaches the far wall. It's exposed the whole way, and always for at least one enemy turn; its road is pencilled ahead of it with the hand-overs left. Still up to 5 at a time, once a turn. (to test)
 
 ## Ink on the page
 
-- Crossing an old line gives the pen a slight jolt of wobble.
-- **The angle the pen meets a line decides.** At a shallow angle the pen is pulled into the groove, like gravity, and carried along it. At a steep angle it jolts.
-- Friendly grooves carry you further; enemy grooves cut you short. (to test)
+_Burooj, 2026-10-03: keep it light._
 
-## Ink as cover
-
-Every line runs at somebody's base, so ink piles up round bases over the game and becomes natural cover. That's intended: bases get more protection as the page fills. (strengths to test)
+- Crossing an old line steeply gives the pen a slight jolt, once a line (lab: 0.03 rad).
+- Meeting one at a shallow angle drops the pen into its groove, drawn along it like gravity (within 7°). Your own grooves carry you a little further, theirs cut you a little short (to test).
+- Ink never stops a line. There is no "ink as cover": round 2 found every strength that showed stalled games.
 
 ## Shaped bases
 
-| Shape | Name | What it does |
-|---|---|---|
-| Circle | camp | A **gravity well**: lines passing near it, anyone's, yours too, bend round it, so you can curve shots round a camp or through a gap. **Its pull is its garrison**: the more soldiers inside, the harder it bends. A full camp bends lines hard; as it's shot down the well weakens; an empty ring keeps a faint pull (the dent in the paper); a send arriving strengthens it again (to test). Soft walls. Still holds the most soldiers (lab: 12, against 8 and 6). |
-| Triangle | prism | Your lines passing out through it split in two, so place it in front of your other bases. (Lunges don't split: a lunger is one body.) |
-| Hexagon | cushion | Billiards: banks everyone's lines, yours too, by angle. Only a glancing line bounces (lab: more than 0.6 rad, about 34°, off square); a straight one goes in. |
-| Square | eraser | Idea: a loose block. Lines that hit its walls shove it along, and as it slides it erases the ink beneath it (grooves and cover included). |
-| Pentagon | | (being designed) |
+The camp and the cushion act on everyone's lines; the prism, the square and the pentagon act on your own lines as they pass out through them, from any base, so you set them in front of the rest.
+
+| Shape | Name | Men | What it does |
+|---|---|---|---|
+| Circle | camp | 12 | A **gravity well**: lines passing near it, anyone's, yours too, bend round it. **Its pull is its garrison**: a full camp bends hard, a thinned one less, an empty ring keeps a faint pull (the dent in the paper), a send arriving strengthens it again. No line turns more than about 70° in all. (to test) |
+| Triangle | prism | 6 | Your snipes passing out through it **split in two** (±0.2 rad), so put it in front of your other bases. Lunges don't split: a lunger is one body. Your own prism's walls don't slow your lines; theirs cost as any wall. |
+| Hexagon | cushion | 8 | **Billiards**: banks everyone's lines, yours too, by angle. Only a glancing line bounces (more than 0.6 rad, about 34°, off square; three banks a line at most), and a bank costs the line nothing; a straight one goes in and pays the wall. |
+| Square | ruler | 6 | Your lines passing out through it are **ruled**: dead straight from its wall on, and the page doesn't touch them (no well, groove or jolt), only walls and men. A man standing in it flicks ruled from the start. _Burooj, 2026-10-03._ |
+| Pentagon | star | 8 | Your lines passing out through it **turn on the nearest enemy man ahead** (within 30°) and run at him, snipes and lunges alike; the hand's curve carries on after, so it can still miss. _Burooj, 2026-10-03: new, not Dawood's._ |
 
 ## Shaped soldiers
 
-- Soldiers are drawn in their base's shape: dots in a camp, little triangles in a prism, little hexagons in a cushion. For now it's only a look.
-- Their shape's power might wake up only in a last stand. (idea)
+Soldiers are drawn in their base's shape: dots, triangles, hexagons, squares, pentagons. Each keeps his shape for the whole war (two triangles in a camp say a prism sent them). Only a look. Their shape's power might wake up only in a last stand (idea).
 
 ## Tactics
 
@@ -151,10 +157,11 @@ _Plays that fall out of the long war's rules. Also the outline for the War and A
 - **Curve it round a camp.** A full camp bends lines near it, so a shot can swing round into a base you can't see straight. Your own camps bend your lines too.
 - **Shoot the well down.** A camp's pull is its garrison: thin it and it stops bending.
 - **Bank off a cushion.** A glancing line bounces off a hexagon to reach behind a wall; a square one goes in.
-- **Put the prism in front.** Lines passing out through a triangle split: one flick, two targets.
+- **Put the prism in front.** Snipes passing out through a triangle split: one flick, two targets.
+- **Rule a lane.** A square in front of your camp straightens every shot fired through it, so a lane past their well stays true.
+- **Let the star aim.** Fire through your pentagon roughly at a crowd and it turns on the nearest man.
 - **Ride your own grooves.** Meet your old line shallow and it carries you on; meet theirs steep and take the jolt rather than be cut short.
-- **Let the page fill.** Ink piles up round bases as cover: the open game is early, the scribble late.
-- **Walk the long road behind something.** Convoys are out for several turns; route them behind a cushion or a wall of ink.
+- **Walk the long road behind something.** Convoys are out for several turns; route them behind a cushion or a full camp.
 
 # Open / to test
 
@@ -180,16 +187,16 @@ Every value here is a lab guess or a direction nobody has played yet.
 
 | What | Where it stands |
 |---|---|
-| Circle as a gravity well: strength | New. The pull scales with the soldiers inside: how hard a full camp bends, how far out, and how fast it weakens as the camp is shot down. |
-| Long war send pace | Lab: 150 units a turn, two to four turns on a typical road. |
-| Crossing jolt, groove pull, and how far grooves carry or cut | Lab shipped jolts of 0.03 rad (one per line) and grooves within 7°. Dawood's version, friendly ink boosting and enemy ink slowing, was the least fair thing the lab tried (62% to the first player). |
-| Ink cover round bases | Intended, but the lab's scribble cover stalled games at every strength that showed. |
-| Camp, prism and cushion sizes (12, 6, 8), the glance angle (0.6 rad) | Lab guesses. |
-| Bigger armies | How big is undecided. |
-| Game length | The lab's pen-physics war ran about 81 turns. |
-| Square and pentagon | Square: the eraser block is an idea (shoving erases). Pentagon: being designed. |
+| Six bases a side | Burooj, 2026-10-02, after round 5: five fielded fewer men than Classic (47 against 50). Six runs about 48 turns. Four gave the first player 62%. |
+| Camp as a gravity well: strength | Lab: pull 0.004 a unit at full, out to 3.5 radii, an empty ring at 12%, at most 1.2 rad a line. Round 5: bends 37% of flicks; 0 to 0.008 and reach 2.5 to 5 barely move fairness or length. |
+| Prism | Round 5: spread 0.1 to 0.35 and paying your own walls are all within noise. An all-prism army (30 men) loses to every other mix (27–36%); 8 men is the first number to try. |
+| Cushion | Round 5: banks cost 2.9 turns; glance 0.4 to 0.8 within noise. |
+| Square (ruler) and pentagon (star) | New, 2026-10-03; not yet in the lab. Garrisons 6 and 8 are guesses. Watch for the one shape every army takes. |
+| Long war send pace | 150 units a hand-over. Round 5: 100 to 250 moves length by 1.5 turns at most. |
+| Ink: jolts and grooves | Kept light (Burooj, 2026-10-03): one 0.03 rad jolt a line, grooves within 7° and 12 units, own 0.7, theirs 1.4. Round 5: doubling the jolt adds 10 turns. Dawood's boost/drag version was the least fair thing round 2 tried (62% to the first player). |
+| Game length | Round 5: 6 bases about 48 turns (p90 61), 5 bases 41. |
 | Shape powers waking in a last stand | Idea. |
-| Shared-link and real-time play | Planned. |
+| Shared-link and real-time play | Long war rooms work (engine `long-1`); real time is planned. |
 
 # Appendix: the rules from memory
 
@@ -215,3 +222,4 @@ What Dawood confirmed on 2026-09-25: 5 bases of 10 soldiers; no new soldiers, ev
 - Round 2: lunge and snipe, walking sends, rings, positioning, pen physics, billiards ([report](https://github.com/beejsbj/dotfight/blob/rules/lab-2/docs/rules-lab/round-2.md), [PR #4](https://github.com/beejsbj/dotfight/pull/4)).
 - Round 3: the core rules on the game's own engine, 2,000 games each of Quick and Classic ([report](docs/rules-lab/round-3.md)).
 - Round 4: garrisoned walls, four curves against flat walls, and all-inside against spread out ([report](docs/rules-lab/round-4.md)).
+- Round 5: the long war, each mechanic, armies, pace and shape mixes ([report](https://github.com/beejsbj/dotfight/blob/long-war/lab/docs/rules-lab/round-5.md), [PR #35](https://github.com/beejsbj/dotfight/pull/35)).

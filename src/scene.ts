@@ -15,13 +15,15 @@ import { inscribedBounds } from "./note-bounds";
 import { walkerAt } from "./timeline";
 import { BoilLayer, planBoil, type Plan } from "./boil";
 import type { Anchor, Mood } from "./bubble";
-import { rng, type Pt } from "./game";
+import { corners, rng, type Pt } from "./game";
+import { offsetPolygon, polygon, segDist } from "./geom";
+import type { Shape } from "./rules";
 import type { AnyState as GameState } from "./record";
-import { INK, arcText, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilStroke, rubOut } from "./ink";
+import { INK, arcText, bowed, handText, inkCross, inkFlick, lead, pencilArrow, pencilLine, pencilLoop, pencilRing, pencilStroke, rubOut } from "./ink";
 import { Life } from "./life";
 import { PencilLayer } from "./pencil-layer";
 import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
-import { drawBase, drawDot, drawMark, drawSignature, wentTo, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
+import { MAN, drawBase, drawDot, drawMark, drawSignature, wentTo, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
 import { cssMatrix, layerMatrix, project, stageCss, toLocal, unproject, type View } from "./projection";
 import { RULES } from "./rules";
@@ -41,6 +43,9 @@ export interface Aim {
   sight?: number;
   /** How far out the sight sits (page units), kept on screen. */
   sightAt?: number;
+  /** The long war: where the ink would go with a steady hand (wells, banks, grooves), and a prism's other half. */
+  path?: Pt[];
+  branches?: Pt[][];
 }
 
 export interface Frame {
@@ -59,16 +64,17 @@ export interface Frame {
   dpr: number;
   selected?: number;
   aim?: Aim;
-  ghost?: { x: number; y: number; ok: boolean; owner: 0 | 1 };
+  /** The base about to be drawn; `pts`: a long war's triangle or hexagon (else a circle of `r`). */
+  ghost?: { x: number; y: number; ok: boolean; owner: 0 | 1; r: number; pts?: Pt[]; men?: (Pt & { shape?: Shape; rot?: number })[] };
   /** Setup: the no-go rings round enemy bases, faintly hatched. */
   keepOut?: { x: number; y: number; r: number }[];
   mover?: { id: number; at: Pt; angle?: number; stretch?: number };
   pen?: PenPose;
-  hint?: { p: number; bases: { id: number; x: number; y: number; r: number }[] };
+  hint?: { p: number; bases: { id: number; x: number; y: number; r: number; pts?: Pt[] }[] };
   /** Convoys walking (the time-lapse between turns): each soldier from where he stood to where he'll stand. */
   walkers?: { id: number; from: Pt; to: Pt; p: number }[];
   /** Positioning: how far each of your bases' soldiers may stand, in pencil. */
-  zones?: { x: number; y: number; r: number }[];
+  zones?: { x: number; y: number; r: number; pts?: Pt[] }[];
   /** Positioning: the soldier under your finger. */
   drag?: { id: number; at: Pt; ok: boolean };
   /** A send being drawn, base to base, in pencil. */
@@ -76,13 +82,13 @@ export interface Frame {
   /** Sends ordered this turn: the road in pencil, the ones going ringed. */
   orders?: { a: Pt; b: Pt; at: Pt[] }[];
   /** Soldiers out on the open road between camps (a convoy in transit), marked in pencil as marching and exposed: where he stands and the way he faces. */
-  road?: { at: Pt; dir: number }[];
+  road?: { at: Pt; dir: number; ahead?: { to: Pt; left: number } }[];
   /** A side in its last stand: its survivors, kept marked in pencil for the rest of the war. */
   stand?: (Pt & { id: number })[];
   /** A lunger owed another lunge: ringed twice, with what he's owed and how many links. */
   chain?: { at: Pt; link: number };
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
-  danger?: { x: number; y: number; r: number }[];
+  danger?: { x: number; y: number; r: number; pts?: Pt[] }[];
   /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
   teach?: { kind: "aim" | "place" | "arrange" | "note"; at: Pt; p: number; rot: number; note?: string; text?: string };
   sig?: Signature;
@@ -103,6 +109,8 @@ export interface Frame {
 
 export interface Note {
   text: string; mood: Mood; anchor: Anchor; at: Pt; r?: number; p: number; e: number; side: 1 | -1; seed: number; owner: 0 | 1;
+  /** A long-war base's walls (a triangle or hexagon): the note arcs along them. */
+  poly?: Pt[];
   /** An exchange: the other speaker. */
   with?: Pt;
   /** An exchange's answer: the first line's key (seed|text), whose spot it must keep clear of. */
@@ -218,10 +226,15 @@ export function renderStage(els: Els, f: Frame) {
   page.sync(s, ink, pageState.S, pageState.epoch, f.sig, plan.hold, f.pageSource);
   boil.set(plan, s, pageState.S);
   const road = f.road ?? [];
-  const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road, f.chain]);
-  const marks = [...road.map((q) => q.at), ...(f.chain ? [f.chain.at] : [])];
+  // a count is written the right way up for whoever the page faces
+  const flip = Math.cos(f.view.rot) < 0;
+  const key = JSON.stringify([theme.id, pageState.epoch, pageState.S, road, f.chain, flip]);
+  const marks = [...road.flatMap((q) => (q.ahead ? [q.at, q.ahead.to] : [q.at])), ...(f.chain ? [f.chain.at] : [])];
   if (field.draw(key, marks, pageState.S, 42, (g) => {
-    for (const q of road) drawRoad(g, q.at, q.dir, 3, s.soldiers.length + Math.round(q.at.x));
+    for (const q of road) {
+      drawRoad(g, q.at, q.dir, 3, s.soldiers.length + Math.round(q.at.x));
+      if (q.ahead) drawAhead(g, q.at, q.ahead.to, q.ahead.left, flip, 3, s.soldiers.length + Math.round(q.at.y));
+    }
     if (f.chain) drawChain(g, f.chain, 3, new Box());
   })) stageStats.field++;
   const survivors = new Set((f.stand ?? []).map((q) => q.id));
@@ -424,14 +437,11 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
   const px = 1 / v.z;
   for (const z of f.zones ?? []) {
     // dashed pencil: how far out his men may stand
-    const n = 36;
-    for (let i = 0; i < n; i += 2) {
-      const a0 = (i / n) * Math.PI * 2, a1 = ((i + 1) / n) * Math.PI * 2;
-      pencilLine(g, { x: z.x + Math.cos(a0) * z.r, y: z.y + Math.sin(a0) * z.r }, { x: z.x + Math.cos(a1) * z.r, y: z.y + Math.sin(a1) * z.r }, Math.max(1.4, px), 300 + i, false);
-    }
+    const ring = z.pts ? evenly(z.pts, 48) : outline(z, 36); // a rounded outline's dashes are even all the way round
+    for (let i = 0; i < ring.length - 1; i += 2) pencilLine(g, ring[i], ring[i + 1], Math.max(1.4, px), 300 + i, false);
     box.add(z.x, z.y, z.r + 6);
   }
-  for (const d of f.danger ?? []) { pencilHatchRing(g, d.x, d.y, d.r, px); box.add(d.x, d.y, d.r + 6); }
+  for (const d of f.danger ?? []) { pencilHatchRing(g, d.x, d.y, d.r, px, d.pts); box.add(d.x, d.y, d.r + 6); }
   for (const o of f.orders ?? []) {
     pencilArrow(g, o.a, o.b, 0.08, 611, Math.max(1.8, px * 1.2), 1, 0.85);
     for (const q of o.at) pencilLoop(g, q.x, q.y, RULES.soldierRadius + 7, 71 + Math.round(q.x), Math.max(1.4, px), 1, 0.8);
@@ -447,25 +457,40 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
   if (f.keepOut) {
     for (const k of f.keepOut) { pencilHatchRing(g, k.x, k.y, k.r, px); box.add(k.x, k.y, k.r + 6); }
   }
-  if (f.hint) for (const b of f.hint.bases) { pencilLoop(g, b.x, b.y, b.r + 12, 900 + b.id * 17, Math.max(1.6, px * 1.1), f.hint.p, 0.75); box.add(b.x, b.y, b.r + 24); }
+  if (f.hint) for (const b of f.hint.bases) {
+    const wd = Math.max(1.6, px * 1.1);
+    if (b.pts) pencilRing(g, offsetPolygon(b.pts, 12), 900 + b.id * 17, wd, f.hint.p, 0.75);
+    else pencilLoop(g, b.x, b.y, b.r + 12, 900 + b.id * 17, wd, f.hint.p, 0.75);
+    box.add(b.x, b.y, b.r + 24);
+  }
   if (f.selected !== undefined && !f.aim && !f.mover) {
     const x = s.soldiers[f.selected];
     pencilLoop(g, x.x, x.y, RULES.soldierRadius + 10, 77 + x.id, Math.max(1.6, px), 1, 0.9);
     box.add(x.x, x.y, 30);
   }
   if (f.ghost) {
-    box.add(f.ghost.x, f.ghost.y, RULES.baseRadius + 10);
+    box.add(f.ghost.x, f.ghost.y, f.ghost.r + 10);
     g.globalAlpha = f.ghost.ok ? 1 : 0.5;
-    const r = RULES.baseRadius;
-    for (let i = 0; i < 28; i++) {
+    const ring = outline(f.ghost, 28);
+    for (let i = 0; i < ring.length - 1; i++) {
       if (!f.ghost.ok && i % 2) continue;
-      const a0 = (i / 28) * Math.PI * 2, a1 = ((i + 1) / 28) * Math.PI * 2;
-      pencilLine(g, { x: f.ghost.x + Math.cos(a0) * r, y: f.ghost.y + Math.sin(a0) * r }, { x: f.ghost.x + Math.cos(a1) * r, y: f.ghost.y + Math.sin(a1) * r }, Math.max(2, px * 1.4), i, false);
+      pencilLine(g, ring[i], ring[i + 1], Math.max(2, px * 1.4), i, false);
+    }
+    // its men, pencilled in where they'll be jotted
+    g.globalAlpha = f.ghost.ok ? 0.55 : 0.3;
+    for (const [k, m] of (f.ghost.men ?? []).entries()) {
+      const n = m.shape ? MAN[m.shape].n : 0;
+      const o = outline({ x: m.x, y: m.y, r: RULES.soldierRadius * 0.8, ...(n && { pts: polygon(n, m, n === 3 ? 8 : 7, m.rot ?? 0) }) }, 8);
+      for (let i = 0; i < o.length - 1; i++) pencilLine(g, o[i], o[i + 1], Math.max(1.2, px), 700 + k * 13 + i, false);
     }
     g.globalAlpha = 1;
   }
   if (f.teach) { drawTeach(g, f.teach); box.add(f.teach.at.x, f.teach.at.y, 420); }
-  if (f.aim) { drawAim(g, s, f.aim, px); box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + (f.aim.sight !== undefined ? 90 : 24)); }
+  if (f.aim) {
+    drawAim(g, s, f.aim, px);
+    box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + (f.aim.sight !== undefined ? 90 : 24));
+    for (const q of [...(f.aim.path ?? []), ...(f.aim.branches ?? []).flat()]) box.add(q.x, q.y, f.aim.sight !== undefined ? 90 : 24);
+  }
 }
 
 /**
@@ -486,6 +511,30 @@ function drawRoad(g: Ctx, at: Pt, dir: number, px: number, seed: number) {
     pencilLine(g, { x: cx - ux * s - uy * s, y: cy - uy * s + ux * s }, { x: cx, y: cy }, w, seed + 40 + d, false);
     pencilLine(g, { x: cx - ux * s + uy * s, y: cy - uy * s - ux * s }, { x: cx, y: cy }, w, seed + 50 + d, false);
   }
+}
+
+/**
+ * The rest of a convoy's road, pencilled on ahead of the column in a dashed line to an
+ * arrowhead at the far wall, with how many hand-overs are left written beside it.
+ */
+function drawAhead(g: Ctx, from: Pt, to: Pt, left: number, flip: boolean, px: number, seed: number) {
+  const dx = to.x - from.x, dy = to.y - from.y, l = Math.hypot(dx, dy);
+  const ux = l ? dx / l : 0, uy = l ? dy / l : -1, w = Math.max(2.2, px * 1.7);
+  const r = RULES.soldierRadius + 22; // past the chevrons
+  let mx = from.x + ux * 24, my = from.y + uy * 24 - 30;
+  if (l > r + 40) {
+    const a = { x: from.x + ux * r, y: from.y + uy * r }, b = { x: to.x - ux * 4, y: to.y - uy * 4 };
+    pencilLine(g, a, b, w, seed, true);
+    for (const s of [1, -1]) pencilLine(g, { x: b.x - ux * 14 - uy * 8 * s, y: b.y - uy * 14 + ux * 8 * s }, b, w, seed + 7 + s, false);
+    // beside the road, a little way along, on whichever side is higher up the page
+    const nx = ux > 0 ? uy : -uy, ny = ux > 0 ? -ux : ux, at = Math.min(l * 0.4, r + 90);
+    mx = from.x + ux * at + nx * 26; my = from.y + uy * at + ny * 26;
+  }
+  g.save();
+  g.translate(mx, my);
+  if (flip) g.rotate(Math.PI);
+  handText(g, String(left), 0, 16, 50, lead(theme).note, { weight: 400, rot: -0.04, align: "center" });
+  g.restore();
 }
 
 /** The last few: short pencil rays all round each one, the way a kid draws something shining, or shouting. */
@@ -516,10 +565,34 @@ function drawSpeed(g: Ctx, at: Pt, angle: number, stretch: number, px: number, s
   });
 }
 
-function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
+/** A closed outline, `n` short runs round it: a circle of `r`, or the polygon `pts` with each side cut into its share. */
+function outline(o: { x: number; y: number; r: number; pts?: Pt[] }, n: number): Pt[] {
+  if (!o.pts) return Array.from({ length: n + 1 }, (_, i) => ({ x: o.x + Math.cos((i / n) * Math.PI * 2) * o.r, y: o.y + Math.sin((i / n) * Math.PI * 2) * o.r }));
+  const vs = o.pts, per = Math.max(2, Math.round(n / vs.length)), out: Pt[] = [];
+  vs.forEach((a, k) => { const b = vs[(k + 1) % vs.length]; for (let j = 0; j < per; j++) out.push({ x: a.x + ((b.x - a.x) * j) / per, y: a.y + ((b.y - a.y) * j) / per }); });
+  out.push(vs[0]);
+  return out;
+}
+
+/** A closed outline of `pts`, resampled into `n` runs of equal length (first point repeated at the end). */
+function evenly(pts: Pt[], n: number): Pt[] {
+  const closed = [...pts, pts[0]], cum = [0];
+  for (let i = 1; i < closed.length; i++) cum.push(cum[i - 1] + Math.hypot(closed[i].x - closed[i - 1].x, closed[i].y - closed[i - 1].y));
+  const out: Pt[] = [];
+  for (let k = 0, i = 1; k <= n; k++) {
+    const d = (cum[cum.length - 1] * k) / n;
+    while (i < cum.length - 1 && cum[i] < d) i++;
+    const u = (d - cum[i - 1]) / Math.max(1e-9, cum[i] - cum[i - 1]), a = closed[i - 1], b = closed[i];
+    out.push({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
+  }
+  return out;
+}
+
+function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number, pts?: Pt[]) {
   g.save();
   g.beginPath();
-  g.arc(x, y, r, 0, Math.PI * 2);
+  if (pts) { pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.closePath(); }
+  else g.arc(x, y, r, 0, Math.PI * 2);
   g.clip();
   g.strokeStyle = INK.pencil;
   g.globalAlpha = 0.28;
@@ -529,7 +602,8 @@ function pencilHatchRing(g: Ctx, x: number, y: number, r: number, px: number) {
   g.stroke();
   g.restore();
   g.globalAlpha = 0.5;
-  pencilLoop(g, x, y, r, (x * 13 + y) | 0, Math.max(1.4, px), 1, 0.8);
+  if (pts) pencilRing(g, pts, (x * 13 + y) | 0, Math.max(1.4, px), 1, 0.8);
+  else pencilLoop(g, x, y, r, (x * 13 + y) | 0, Math.max(1.4, px), 1, 0.8);
   g.globalAlpha = 1;
 }
 
@@ -550,6 +624,7 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
   g.arc(me.x, me.y, show, a.angle - a.spread, a.angle + a.spread);
   g.closePath();
   g.fill();
+  if (a.path) return drawPath(g, a, show, px);
   pencilLine(g, me, { x: me.x + dx * show, y: me.y + dy * show }, Math.max(2.2, 1.6 * px), 3);
   if (a.sight !== undefined) return drawSight(g, me.x + dx * show, me.y + dy * show, a.sight, px);
   // power, as ticks along the guide: each is a notch you can feel
@@ -559,6 +634,47 @@ function drawAim(g: Ctx, s: GameState, a: Aim, px: number) {
     const cx = me.x + dx * t, cy = me.y + dy * t;
     pencilLine(g, { x: cx - dy * 7, y: cy + dx * 7 }, { x: cx + dy * 7, y: cy - dx * 7 }, Math.max(1.8, 1.3 * px), 40 + i, false);
   }
+}
+
+// The long war's guide: the line the page would draw with a steady hand. The
+// first stretch is pencilled firmly, as in the core game; the rest, round a
+// well, off a cushion, along a groove, follows it lightly, dashed, so you see
+// what the page will do to the shot but still judge your own hand. A prism's
+// other half is dashed from where it splits. Power notches sit on the path.
+function drawPath(g: Ctx, a: Aim, show: number, px: number) {
+  const w = Math.max(2.2, 1.6 * px), faint = Math.max(1.7, 1.25 * px);
+  let run = 0, seed = 3;
+  const notches = a.sight === undefined ? Math.floor(a.power * 5 + 1e-6) : 0;
+  let nextTick = 1;
+  const pts = a.path!;
+  let tip = pts[0];
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i - 1], q = pts[i], l = Math.hypot(q.x - p.x, q.y - p.y);
+    if (l < 1e-6) continue;
+    const firm = run < show;
+    if (firm && run + l > show) {
+      const m = { x: p.x + ((q.x - p.x) * (show - run)) / l, y: p.y + ((q.y - p.y) * (show - run)) / l };
+      pencilLine(g, p, m, w, seed++);
+      tip = m;
+      g.globalAlpha = 0.62;
+      pencilLine(g, m, q, faint, seed++, false);
+      g.globalAlpha = 1;
+    } else if (firm) { pencilLine(g, p, q, w, seed++); tip = q; }
+    else if (seed % 2) { g.globalAlpha = 0.62; pencilLine(g, p, q, faint, seed++, false); g.globalAlpha = 1; } // dashed: every other stretch
+    else seed++;
+    // power, as ticks along the firm part of the guide: each is a notch you can feel
+    while (nextTick <= notches && (show * nextTick) / 5.5 <= run + l && (show * nextTick) / 5.5 >= run) {
+      const t = ((show * nextTick) / 5.5 - run) / l, cx = p.x + (q.x - p.x) * t, cy = p.y + (q.y - p.y) * t;
+      const ux = (q.x - p.x) / l, uy = (q.y - p.y) / l;
+      pencilLine(g, { x: cx - uy * 7, y: cy + ux * 7 }, { x: cx + uy * 7, y: cy - ux * 7 }, Math.max(1.8, 1.3 * px), 40 + nextTick, false);
+      nextTick++;
+    }
+    run += l;
+  }
+  g.globalAlpha = 0.62;
+  for (const b of a.branches ?? []) for (let i = 1; i < b.length; i += 2) pencilLine(g, b[i - 1], b[i], faint, 90 + i, false);
+  g.globalAlpha = 1;
+  if (a.sight !== undefined) drawSight(g, tip.x, tip.y, a.sight, px);
 }
 
 // A soldier's line: a word or two pencilled in his side's colour in a gap on
@@ -700,7 +816,12 @@ function noteSpot(f: Frame, b: Note, fits: Fit[], angK = 1) {
   const near = (p: Pt) => Math.hypot(p.x - b.at.x, p.y - b.at.y) < reach + F.size * 6;
   const L_ = (p: Pt) => toLocal_(p.x, p.y);
   for (const x of s.soldiers) if (near(x)) { const q = L_(x); grid.disc(q.x, q.y, R + 3, 10); }
-  for (const k of s.bases) if (Math.hypot(k.x - b.at.x, k.y - b.at.y) < reach + k.r) { const q = L_(k); grid.ring(q.x, q.y, k.r, 1); }
+  for (const k of s.bases) if (Math.hypot(k.x - b.at.x, k.y - b.at.y) < reach + k.r) {
+    const vs = corners(k);
+    if (!vs) { const q = L_(k); grid.ring(q.x, q.y, k.r, 1); continue; }
+    const q = vs.map(L_); // a triangle's or hexagon's walls, not its circumcircle
+    q.forEach((p, i) => grid.seg(p, q[(i + 1) % q.length], 1));
+  }
   for (const m of s.marks) {
     if (m.t === "cross") { if (near(m)) { const q = L_(m); grid.disc(q.x, q.y, 9, 6); } }
     else if (m.t === "walk") { if (near(m.a) || near(m.b)) grid.seg(L_(m.a), L_(m.b), 0.6); }
@@ -784,6 +905,19 @@ function noteSpot(f: Frame, b: Note, fits: Fit[], angK = 1) {
   return spot;
 }
 
+/** How far from `c`, inside the convex polygon `vs`, its wall is along page angle `a`. */
+function wallRadius(vs: Pt[], c: Pt, a: number) {
+  const dx = Math.cos(a), dy = Math.sin(a);
+  let far = 0;
+  vs.forEach((p, i) => {
+    const q = vs[(i + 1) % vs.length], ex = q.x - p.x, ey = q.y - p.y, den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-9) return;
+    const t = ((p.x - c.x) * ey - (p.y - c.y) * ex) / den, u = ((p.x - c.x) * dy - (p.y - c.y) * dx) / den;
+    if (t > far && u >= -1e-9 && u <= 1 + 1e-9) far = t;
+  });
+  return far;
+}
+
 // A camp speaks: its line arcs along the outside of its ring, on the side
 // facing the top of the screen (or the first side that's on the page), so
 // the speaker is plain from bird's-eye. A chant is written in beats, a word
@@ -794,8 +928,9 @@ function drawBaseNote(g: Ctx, f: Frame, b: Note, box: Box) {
   const heat = f.heat ?? 0;
   const base = Math.max(30, Math.min(70, 25 / f.view.z));
   let size = base * M.size * (b.mood === "shout" ? 1 + SHOUT_GROW * heat : 1);
-  const R = b.r ?? RULES.baseRadius;
   const rot = f.view.rot;
+  // a polygon's note rides its walls: the arc starts at the inscribed circle and is pushed out to clear them along its run
+  const R = b.poly ? Math.min(...b.poly.map((p, i) => segDist(b.at, p, b.poly![(i + 1) % b.poly!.length]))) : b.r ?? RULES.baseRadius;
   const r = rng(b.seed + 3);
   // which side of the ring: up the screen for choice, else whichever is on the page; and if no side
   // keeps the run on the page (a camp by the edge), written smaller, down to what still reads from above
@@ -811,24 +946,33 @@ function drawBaseNote(g: Ctx, f: Frame, b: Note, box: Box) {
     // the run must fit round the ring: written smaller if it wouldn't
     g.save();
     g.font = `${M.weight} ${size}px Caveat, "Patrick Hand", cursive`;
-    half = (g.measureText(b.text).width * M.stretch) / 2 / rr;
+    const tw = (g.measureText(b.text).width * M.stretch) / 2;
+    half = tw / rr;
     g.restore();
     const most = Math.PI * 0.72;
     if (half > most) { size *= most / half; half = most; }
-    let bestCost = Infinity, off = 0;
+    let bestCost = Infinity, off = 0, bestRR = rr;
     // the sides in order of choice: the top, the bottom, left and right, then the diagonals
     [-Math.PI / 2, Math.PI / 2, 0, Math.PI, -Math.PI / 4, (-3 * Math.PI) / 4, Math.PI / 4, (3 * Math.PI) / 4].forEach((m, i) => {
       // the run's ends and middle: how far off the page (or under the HUD) they'd be, plus a preference for the top
       // (a shout's marks fly out past the letters, and a little past the run's ends)
       let miss = 0;
-      const out = rr + size * (M.spiky ? 1.35 : 1), ends = M.spiky ? 0.3 : 0.08;
+      const ends = M.spiky ? 0.3 : 0.08;
+      let rrm = rr;
+      if (b.poly) {
+        let wall = 0;
+        for (let j = 0; j <= 8; j++) wall = Math.max(wall, wallRadius(b.poly, b.at, m - half - ends + ((half + ends) * 2 * j) / 8 - rot));
+        rrm = wall + gap + size * 0.45;
+      }
+      const out = rrm + size * (M.spiky ? 1.35 : 1);
       for (let j = 0; j <= 8; j++) {
         const a = m - half - ends + ((half + ends) * 2 * j) / 8;
         const p = toPage(Math.cos(a) * out, Math.sin(a) * out);
         miss += Math.max(0, B.x0 - p.x, p.x - B.x1) + Math.max(0, B.y0 - p.y, p.y - B.y1);
       }
-      if (miss + i * size * 0.4 < bestCost) { bestCost = miss + i * size * 0.4; mid = m; off = miss; }
+      if (miss + i * size * 0.4 < bestCost) { bestCost = miss + i * size * 0.4; mid = m; off = miss; bestRR = rrm; }
     });
+    if (b.poly) { rr = bestRR; half = tw / rr; }
     if (off <= 1) break; // on the page
   }
   const lw = Math.max(2.2, size * 0.065);
@@ -1069,8 +1213,8 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   if (t.kind === "note") {
     handText(g, t.text ?? "", 0, 0, 46, pencil, { upTo: p * 1.2, weight: 400, rot: -0.02, align: "center" });
   } else if (t.kind === "place") {
-    handText(g, "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
-    handText(g, t.note ?? "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
+    handText(g, t.text ?? "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
+    if (t.note !== "") handText(g, t.note ?? "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
   } else if (t.kind === "arrange") {
     handText(g, "drag your men where you want them", 0, 0, 40, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
     handText(g, "(in camp, or just outside the wall)", 0, 42, 32, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });

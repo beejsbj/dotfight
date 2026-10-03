@@ -116,6 +116,12 @@ describe("pencil notes", () => {
     const home = botchOf({ ...base, kind: "lunge", from: { x: 160, y: 800 }, aim: 0, path: [...line(160, 800, 300, 800, 6), ...line(300, 800, 110, 810, 6).slice(1)], foes: [{ x: 700, y: 800 }] });
     expect(home.why).toContain("home");
     expect(home.grade).toBe(2);
+    // "home" is the base's walls: a lunger that stops inside a prism's circumcircle but outside its flat side isn't home
+    const prism = { x: 100, y: 800, r: 80, shape: "prism" as const, rot: Math.PI / 2 }; // a corner down: the flat side is 40 u up the page
+    const out = { x: 100, y: 800 - 60 }; // inside the circumcircle, outside the wall
+    const ends = (own: BotchIn["own"]) => botchOf({ ...base, kind: "lunge", own, path: [{ x: 100, y: 500 }, ...Array.from({ length: 6 }, (_, i) => ({ x: 100, y: 500 + ((out.y - 500) * (i + 1)) / 6 }))], foes: [{ x: 700, y: 800 }] }).why;
+    expect(ends([{ x: 100, y: 800, r: 80 }])).toContain("home");
+    expect(ends([prism])).not.toContain("home");
     // worse misses never grade lower
     let last = 0;
     for (const x of [500, 420, 330, 250, 180, 130]) { const g = botchOf({ ...base, path: line(100, 800, x, 800) }).grade; expect(g).toBeGreaterThanOrEqual(last); last = g; }

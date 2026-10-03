@@ -4,28 +4,29 @@ import "@fontsource/patrick-hand/400.css";
 import "@fontsource/special-elite/400.css";
 import "./style.css";
 
-import { botArrange, botBase, LEVELS, type Level } from "./bot";
+import { botArrange, botBase, botShape, LEVELS, type Level } from "./bot";
 import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
-  act, canArrange, canSend, garrison, illegal, inLastStand, newGame, other, pathLen, sendMax,
-  type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
+  act, baseAt, canArrange, steadyTrace, canSend, corners, garrison, illegal, inLastStand, inside, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax, wallGap,
+  type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
 } from "./game";
+import { offsetPolygon } from "./geom";
 import { jotOrder, pickSoldier, inBase } from "./hand";
 import { DETENTS, Dial, haptic, haptics, Ratchet } from "./haptics";
 import { inkTime, wallTime, type Snag } from "./inkclock";
 import * as inkLib from "./ink";
 import { INK } from "./ink";
 import { farColour, lampFor } from "./light";
-import { drawPaper, drawYellow, CLARITY, PageLayer, SETTLED, type Ink } from "./page";
+import { drawDot, drawPaper, drawYellow, CLARITY, PageLayer, SETTLED, type Ink } from "./page";
 import { LIFT_MS, SETTLE_MS, leaning, lift, PEN, settle, shiver, type PenPose } from "./pen";
 import { gunPull, tip, type Pose as Held } from "./motion";
 import * as motion from "./motion-input";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, settleSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
-import { CUSTOM, FEEL, RULES, SIZES, type Size } from "./rules";
+import { CORE, CUSTOM, FEEL, LONG, RULES, SHAPES, SIZES, type Shape, type Size } from "./rules";
 import { boldAt, lifeOf } from "./boil";
 import { beforeMarch, comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
@@ -128,7 +129,7 @@ let lastPull: { id: number; angle: number } | null = null;
 // hands; the page holds their new dots back and shows the march as a quick
 // time-lapse before the next go (see holdLapse / runLapse).
 interface Walk { id: number; from: Pt; to: Pt; departing?: boolean; convoy?: number }
-let lapseDue: { walkers: Walk[]; marks: number[]; out: number; home: number; seen?: AnyState } | null = null;
+let lapseDue: { walkers: Walk[]; marks: number[]; out: number; home: number; on?: number; seen?: AnyState } | null = null;
 let lapse: { walkers: Walk[]; t0: number; dur: number } | null = null;
 
 // A send being drawn (pick a camp, drag to another, choose how many), and
@@ -265,13 +266,19 @@ function hud() {
     (el.querySelector(".name") as HTMLElement).textContent = name(p);
     const n = turn.aliveOf(s, p).length;
     const c = el.querySelector(".count") as HTMLElement;
-    c.textContent = s.phase === "setup" ? `${turn.basesLeft(s, p)} camps to draw`
+    c.textContent = s.phase === "setup" ? `${turn.basesLeft(s, p)} ${baseWord()}s to draw`
       : s.phase === "position" ? (c0?.ready[p] ? "arranged" : "arranging")
       : stand ? `last ${n} · two flicks` : `${n} standing`;
     el.style.setProperty("--ink-left", inkLeft(p).toFixed(3));
   }
   document.documentElement.style.setProperty("--ink", hudPen(s.current));
   const chain = !!c0?.chain;
+  if (screen === "game") {
+    // drawing a long war's bases: the cards are the three shapes
+    const shaping = turn.shaped(s) && s.phase === "setup";
+    if (shaping !== ($("#kind").dataset.bar === "shapes") || (shaping && cardPen !== s.current && !carrying)) { if (shaping) shapeBar(); else restoreKindBar(); }
+    if (shaping) $("#kind").classList.toggle("off", away(s.current) || busy);
+  }
   for (const b of document.querySelectorAll<HTMLButtonElement>("#kind button[data-kind]")) {
     const k = b.dataset.kind as Kind;
     const on = k === kind;
@@ -281,7 +288,7 @@ function hud() {
     b.querySelector("b")!.textContent = k === "lunge" && chain ? "lunge on" : turn.verb(s, k);
     b.querySelector("i")!.textContent = CARD[turn.isLegacy(s) ? "legacy" : "core"][k];
   }
-  $("#kind").classList.toggle("off", s.phase !== "play" || away(s.current) || screen !== "game" || busy && !aim || !!sending);
+  if ($("#kind").dataset.bar !== "shapes") $("#kind").classList.toggle("off", s.phase !== "play" || away(s.current) || screen !== "game" || busy && !aim || !!sending);
   $("#bottom").classList.toggle("view", screen === "view" || screen === "replay");
   acts();
   status();
@@ -362,6 +369,11 @@ function syncRing() {
   if (on) { haptic("brink"); learn("cancel"); }
 }
 
+/** What a base is called in the status lines: a camp in the core rules; in the long war "base", or its own shape where one base is meant. */
+function baseWord(b?: { shape?: Shape }, st: AnyState = s) {
+  return turn.shaped(st) ? b?.shape ?? "base" : "camp";
+}
+
 function status(msg?: string) {
   let t = msg ?? "";
   if (!msg) {
@@ -370,12 +382,12 @@ function status(msg?: string) {
     if (screen === "replay") t = "the war, again";
     else if (screen === "game" && roomStatus() !== null) t = roomStatus()!;
     else if (screen === "view") t = viewing ? `page ${viewing.page?.no ?? "?"} · ${viewing.page?.date ?? ""}` : "";
-    else if (s.phase === "setup") t = isBot(s.current) ? `${who} is drawing a camp…` : `${who}: draw a camp`;
-    else if (s.phase === "position") t = isBot(s.current) ? `${who} is arranging…` : dragging ? (dragging.ok ? "let go to put him here" : "too far from his camp") : `${who}: arrange your men, then done`;
+    else if (s.phase === "setup") t = isBot(s.current) ? `${who} is drawing a ${baseWord()}…` : turn.shaped(s) ? `${who}: drag a base up from the cards` : `${who}: draw a camp`;
+    else if (s.phase === "position") t = isBot(s.current) ? `${who} is arranging…` : dragging ? (dragging.ok ? "let go to put him here" : `too far from his ${baseWord(s.bases[s.soldiers[dragging.id]?.home ?? -1])}`) : `${who}: arrange your men, then done`;
     else if (s.phase === "over") t = `${name(s.winner!)} held the page`;
     else if (res || lapse) t = "";
     else if (isBot(s.current)) t = `${who} is lining up…`;
-    else if (sending) t = sending.to !== undefined ? "how many go?" : sending.from !== undefined ? "…to another of your camps" : "drag from one of your camps to another";
+    else if (sending) t = sending.to !== undefined ? "how many go?" : sending.from !== undefined ? `…to another of your ${baseWord()}s` : `drag from one of your ${baseWord()}s to another`;
     else if (aim) t = pull(aim).live ? (taught("cancel") ? `let go to ${turn.verb(s, kind)}` : `let go to ${turn.verb(s, kind)}, or slide back to the start to cancel`) : aim.charged ? "let go to cancel" : "pull back further…";
     else if (c0?.chain) t = `one more for ${who}: lunge on, or stop`;
     else if (unit) t = "";
@@ -441,10 +453,13 @@ function reset() {
   dirty = true;
 }
 
+/** The rules a new game of this size is played by: a long war's, or the core rules. */
+const rulesFor = (size: Size) => (size.name === "long" ? LONG : CORE);
+
 function start(m: Mode, size: Size = pickedSize()) {
   reset();
   restoreKindBar();
-  s = newGame(size, undefined, pageStamp());
+  s = newGame(size, undefined, pageStamp(), rulesFor(size));
   mode = m;
   kind = "snipe";
   screen = "game";
@@ -501,8 +516,9 @@ function next() {
   const level = (mode as { level: Level }).level;
   if (s.phase === "setup") {
     after(650, () => {
-      const spot = botBase(s as GameState, (x, y) => !turn.canPlaceBase(s, x, y));
-      if (spot) drawBase(spot.x, spot.y);
+      const sh = turn.shaped(s) ? botShape(Math.random) : undefined;
+      const spot = botBase(s as GameState, (x, y) => !turn.canPlaceBase(s, x, y, sh));
+      if (spot) drawBase(spot.x, spot.y, 1, sh);
       after(900, () => { busy = false; next(); });
     });
     return;
@@ -605,17 +621,18 @@ function perform(a: Action, then: () => void) {
 // footprints back, to be shown as a time-lapse before the next go.
 function holdLapse(o: Outcome, before: Pt[], first: number) {
   const c0 = core();
-  if (!c0 || (!o.walked.length && !o.arrived.length)) return;
-  const convoys = new Set([...o.walked, ...o.arrived]);
+  const on = o.advanced ?? [];
+  if (!c0 || (!o.walked.length && !o.arrived.length && !on.length)) return;
+  const convoys = new Set([...o.walked, ...o.arrived, ...on]);
   const walkers: Walk[] = [];
-  let out = 0, home = 0;
+  let out = 0, home = 0, onward = 0;
   for (const c of c0.convoys) {
     if (!convoys.has(c.id)) continue;
     for (const id of c.ids) {
       const x = c0.soldiers[id], b = before[id];
       if (!x.alive || (b.x === x.x && b.y === x.y)) continue;
       walkers.push({ id, from: b, to: { x: x.x, y: x.y }, departing: o.walked.includes(c.id), convoy: c.id });
-      if (o.walked.includes(c.id)) out++; else home++;
+      if (o.walked.includes(c.id)) out++; else if (o.arrived.includes(c.id)) home++; else onward++;
     }
   }
   const ids = new Set(walkers.map((w) => w.id));
@@ -626,7 +643,7 @@ function holdLapse(o: Outcome, before: Pt[], first: number) {
   }
   for (const w of walkers) fx.add(`d${w.id}`, T, 1e9, 1);
   for (const i of marks) fx.add(`m${i}`, T, 1e9, 1);
-  lapseDue = { walkers, marks, out, home };
+  lapseDue = { walkers, marks, out, home, on: onward };
 }
 
 // The march itself: footprints drawn on, each man walking his way.
@@ -646,6 +663,7 @@ function runLapse(then: () => void) {
   sfx.scratch(dur / 1000 / speed, 0.12, 900);
   if (screen === "game") {
     if (due.out) cue("walk-out", due.out);
+    if (due.on) cue("walk-on", due.on);
     if (due.home) cue("arrive", due.home);
     // one of the marchers, setting off; or, once they're there, one arriving
     const group = due.walkers.filter((w) => w.departing === !!due.out);
@@ -678,13 +696,13 @@ function sitOn(p: Pt, fy = AIM_FY) {
 }
 
 // The circle goes round, then the soldiers are jotted in, one tap each.
-function drawBase(x: number, y: number, quick = 1) {
-  turn.placeBase(s, x, y);
+function drawBase(x: number, y: number, quick = 1, sh?: Shape) {
+  turn.placeBase(s, x, y, sh);
   const b = s.bases[s.bases.length - 1];
   hud();
   fx.add(`b${b.id}`, T, 0, 380 * quick, "out");
   sfx.circle();
-  const dots = s.soldiers.slice(-turn.perBase(s));
+  const dots = s.soldiers.slice(-turn.perBase(s, sh));
   jotOrder(dots).forEach((i, k) => {
     const delay = (430 + k * 62) * quick;
     fx.add(`d${dots[i].id}`, T, delay, 90 * quick, "out");
@@ -697,6 +715,23 @@ function drawBase(x: number, y: number, quick = 1) {
 function afterBase() {
   busy = true;
   after(1000, () => handOver());
+}
+
+// The long war's aim guide follows the ink a steady hand would draw: round a
+// camp's well, off a cushion, along a groove, and a prism's other half. Traced
+// again only when the aim moves past a hair or the page changes.
+let guideKey = "";
+let guideVal: { path?: Pt[]; branches?: Pt[][] } = {};
+function guide(id: number, k: Kind, angle: number, length: number) {
+  const c0 = core();
+  if (!c0?.rules.long || c0.phase !== "play") return {};
+  const key = `${c0.actions.length}|${id}|${k}|${angle.toFixed(3)}|${Math.round(length)}`;
+  if (key !== guideKey) {
+    const tr = steadyTrace(c0, { soldier: id, kind: k, angle, length, bend: 0, wob: 0 });
+    guideKey = key;
+    guideVal = tr ? { path: tr.pts, ...(tr.branches && { branches: tr.branches }) } : {};
+  }
+  return guideVal;
 }
 
 function handOver() {
@@ -737,9 +772,11 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   const quick = opts.quick ?? 1;
   const len = pathLen(o.path);
   const dur = Math.min(900, Math.max(300, 220 + len * 0.42)) * quick;
-  const n = o.path.length - 1;
   inkTL.clear();
   inkTL.add(`m${first}`, 0, 0, dur, "out2");
+  // a prism's other half runs on from where the line split
+  const splitAt = splitMs(o, dur);
+  o.branches?.forEach((_, k) => inkTL.add(`m${first + 1 + k}`, 0, splitAt, Math.max(120, dur - splitAt), "out2"));
   const over = s.phase === "over";
   const kills: Resolve["kills"] = [];
   const snags: Snag[] = [];
@@ -748,6 +785,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   const live = opts.cam ?? true; // replays are watched, not felt
   let lastKill = -1;
   for (let i = first + 1; i < s.marks.length; i++) if (s.marks[i].t === "cross" && (s.marks[i] as { kind: string }).kind === "kill") lastKill = i;
+  let killed = 0; // the kill crosses come in the order of o.killed
   const killCount = s.marks.slice(first + 1).filter((m) => m.t === "cross" && m.kind === "kill").length;
   for (let i = first + 1; i < s.marks.length; i++) {
     const m = s.marks[i];
@@ -759,7 +797,9 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     }
     if (m.t !== "cross") continue;
     if (m.kind === "kill") {
-      const at = reachFraction(nearestIndex(o.path, m), n) * dur;
+      // a man the prism's other half crosses out falls when that ink reaches him
+      const by = o.events.find((e) => e.kind === "kill" && e.soldier === o.killed[killed++])?.branch ?? 0;
+      const at = inkAt(o, dur, by, m);
       const last = over && i === lastKill;
       kills.push({ i, at, hit: false, last });
       // held until the ink gets there; then drawn on the wall clock during the snag
@@ -785,7 +825,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     }
     moments.push({ at: dur + 20 * quick + volleyHold, fn: () => { if (live) { sfx.snag(true); sfx.cross(0.03, 1.1); cam.shake(7); cue("lunge-death", base); } } });
   }
-  feelFlick(o, f, dur, snags, n, seen, volleyHold);
+  feelFlick(o, f, dur, snags, seen, volleyHold);
   for (const { i, owner } of stands) {
     const at = dur + Math.max(380 * quick, volleyHold ? volleyHold + VOLLEY.crossMs * speed : 0);
     inkTL.add(`m${i}`, 0, at, 500 * quick);
@@ -924,7 +964,7 @@ function speakStreak(n: number, id: number, t0: number, seed: number, only?: Str
     if (k === "streakMe") return me.alive ? id : undefined;
     if (k === "streakFoe") return turn.aliveOf(seen, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
     if (k === "streakCamp") return campOf(id);
-    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && inside(b, x, 1)));
     return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
   };
   for (const k of only ? [only] : streakVoices(n, seeded(seed, n, 71), streak.last)) {
@@ -961,7 +1001,7 @@ function speakBotch(grade: number, id: number, end: Pt, t0: number, seed: number
     if (k === "botchMe") return me.alive ? id : undefined;
     if (k === "botchCamp") return campOf(id);
     if (k === "botchFoe") return turn.aliveOf(seen, foe).filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
-    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && Math.hypot(x.x - b.x, x.y - b.y) <= b.r));
+    const manned = seen.bases.filter((b) => b.owner === foe && seen.soldiers.some((x) => x.alive && x.owner === foe && inside(b, x, 1)));
     return manned.filter(onScreen).sort((a, b) => d(a) - d(b))[0]?.id;
   };
   for (const k of only ? [only] : botchVoices(grade, seeded(seed, grade, 79), botchLast)) {
@@ -1077,8 +1117,8 @@ function skipUnitCam() { if (unit && !unit.rising) unit.skip = T - unit.t0; }
  * clock the boil draws by. Ink time is snagged on each kill; `when` turns a
  * place on the line into the wall ms at which the ink's head gets there.
  */
-function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number, seen: AnyState, volleyHold: number) {
-  const when = (i: number) => wallTime(reachFraction(Math.min(n, Math.round(i)), n) * dur, snags) / speed;
+function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], seen: AnyState, volleyHold: number) {
+  const when = (i: number, branch = 0) => wallTime(lineAt(o, dur, branch, i), snags) / speed;
   const arrive = wallTime(dur, snags) / speed;
   const plan = planFlick(seen, o, f.soldier, f.kind === "snipe" ? "shoot" : "move", when, arrive, arrive + volleyHold / speed);
   const on = (k: string) => (k === "recoil" || k === "flinch" || k === "gasp" ? LIFE.line : k === "land" ? LIFE.chosen : LIFE.crowd);
@@ -1094,7 +1134,7 @@ function feelFlick(o: Outcome, f: Flick, dur: number, snags: Snag[], n: number, 
   if (close && away(shooter)) after(close.at * speed, () => feel("flinch"));
   // a botch: graded from the flick as it ran; a spectacular one takes the page from the target's "phew"
   const bo = st.n === 0 && st.ended < 3 ? botchOf({
-    kind: f.kind, from: o.path[0], aim: f.angle, path: o.path, killed: o.killed.length, lost: o.lost, crashed: o.crashed !== undefined,
+    kind: f.kind, from: o.path[0], aim: f.angle, path: o.path, ...(o.branches && { branches: o.branches }), killed: o.killed.length, lost: o.lost, crashed: o.crashed !== undefined,
     offPage: o.events.some((e) => e.kind === "edge") || (o.lost && o.crashed === undefined),
     foes: turn.aliveOf(seen, other(shooter)), own: seen.bases.filter((b) => b.owner === shooter),
   }) : null;
@@ -1196,6 +1236,26 @@ function noteFor(who: Player, f: Flick, o: Outcome) {
   return (f.kind === "lunge" ? `${name(who)} ${v === "move" ? "moved" : "lunged"}` : `${name(who)} missed`) + stood;
 }
 
+/** Ink ms at which the line a prism split off (or the main line, 0) has run `i` vertices. */
+function lineAt(o: Outcome, dur: number, branch: number, i: number): number {
+  if (!branch || !o.branches?.[branch - 1]) {
+    const n = o.path.length - 1;
+    return reachFraction(Math.min(n, Math.max(0, Math.round(i))), n) * dur;
+  }
+  const pts = o.branches[branch - 1], nb = pts.length - 1, from = splitMs(o, dur);
+  return from + reachFraction(Math.min(nb, Math.max(0, Math.round(i))), nb) * Math.max(120, dur - from);
+}
+/** Ink ms at which that line's head reaches the point `p`. */
+function inkAt(o: Outcome, dur: number, branch: number, p: Pt) {
+  return lineAt(o, dur, branch, nearestIndex(branch && o.branches?.[branch - 1] ? o.branches[branch - 1] : o.path, p));
+}
+/** When the main line's ink head is at the split, so the other half sets out from there. */
+function splitMs(o: Outcome, dur: number): number {
+  const split = o.events.find((e) => e.kind === "split");
+  const n = o.path.length - 1;
+  return split ? Math.min(0.95 * dur, reachFraction(nearestIndex(o.path, split.at), n) * dur) : 0;
+}
+
 function nearestIndex(pts: Pt[], p: Pt) {
   let bi = 0, bd = Infinity;
   pts.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; bi = i; } });
@@ -1289,7 +1349,7 @@ function finish() {
 let botLevel = (+(localStorage.getItem("pft:lvl") ?? 1) as Level);
 
 // Quick battle's size: Quick, Classic, or Custom (bases and soldiers per base).
-let sizeName: Size["name"] = (["quick", "classic", "custom"] as const).find((k) => k === localStorage.getItem("pft:size")) ?? "quick";
+let sizeName: Size["name"] = (["quick", "classic", "custom", "long"] as const).find((k) => k === localStorage.getItem("pft:size")) ?? "quick";
 const custom = (() => {
   const v = (localStorage.getItem("pft:custom") ?? "").split("x").map(Number);
   const ok = (n: number, r: { min: number; max: number }) => Number.isInteger(n) && n >= r.min && n <= r.max;
@@ -1301,7 +1361,7 @@ function sizeRow() {
   const one = (k: Size["name"], label: string, sub: string) => `<button data-size="${k}" class="${sizeName === k ? "on" : ""}"><b>${label}</b><small>${sub}</small></button>`;
   const step = (k: "bases" | "soldiers", label: string) =>
     `<span class="step"><button data-step="${k}" data-d="-1" aria-label="fewer ${label}">−</button><b>${custom[k]}</b><button data-step="${k}" data-d="1" aria-label="more ${label}">+</button><small>${label}</small></span>`;
-  return `<p class="sizes">${one("quick", "quick", `${SIZES.quick.bases} × ${SIZES.quick.soldiers}`)}${one("classic", "classic", `${SIZES.classic.bases} × ${SIZES.classic.soldiers}`)}${one("custom", "custom", `${custom.bases} × ${custom.soldiers}`)}</p>
+  return `<p class="sizes">${one("quick", "quick", `${SIZES.quick.bases} × ${SIZES.quick.soldiers}`)}${one("classic", "classic", `${SIZES.classic.bases} × ${SIZES.classic.soldiers}`)}${one("custom", "custom", `${custom.bases} × ${custom.soldiers}`)}${one("long", "long war", `${SIZES.long.bases} shapes`)}</p>
     ${sizeName === "custom" ? `<p class="custom">${step("bases", "camps")}${step("soldiers", "men each")}</p>` : ""}`;
 }
 
@@ -1347,7 +1407,7 @@ function coverMenu() {
   const menu = $("#cover .menu");
   const mark = $("#cover .tabs .m1 sup");
   mark.textContent = d.length ? String(d.length) : "";
-  const where = (x: AnyState) => x.phase === "setup" ? "still drawing camps" : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
+  const where = (x: AnyState) => x.phase === "setup" ? `still drawing ${baseWord(undefined, x)}s` : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
   const draw = () => {
     const carry = canResume ? (tearing === "local" ? `
       <div class="carry tearing">
@@ -1667,6 +1727,8 @@ function viewPage(r: Filed) {
 function viewBar() {
   $("#bottom").classList.add("view");
   const kindEl = $("#kind");
+  kindEl.dataset.bar = "view";
+  kindEl.classList.remove("shapes");
   kindEl.classList.remove("off");
   kindEl.innerHTML = `<button data-v="replay"><b>replay</b><i>watch it drawn again</i></button><button data-v="keep"><b>keep</b><i>save as an image</i></button>`;
   kindEl.onclick = (e) => {
@@ -1678,8 +1740,135 @@ function viewBar() {
 function restoreKindBar() {
   const kindEl = $("#kind");
   kindEl.onclick = null;
+  kindEl.dataset.bar = "kinds";
+  kindEl.classList.remove("shapes");
   kindEl.innerHTML = `<button data-kind="lunge" role="radio"><b>lunge</b><i></i></button><button data-kind="snipe" role="radio"><b>snipe</b><i></i></button>`;
   bindKind();
+}
+
+// The long war's setup: five shape cards, each the base drawn in ink with
+// its men jotted in. Press one and drag a copy of it up onto the page; let go
+// to draw it there, or back over the cards to put it back. `shape` is the one in hand.
+let shape: Shape = "camp";
+/** What each shape does: the card carries only its name and men, this is the status line while it is pressed. */
+const SHAPE_CARD: Record<Shape, string> = { camp: "12 men · bends lines round it", prism: "6 men · splits your shots", cushion: "8 men · banks glancing lines", square: "6 men · rules your lines straight", pentagon: "8 men · homes your lines on them" };
+const CARD_PX = 30; // the card's drawing
+let cardPen = -1; // whose pen the cards are drawn in
+let carrying: { id: number; off: number; shape: Shape; sx: number; sy: number; moved: boolean; el: HTMLButtonElement } | null = null;
+let ghostWasOk: boolean | undefined;
+
+function shapeBar() {
+  const kindEl = $("#kind");
+  kindEl.dataset.bar = "shapes";
+  kindEl.classList.add("shapes");
+  kindEl.onclick = null;
+  cardPen = s.current;
+  kindEl.innerHTML = SHAPES.map((k) => `<button data-shape="${k}" aria-label="drag a ${k} onto the page"><canvas></canvas><b>${k}</b><i>${LONG.long!.shapes[k].soldiers} men</i></button>`).join("");
+  for (const b of kindEl.querySelectorAll<HTMLButtonElement>("button[data-shape]")) {
+    drawCard(b.querySelector("canvas")!, b.dataset.shape as Shape);
+    b.onpointerdown = (e) => pickCard(e, b);
+    b.onpointermove = (e) => carryCard(e);
+    b.onpointerup = b.onpointercancel = (e) => dropCard(e);
+  }
+}
+
+/** A shape card's drawing: the base in the current player's ink, its full garrison jotted in, a prism or pentagon point up, a square flat. */
+function drawCard(cv: HTMLCanvasElement, k: Shape) {
+  const d = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = cv.height = Math.round(CARD_PX * d);
+  cv.style.width = cv.style.height = `${CARD_PX}px`;
+  const ctx = cv.getContext("2d")!;
+  const L = LONG.long!, owner = s.current as Player;
+  const r = RULES.baseRadius * L.shapes[k].size, k0 = 12.5 / RULES.baseRadius;
+  const b: Base = { id: 0, owner, x: 0, y: 0, r, seed: 4243 + k.length * 31, shape: k, ...(k !== "camp" && { rot: k === "prism" || k === "pentagon" ? -Math.PI / 2 : k === "square" ? Math.PI / 4 : 0 }) };
+  ctx.scale(d, d);
+  ctx.translate(CARD_PX / 2, CARD_PX / 2 + (k === "prism" ? r * k0 * 0.22 : k === "pentagon" ? r * k0 * 0.1 : 0));
+  ctx.scale(k0, k0);
+  const vs = corners(b), w = (2.8 / k0) * 0.5 * theme.ink.width;
+  if (vs) inkLib.inkPolygon(ctx, vs, INK.pens[owner], b.seed, w, 2);
+  else inkLib.inkCircle(ctx, 0, 0, r, INK.pens[owner], b.seed, w, 2);
+  scatterIn(b, L.shapes[k].soldiers, 99).forEach((p, i) => {
+    const man = { id: 900 + i, owner, x: p.x, y: p.y, shape: k, rot: b.rot };
+    drawDot(ctx, man, 1, 1, p, 0, 1.6);
+  });
+}
+
+/** The cards wiggle: what you tapped is something you drag. */
+function nudgeCards(only?: HTMLElement) {
+  if (reduced || slow) return;
+  for (const c of document.querySelectorAll<HTMLElement>("#kind button[data-shape]")) if (!only || c === only) c.animate([{ rotate: "0deg" }, { rotate: "1.5deg" }, { rotate: "-1.5deg" }, { rotate: "0deg" }], { duration: 240 });
+}
+
+/** The drawing lifting off a card toward (x, y) on screen, or settling back onto it. */
+function flyCopy(card: HTMLElement, x: number, y: number, back = false) {
+  if (reduced || slow) return;
+  const src = card.querySelector("canvas")!, at = src.getBoundingClientRect();
+  const fly = document.createElement("canvas");
+  fly.width = src.width; fly.height = src.height;
+  fly.getContext("2d")!.drawImage(src, 0, 0);
+  Object.assign(fly.style, { position: "fixed", left: `${at.left}px`, top: `${at.top}px`, width: `${at.width}px`, height: `${at.height}px`, pointerEvents: "none", zIndex: "30" });
+  document.body.appendChild(fly);
+  const scale = Math.max(1, (RULES.baseRadius * cam.cur.m * 2) / CARD_PX);
+  const there = `translate(${x - at.left - at.width / 2}px, ${y - at.top - at.height / 2}px) scale(${scale})`;
+  const frames = [{ transform: "none", opacity: 1 }, { transform: there, opacity: 0.15 }];
+  fly.animate(back ? frames.reverse() : frames, { duration: back ? 140 : 160, easing: "cubic-bezier(.2,.9,.3,1.1)" }).onfinish = () => fly.remove();
+}
+
+function pickCard(e: PointerEvent, b: HTMLButtonElement) {
+  if (!humanTurn() || s.phase !== "setup" || carrying) return;
+  e.preventDefault();
+  b.setPointerCapture(e.pointerId);
+  sfx.unlock();
+  sfx.pick();
+  haptic("pickup");
+  carrying = { id: e.pointerId, off: e.pointerType === "touch" ? 80 : 0, shape: b.dataset.shape as Shape, sx: e.clientX, sy: e.clientY, moved: false, el: b };
+  shape = carrying.shape;
+  ghostWasOk = undefined;
+  $("#kind").classList.add("carrying");
+  b.classList.add("held");
+  status(`${shape}: ${SHAPE_CARD[shape].split(" · ")[1]}`);
+}
+
+function carryCard(e: PointerEvent) {
+  const c = carrying;
+  if (!c || e.pointerId !== c.id) return;
+  if (!c.moved) {
+    if (Math.hypot(e.clientX - c.sx, e.clientY - c.sy) < TAP) return;
+    c.moved = true;
+    flyCopy(c.el, e.clientX, e.clientY - c.off);
+  }
+  moveGhost(e.clientX, e.clientY - c.off);
+  if (ghost && ghostWasOk === true && !ghost.ok) haptic("notch", 1);
+  ghostWasOk = ghost?.ok;
+}
+
+function dropCard(e: PointerEvent) {
+  const c = carrying;
+  if (!c || e.pointerId !== c.id) return;
+  carrying = null;
+  $("#kind").classList.remove("carrying");
+  c.el.classList.remove("held");
+  // let go well inside the cards, off the page, or somewhere it can't go: it goes back
+  const cards = $("#kind").getBoundingClientRect();
+  const back = e.clientY > cards.top + 24 || !ghost?.ok || e.type !== "pointerup" || !humanTurn();
+  if (!c.moved) { ghost = undefined; nudgeCards(c.el); status(`drag a ${c.shape} onto the page`); dirty = true; return; }
+  if (back) {
+    if (ghost && e.type === "pointerup") flyCopy(c.el, e.clientX, e.clientY - c.off, true);
+    sfx.tap();
+    ghost = undefined;
+    status();
+    dirty = true;
+    return;
+  }
+  learn("place");
+  fx.clear();
+  const at = ghost!;
+  ghost = undefined;
+  drawBase(at.x, at.y, 1, c.shape);
+  haptic("settle");
+  afterBase();
+  status();
+  dirty = true;
 }
 
 // The whole war, drawn again: the page fills itself in, move by move.
@@ -1697,6 +1886,8 @@ function replay(r: Filed) {
   dawn.go(0, 600);
   replayQueue = steps(r);
   hud();
+  $("#kind").dataset.bar = "view";
+  $("#kind").classList.remove("shapes");
   $("#kind").innerHTML = `<button data-v="stop"><b>stop</b><i>jump to the end</i></button>`;
   $("#kind").onclick = () => viewPage(r);
   after(500, replayNext);
@@ -1709,7 +1900,7 @@ function replayNext() {
     after(2200, () => { if (screen === "replay" && viewing) { screen = "view"; hud(); viewBar(); } });
     return;
   }
-  if (st.t === "legacy-base" || st.t === "base") { drawBase(st.x, st.y, 0.45); after(560, replayNext); }
+  if (st.t === "legacy-base" || st.t === "base") { drawBase(st.x, st.y, 0.45, st.t === "base" ? st.shape : undefined); after(560, replayNext); }
   else if (st.t === "legacy-flick") fire({ soldier: st.f.soldierId, kind: st.f.kind === "shoot" ? "snipe" : "lunge", angle: st.f.angle, length: st.f.length, bend: st.f.bend, wob: 0 }, 0.5, 0, { pen: false, cam: false, quick: 0.5 });
   else if (st.t === "flick") { const { t: _t, ...f } = st; void _t; fire(f, 0.5, 0, { pen: false, cam: false, quick: 0.5 }); }
   else {
@@ -1836,7 +2027,7 @@ function roomNext() {
   const then = () => { busy = false; next(); };
   if (a.t === "arrange") return remoteArranges();
   l.drawn();
-  if (a.t === "base") after(400, () => { drawBase(a.x, a.y); after(900, then); });
+  if (a.t === "base") after(400, () => { drawBase(a.x, a.y, 1, a.shape); after(900, then); });
   else if (a.t === "flick") { const { t: _t, ...f } = a; void _t; after(300, () => showFlick(f)); }
   else if (a.t === "send") botSends(a);
   else if (a.t === "stop") { lastNote = `${name(s.current)} stopped`; perform(a, then); }
@@ -1879,7 +2070,7 @@ function roomStatus(): string | null {
   if (l.offline) return l.data.pending.length ? "no signal: your move goes when it can" : "no signal: still trying…";
   if (s.phase === "over" || res || !remote(s.current)) return null;
   const who = name(s.current);
-  if (busy) return s.phase === "setup" ? `${who} is drawing a camp…` : s.phase === "position" ? `${who} is arranging…` : `${who} is lining up…`;
+  if (busy) return s.phase === "setup" ? `${who} is drawing a ${baseWord()}…` : s.phase === "position" ? `${who} is arranging…` : `${who} is lining up…`;
   if (l.seat === 0 && l.names[1] === null) return RESEND;
   if (l.seat === null) return `watching ${name(0)} v ${name(1)}`;
   return lastNote;
@@ -1896,7 +2087,7 @@ function showShare() {
     <p class="link">${esc(l.url)}</p>
     <button class="act" data-a="send">send the link</button>
     <button class="act" data-a="copy">copy it</button>
-    <button class="act red" data-a="back">${s.bases.length === 0 && l.seat === 0 ? "draw your first camp" : "back to the page"}</button>
+    <button class="act red" data-a="back">${s.bases.length === 0 && l.seat === 0 ? `draw your first ${baseWord()}` : "back to the page"}</button>
     <p class="fine">They open it, write their name and take the red pen. You go first; they can come later.</p>`, "share");
   card.onclick = async (e) => {
     const a = (e.target as HTMLElement).closest("button")?.dataset.a;
@@ -1990,7 +2181,7 @@ function newRoomOnCover() {
     b.disabled = true;
     coverNote("tearing out a page…");
     try {
-      const setup = setupOf(newGame(pickedSize(), undefined, pageStamp()));
+      const setup = setupOf(newGame(pickedSize(), undefined, pageStamp(), rulesFor(pickedSize())));
       const theme = currentTheme();
       const engine = engineFor(setup.rules);
       const c = await roomApi.create({ name: who, engine, setup, theme }, entry.signal);
@@ -2168,7 +2359,7 @@ function ownBaseAt(w: Pt) {
   for (const b of s.bases) {
     if (b.owner !== s.current) continue;
     const d = Math.hypot(b.x - w.x, b.y - w.y);
-    if (d <= b.r + slack && d < bd) { bd = d; best = b.id; }
+    if (wallGap(b, w) <= slack && d < bd) { bd = d; best = b.id; }
   }
   return best;
 }
@@ -2239,7 +2430,11 @@ over.addEventListener("pointerdown", (e) => {
   }
   if (ptrs.size > 2) return;
   const w = cam.toWorld(e.clientX, e.clientY);
-  if (humanTurn() && s.phase === "setup") {
+  if (humanTurn() && s.phase === "setup" && turn.shaped(s)) {
+    // a long war's bases come from the cards, not the page
+    nudgeCards();
+    status("drag a base up from the cards");
+  } else if (humanTurn() && s.phase === "setup") {
     // hold to see the camp, drag to adjust, lift to draw it. On touch the
     // circle floats above the finger so you can see where it goes.
     const off = e.pointerType === "touch" ? 80 : 0;
@@ -2288,9 +2483,13 @@ over.addEventListener("pointerdown", (e) => {
 function moveGhost(sx: number, sy: number) {
   const w = cam.toWorld(sx, sy);
   if (!w) return;
-  const why = turn.canPlaceBase(s, w.x, w.y);
-  ghost = { x: w.x, y: w.y, ok: !why, owner: s.current };
-  status(why ? `can't draw here: ${why}` : "lift to draw the camp");
+  const sh = turn.shaped(s) ? shape : undefined;
+  const why = turn.canPlaceBase(s, w.x, w.y, sh);
+  const b = turn.isLegacy(s) ? undefined : baseAt(s, w.x, w.y, sh);
+  // a long war's base shows its men pencilled in, exactly where they'll be jotted
+  const men = b && sh ? scatterIn(b, turn.perBase(s, sh), b.seed).map((p) => ({ ...p, shape: sh, rot: b.rot })) : undefined;
+  ghost = { x: w.x, y: w.y, ok: !why, owner: s.current, r: b?.r ?? RULES.baseRadius, ...(b && corners(b) && { pts: corners(b)! }), ...(men && { men }) };
+  status(why ? `can't draw here: ${why}` : `${sh ? "let go" : "lift"} to draw the ${sh ?? "camp"}`);
   dirty = true;
 }
 
@@ -2427,7 +2626,7 @@ function up(e: PointerEvent) {
     if (e.type === "pointerup" && ghost?.ok && humanTurn()) {
       learn("place");
       fx.clear();
-      drawBase(ghost.x, ghost.y);
+      drawBase(ghost.x, ghost.y, 1, turn.shaped(s) ? shape : undefined);
       haptic("settle"); // our own camp lands under the thumb; the bot's is only seen
       ghost = undefined;
       afterBase();
@@ -2684,7 +2883,7 @@ function frame(now: number) {
     const lead = mine.length - theirs.length;
     if (mine.length) {
       const me = mine[Math.floor(seeded(s.seed, s.turn, Math.floor(wall / 1000)) * mine.length)];
-      const inBase = s.bases.some((b) => b.owner === me.owner && Math.hypot(b.x - me.x, b.y - me.y) < b.r);
+      const inBase = s.bases.some((b) => b.owner === me.owner && inside(b, me, 1));
       const c0 = core();
       let kind = strayKind(seeded(s.seed, s.turn, Math.floor(wall / 1000), 3), { lead, waited, inBase, heat: noteContext(me.owner).heat });
       if (kind === "chant" && c0 && inLastStand(c0, me.owner)) kind = "chantLast";
@@ -2742,7 +2941,7 @@ function currentFrame(): Frame {
     f.heat = noteContext(s.current).heat;
     const bs = bubbleAt(bb, wall, reduced);
     if (bs) {
-      if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k && (bb.important || noteOnScreen(k))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
+      if (bb.anchor === "base") { const k = s.bases[bb.id]; if (k && (bb.important || noteOnScreen(k))) f.bubble = { text: bb.text, mood: bb.mood, anchor: "base", at: k, r: k.r, ...(corners(k) && { poly: corners(k)! }), p: bs.p, e: bs.e, side: bb.side, seed: bb.seed, owner: k.owner }; }
       else {
         let x = s.soldiers[bb.id];
         if (bb.important && bb.kind === "stand" && x && !x.alive) {
@@ -2760,16 +2959,20 @@ function currentFrame(): Frame {
   const human = screen === "game" && !away(s.current) && $("#sheet").hidden;
   // setup: show where camps can't go while you're placing one
   if (ghost) {
-    f.keepOut = s.bases.map((b) => ({ x: b.x, y: b.y, r: b.r + RULES.baseRadius + (b.owner === s.current ? RULES.minBaseGap : RULES.minEnemyBaseGap) }));
+    const mine = turn.isLegacy(s) ? RULES.baseRadius : radiusOf(s, turn.shaped(s) ? shape : undefined);
+    f.keepOut = s.bases.map((b) => ({ x: b.x, y: b.y, r: b.r + mine + (b.owner === s.current ? RULES.minBaseGap : RULES.minEnemyBaseGap) }));
   }
   if (human && s.phase === "setup" && !ghost && !busy && !taught("place")) {
     const ownY = mode.kind === "pnp" && s.current === 1 ? 0.3 : 0.7;
-    const n = turn.perBase(s);
-    f.teach = { kind: "place", at: { x: RULES.pageW / 2 + 20, y: RULES.pageH * ownY }, p: fx.p("teach", T), rot: cam.cur.rot, note: `(${n === 10 ? "ten" : n} men in each)` };
+    const n = turn.perBase(s, shape);
+    // the long war's bases come up from the cards, and don't all hold the same
+    f.teach = turn.shaped(s)
+      ? { kind: "place", at: { x: RULES.pageW / 2 + 20, y: RULES.pageH * ownY }, p: fx.p("teach", T), rot: cam.cur.rot, text: "drag a base up from the cards", note: "" }
+      : { kind: "place", at: { x: RULES.pageW / 2 + 20, y: RULES.pageH * ownY }, p: fx.p("teach", T), rot: cam.cur.rot, note: `(${n === 10 ? "ten" : n} men in each)` };
   }
   const c0 = core();
   if (c0 && human && c0.phase === "position" && !busy) {
-    f.zones = c0.bases.filter((b) => b.owner === c0.current).map((b) => ({ x: b.x, y: b.y, r: b.r + c0.rules.positionReach }));
+    f.zones = c0.bases.filter((b) => b.owner === c0.current).map((b) => ({ x: b.x, y: b.y, r: b.r + c0.rules.positionReach, ...(corners(b) && { pts: offsetPolygon(corners(b)!, c0.rules.positionReach) }) }));
     if (dragging) f.drag = dragging;
     if (!taught("arrange") && !dragging) {
       const ownY = mode.kind === "pnp" && c0.current === 1 ? 0.3 : 0.7;
@@ -2785,12 +2988,17 @@ function currentFrame(): Frame {
     const pending = new Map(lapseDue?.walkers.map((w) => [w.id, w]));
     const out = c0.convoys.flatMap((c) => {
       const dir = Math.atan2(c.road[1].y - c.road[0].y, c.road[1].x - c.road[0].x);
-      return c.ids.filter((id) => {
+      const out = c.ids.filter((id) => {
         const walk = pending.get(id), w = walk?.convoy === c.id ? walk : undefined;
         // Departures still stand at home; arrivals still stand on the road.
         const onRoad = w ? !w.departing : c.state === "road";
         return onRoad && c0.soldiers[id].alive && !marching.has(id);
-      }).map((id) => ({ at: displayedAt(id), dir }));
+      }).map((id) => ({ at: displayedAt(id), dir, ahead: undefined as { to: Pt; left: number } | undefined }));
+      // a long-war convoy sits out on the paper for a few hand-overs: the rest of its road, and how many are left
+      if (out.length && c.state === "road" && c.at !== undefined && c0.rules.long) {
+        out[0].ahead = { to: c.road[1], left: Math.max(1, Math.ceil((pathLen(c.road) - c.at) / c0.rules.long.sendPace)) };
+      }
+      return out;
     });
     if (out.length) f.road = out;
     if (sending?.from !== undefined && arrowTo) {
@@ -2818,7 +3026,7 @@ function currentFrame(): Frame {
   }
   if (human && s.phase === "play" && selected === undefined && !aim && !res && !busy) {
     const mine = s.soldiers.filter((x) => x.alive && x.owner === s.current && turn.canFlick(s, x.id));
-    if (!sending) f.hint = { p: fx.p("hint", T), bases: s.bases.filter((b) => b.owner === s.current && inBase(mine, b).length) };
+    if (!sending) f.hint = { p: fx.p("hint", T), bases: s.bases.filter((b) => b.owner === s.current && inBase(mine, b).length).map((b) => ({ id: b.id, x: b.x, y: b.y, r: b.r, ...(corners(b) && { pts: corners(b)! }) })) };
   }
   const note = waitNote();
   if (note) {
@@ -2841,17 +3049,17 @@ function currentFrame(): Frame {
     if (aim) {
       const pl = pull(aim);
       const ang = aimAngle + wobble(aim, T, turn.handFor(s, selected, kind));
-      f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: aimError(pl.power, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pl.power), kind };
+      f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: aimError(pl.power, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pl.power), kind, ...guide(selected, kind, ang, turn.lengthFor(s, kind, pl.power)) };
       // at full pull it shivers under the finger (the pen only: the aim is the hand's)
       const sh = LIFE.pen && lively() && pl.live ? shiver(T, pl.power) : 0;
       f.pen = tip(leaning(me.x, me.y, ang + sh * 3, pl.live ? penLean(pl.power) + sh : 0.04, owner, ink), ang, penSide);
       // a lunger landing among their men is shot: those camps are hatched while you aim one
-      if (kind === "lunge" && c0) f.danger = c0.bases.filter((b) => b.owner !== c0.current && garrison(c0, b).length).map((b) => ({ x: b.x, y: b.y, r: b.r }));
+      if (kind === "lunge" && c0) f.danger = c0.bases.filter((b) => b.owner !== c0.current && garrison(c0, b).length).map((b) => ({ x: b.x, y: b.y, r: b.r, ...(corners(b) && { pts: corners(b)! }) }));
     } else if (botAim) {
       const k = Math.min(1, (T - botAim.t0) / 700);
       const pw = botAim.power * (1 - Math.pow(1 - k, 2));
       const tremble = Math.sin(T / 1000 * 7.3) * 0.02 * pw;
-      f.aim = { soldierId: selected, angle: botAim.angle + tremble, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind };
+      f.aim = { soldierId: selected, angle: botAim.angle + tremble, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind, ...guide(selected, kind, botAim.angle + tremble, turn.lengthFor(s, kind, pw)) };
       f.pen = leaning(me.x, me.y, botAim.angle + tremble, penLean(pw), owner, ink);
     } else if (motion.gun) {
       // the pen points where the phone does; the sight closes as you hold still
@@ -2862,7 +3070,7 @@ function currentFrame(): Frame {
         const q = cam.toScreen(me.x + Math.cos(ang) * at, me.y + Math.sin(ang) * at);
         if (q && q.x > 50 && q.x < W - 50 && q.y > 150 && q.y < H - 190) break;
       }
-      f.aim = { soldierId: selected, angle: ang, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind, sight: motion.gun.armed, sightAt: at };
+      f.aim = { soldierId: selected, angle: ang, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind, sight: motion.gun.armed, sightAt: at, ...guide(selected, kind, ang, turn.lengthFor(s, kind, pw)) };
       f.pen = leaning(me.x, me.y, ang, 0.2 + 0.15 * motion.gun.armed, owner, ink);
     } else {
       // set down on the dot: drops in, then rocks a few times finding its balance
@@ -3060,9 +3268,14 @@ if (import.meta.env.DEV) {
      * not: `maxTurns` stops it early). Returns the record.
      */
     fileWar: (seed = 7, maxTurns = 400, size: Size["name"] = "quick") => {
-      const st = newGame(sizeFor(size, custom), seed, pageStamp());
+      const sz = sizeFor(size, custom);
+      const st = newGame(sz, seed, pageStamp(), rulesFor(sz));
       let k = seed;
-      while (st.phase === "setup") { const spot = botBase(st, (x, y) => !turn.canPlaceBase(st, x, y), k++)!; act(st, { t: "base", x: spot.x, y: spot.y }); }
+      while (st.phase === "setup") {
+        const sh = st.rules.long ? botShape(rng(k++)) : undefined;
+        const spot = botBase(st, (x, y) => !turn.canPlaceBase(st, x, y, sh), k++)!;
+        act(st, { t: "base", x: spot.x, y: spot.y, ...(sh && { shape: sh }) });
+      }
       while (st.phase === "position") for (const a of botArrange(st, k++)) { if (!illegal(st, a)) act(st, a); if (a.t === "ready") break; }
       while (st.phase === "play" && st.turn < maxTurns) act(st, turn.botMove(st, 1, k++));
       const r = file(st, { kind: "bot", level: 1 });

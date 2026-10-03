@@ -134,6 +134,27 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   transform: rotate(-4deg); opacity: .85;
 }
 #kind.off { opacity: .3; pointer-events: none; }
+/* the long war's setup: five cards, each a base drawn in ink with its men;
+   press one and drag a copy of it onto the page. The drawing sits over the
+   name and the men's count; what the shape does is the status line while it
+   is pressed, so five fit across a 360 px phone */
+#kind.shapes { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+#kind.shapes button {
+  height: 78px; padding: 5px 2px 5px 5px; opacity: .9; touch-action: none; min-width: 0;
+  display: grid; grid-template-columns: 1fr; grid-template-rows: 30px 18px 1fr; justify-items: start; align-items: center;
+  transform: translateY(2px) rotate(-.8deg);
+  transition: transform .09s ease-out, opacity .15s, box-shadow .09s;
+}
+#kind.shapes button:nth-child(2) { transform: translateY(2px) rotate(.9deg); }
+#kind.shapes button:nth-child(3) { transform: translateY(2px) rotate(-.5deg); }
+#kind.shapes button:nth-child(4) { transform: translateY(2px) rotate(.7deg); }
+#kind.shapes button:nth-child(5) { transform: translateY(2px) rotate(-.8deg); }
+#kind.shapes button canvas { width: 30px; height: 30px; transition: opacity .15s; }
+#kind.shapes button b { font-size: 17px; line-height: 1; color: var(--pencil, var(--fine)); padding: 0; max-width: 100%; }
+#kind.shapes button i { align-self: start; font-size: 13px; white-space: normal; line-height: 1.05; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+#kind.shapes.carrying button { opacity: .35; }
+#kind.shapes button.held { opacity: 1; transform: translateY(10px) scale(.97); box-shadow: 0 2px 5px rgba(0,0,0,.4); }
+#kind.shapes button.held canvas { opacity: .22; }
 #kind button.barred { opacity: .25; }
 #kind button.barred b { text-decoration: line-through; text-decoration-thickness: 2px; }
 
