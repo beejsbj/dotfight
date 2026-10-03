@@ -327,10 +327,10 @@ function canSendAny(c0: GameState) {
 // and the aim is dropped, nothing fired. One small fixed DOM element in screen
 // space, so no page or canvas layer is touched. How hard you're pulling shows
 // in the pen itself: its refill fills with the pull (pen.ts, `charge`). The
-// ring is in the side's ink, and once the thumb has pulled away a light arrow
+// ring is in the side's ink, and once the thumb has pulled away a light line
 // runs from it back up to the ring, so where to go to stop is never lost.
 let ringOn = false; // the thumb is inside the ring
-/** The arrow back to the ring: px clear of the ring, px left for the fingertip, and the shortest worth drawing. */
+/** The line back to the ring: px clear of the ring, px left for the fingertip, and the shortest worth drawing. */
 const BACK_GAP = 4, BACK_FINGER = 26, BACK_MIN = 28;
 let markOn = false;
 let thumbX = 0; // where the thumb is across the screen
@@ -347,7 +347,7 @@ function syncRing() {
     ringEl.style.transform = `translate(${thumbX - r}px, ${g.sy - r}px)`;
     ringEl.style.width = ringEl.style.height = `${r * 2}px`;
     (ringEl.firstElementChild as HTMLElement).style.transform = `translate(${g.sx - thumbX}px, 0)`; // the dot stays where the thumb began
-    // the arrow back: from just above the fingertip up to the ring's edge
+    // the line back: from just above the fingertip up to the ring's edge
     const len = byThumb.dist - r - BACK_GAP - BACK_FINGER;
     backEl.style.height = `${Math.max(0, len)}px`;
     backEl.classList.toggle("on", len > BACK_MIN);

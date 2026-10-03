@@ -332,13 +332,15 @@ export function settle(t: number) {
 }
 
 /**
- * At full pull the pen shivers under the finger: a fine fast tremble on top
- * of the hand's slow wobble. Radians, 0 below nine tenths of full. Pure.
+ * At full pull the pen shivers under the finger: a faint tremble on top of
+ * the hand's slow wobble, about 8 and 13 a second, slow enough that 60 fps
+ * shows a tremble rather than a stutter. Radians, 0 below nine tenths of
+ * full. Pure.
  */
 export function shiver(ms: number, power: number) {
   const k = Math.max(0, (power - 0.9) / 0.1);
   if (k <= 0) return 0;
-  return 0.011 * k * (Math.sin(ms * 0.21) * 0.6 + Math.sin(ms * 0.37 + 1.1) * 0.4);
+  return 0.004 * k * (Math.sin(ms * 0.05) * 0.6 + Math.sin(ms * 0.08 + 1.1) * 0.4);
 }
 
 /** Put down and lifted off: up and fading, `t` ms after it was lifted (height, alpha), or null when gone. */
