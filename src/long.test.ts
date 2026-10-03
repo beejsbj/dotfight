@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { act, canArrange, roadBetween, columnAt, capacity, corners, illegal, inside, newGame, preview, scatterIn, trace, wallGap, wallStrength, type Base, type Flick, type GameState, type Player } from "./game";
+import { act, canArrange, roadBetween, columnAt, capacity, corners, illegal, inside, newGame, preview, scatterIn, steadyTrace, trace, wallGap, wallStrength, type Base, type Flick, type GameState, type Player } from "./game";
 import { inBase, pickSoldier } from "./hand";
 import { passesAll } from "./life";
 import { dist, insidePoly, offsetPolygon, pathLen, polyHits, polygon, type Pt } from "./geom";
@@ -56,7 +56,7 @@ describe("long war setup", () => {
   it("a long war base must name its shape; a core one mustn't", () => {
     const s = newGame(SIZES.long, 4, undefined, LONG);
     expect(illegal(s, { t: "base", x: 300, y: 1300 })).toBe("pick a shape");
-    expect(illegal(s, { t: "base", x: 300, y: 1300, shape: "pentagon" as Shape })).toBe("pick a shape");
+    expect(illegal(s, { t: "base", x: 300, y: 1300, shape: "star" as Shape })).toBe("pick a shape");
     expect(illegal(s, { t: "base", x: 300, y: 1300, shape: "prism" })).toBeNull();
     expect(illegal(newGame(SIZES.quick, 4), { t: "base", x: 300, y: 1300, shape: "camp" })).toBe("no shapes in a quick battle");
   });
@@ -603,5 +603,185 @@ describe("a square on the page", () => {
     const out = { x: 500 + apo + 15, y: 1300 };
     expect(pickSoldier(view, out, { soldier: 3, base: 5 })).toBeUndefined();
     expect(pickSoldier(view, out, { soldier: 3, base: 40 })).toBe(me);
+  });
+});
+
+describe("a pentagon homes its lines", () => {
+  const cone = L.pentagon.cone;
+  // our pentagon at (150, 1000), a flat wall facing +x, so a line along +x leaves through its middle at x = 150 + r·cos 36°
+  const rot = Math.PI / 5;
+  const star = (owner: Player = 0) => field([["pentagon", owner, 150, 1000, rot]]);
+  const exitX = (s: GameState) => 150 + s.bases[0].r * Math.cos(Math.PI / 5);
+  /** A man `d` along and `up` across from where a +x line leaves. */
+  const foeAt = (s: GameState, d: number, up: number, owner: Player = 1) => man(s, owner, exitX(s) + d, 1000 + up);
+  const homes = (tr: ReturnType<typeof trace>) => tr.events.filter((e) => e.kind === "home");
+
+  it("a snipe leaving your own pentagon turns on the nearest man ahead within 30° and crosses him out; without it, it misses", () => {
+    const s = star();
+    const me = man(s, 0, 150, 1000, 0);
+    const foe = foeAt(s, 200, 200 * Math.tan(0.4));
+    const tr = trace(s, shot(me, 0, 600));
+    expect(tr.hits).toEqual([foe]);
+    const [ev] = homes(tr);
+    expect(ev).toMatchObject({ base: 0, soldier: foe });
+    expect(ev.at.x).toBeCloseTo(exitX(s), 6);
+    expect(ev.at.y).toBeCloseTo(1000, 6);
+    const bare = field([]);
+    const me2 = man(bare, 0, 150, 1000);
+    man(bare, 1, exitX(s) + 200, 1000 + 200 * Math.tan(0.4));
+    const miss = trace(bare, shot(me2, 0, 600));
+    expect(miss.hits).toEqual([]);
+    expect(homes(miss)).toEqual([]);
+  });
+
+  it("the turn is the exact angle to him, measured from the wall", () => {
+    const s = star();
+    const me = man(s, 0, 150, 1000, 0);
+    foeAt(s, 200, 200 * Math.tan(0.4));
+    const tr = trace(s, shot(me, 0, 600));
+    const at = homes(tr)[0].at, i = tr.pts.findIndex((p) => p.x === at.x && p.y === at.y);
+    const next = tr.pts[i + 1];
+    expect(Math.atan2(next.y - at.y, next.x - at.x)).toBeCloseTo(0.4, 6);
+  });
+
+  it("a man outside the cone, or beyond what's left of the line, isn't homed on", () => {
+    const s = star();
+    const me = man(s, 0, 150, 1000, 0);
+    const wide = foeAt(s, 200, 200 * Math.tan(cone + 0.05));
+    expect(homes(trace(s, shot(me, 0, 600)))).toEqual([]);
+    expect(trace(s, shot(me, 0, 600)).hits).toEqual([]);
+    s.soldiers[wide].alive = false;
+    const far = foeAt(s, 400, 400 * Math.tan(0.2));
+    const reach = exitX(s) - 150 + 300; // the line ends before him
+    expect(homes(trace(s, shot(me, 0, reach)))).toEqual([]);
+    expect(homes(trace(s, shot(me, 0, 600)))).toHaveLength(1);
+    expect(far).toBeGreaterThan(0);
+  });
+
+  it("the nearest of two is chosen, the lower id on a tie", () => {
+    const s = star();
+    const me = man(s, 0, 150, 1000, 0);
+    const near = foeAt(s, 150, -150 * Math.tan(0.2));
+    foeAt(s, 300, 300 * Math.tan(0.1));
+    expect(homes(trace(s, shot(me, 0, 700)))[0].soldier).toBe(near);
+    const t = star();
+    const me2 = man(t, 0, 150, 1000, 0);
+    const lo = foeAt(t, 200, 60), hi = foeAt(t, 200, -60);
+    expect(lo).toBeLessThan(hi);
+    expect(homes(trace(t, shot(me2, 0, 700)))[0].soldier).toBe(lo);
+    const u = star();
+    const me3 = man(u, 0, 150, 1000, 0);
+    const a = foeAt(u, 200, -60);
+    foeAt(u, 200, 60);
+    expect(homes(trace(u, shot(me3, 0, 700)))[0].soldier).toBe(a);
+  });
+
+  it("an enemy's pentagon doesn't home your line", () => {
+    const s = star(1);
+    const me = man(s, 0, 150 - 120, 1000);
+    man(s, 1, exitX(s) + 150, 1000 + 150 * Math.tan(0.3));
+    const tr = trace(s, shot(me, 0, 700));
+    expect(homes(tr)).toEqual([]);
+    expect(tr.hits).toEqual([]);
+  });
+
+  it("a line passing out through your pentagon homes, wherever it was flicked from", () => {
+    const s = star();
+    const me = man(s, 0, 150 - 150, 1010); // behind it, aimed to cross its middle and leave by the flat wall
+    const foe = foeAt(s, 200, 200 * Math.tan(0.3));
+    const tr = trace(s, shot(me, Math.atan2(-10, 150), 700));
+    expect(homes(tr)).toHaveLength(1);
+    expect(homes(tr)[0]).toMatchObject({ base: 0, soldier: foe });
+  });
+
+  it("a lunge homes too", () => {
+    const s = star();
+    const me = man(s, 0, 150, 1000, 0);
+    const foe = foeAt(s, 200, 200 * Math.tan(0.35));
+    const tr = trace(s, shot(me, 0, 600, "lunge"));
+    expect(homes(tr)[0]).toMatchObject({ soldier: foe });
+    expect(tr.hits).toContain(foe);
+  });
+
+  it("a line leaving two of your pentagons homes at each, once each", () => {
+    const s = field([["pentagon", 0, 150, 1000, rot], ["pentagon", 0, 450, 1000, rot]]);
+    const me = man(s, 0, 150, 1000, 0);
+    const foe = man(s, 1, 700, 1000 - 230 * Math.tan(0.3));
+    const tr = trace(s, shot(me, 0, 900));
+    expect(homes(tr).map((e) => [e.base, e.soldier])).toEqual([[0, foe], [1, foe]]);
+  });
+
+  it("a prism's split halves each home at a pentagon they leave", () => {
+    const s = field([["prism", 0, 150, 1000, 0], ["pentagon", 0, 450, 1000, rot]]);
+    const me = man(s, 0, 150, 1000, 0);
+    const up = man(s, 1, 700, 1000 - 250 * Math.tan(0.25));
+    const down = man(s, 1, 700, 1000 + 250 * Math.tan(0.25));
+    const tr = trace(s, shot(me, 0, 900));
+    expect(tr.branches).toHaveLength(1);
+    const ev = homes(tr);
+    expect(ev.filter((e) => e.branch === undefined)).toHaveLength(1);
+    expect(ev.filter((e) => e.branch === 1)).toHaveLength(1);
+    expect(new Set(tr.hits)).toEqual(new Set([up, down]));
+  });
+
+  it("is deterministic: the same flick, the same line", () => {
+    const s = star();
+    const me = man(s, 0, 150, 1000, 0);
+    foeAt(s, 200, 200 * Math.tan(0.4));
+    expect(trace(s, shot(me, 0, 600))).toEqual(trace(s, shot(me, 0, 600)));
+  });
+
+  it("the aim guide shows the turn", () => {
+    const s = star();
+    const me = man(s, 0, 150, 1000, 0);
+    const foe = foeAt(s, 200, 200 * Math.tan(0.4));
+    const guide = steadyTrace(s, shot(me, 0, 600))!;
+    expect(homes(guide)[0]).toMatchObject({ soldier: foe });
+    expect(guide.hits).toEqual([foe]);
+  });
+
+  it("the preview agrees: the shot crosses him out", () => {
+    const s = star();
+    const me = man(s, 0, 150, 1000, 0);
+    const foe = foeAt(s, 200, 200 * Math.tan(0.4));
+    expect(preview(s, shot(me, 0, 600)).killed).toEqual([foe]);
+  });
+});
+
+describe("a pentagon on the page", () => {
+  it("is jotted with 8 men inside its walls", () => {
+    const s = newGame(SIZES.long, 6, undefined, LONG);
+    act(s, { t: "base", x: 500, y: 1300, shape: "pentagon" });
+    const b = s.bases[0], men = s.soldiers.filter((x) => x.home === 0);
+    expect(L.shapes.pentagon.soldiers).toBe(8);
+    expect(men).toHaveLength(8);
+    expect(capacity(s, b)).toBe(8);
+    expect(corners(b)).toHaveLength(5);
+    expect(b.r).toBe(RULES.baseRadius * L.shapes.pentagon.size);
+    expect(b.rot).toBeTypeOf("number");
+    for (const m of men) { expect(m.shape).toBe("pentagon"); expect(wallGap(b, m)).toBeLessThan(-RULES.soldierRadius * 2); }
+    expect(wallStrength(s, b)).toBe(1);
+  });
+
+  // a flat wall faces +x: the apothem is r·cos 36° from the centre
+  const flat = () => field([["pentagon", 0, 500, 1300, Math.PI / 5]]);
+
+  it("positioning measures the reach from its walls, not its corners", () => {
+    const s = flat();
+    s.phase = "position";
+    const b = s.bases[0], apo = b.r * Math.cos(Math.PI / 5), reach = s.rules.positionReach;
+    const me = man(s, 0, 500, 1300, 0);
+    expect(canArrange(s, me, 500 + apo + reach - 1, 1300)).toBeNull();
+    expect(canArrange(s, me, 500 + apo + reach + 2, 1300)).toBe("too far from his base");
+  });
+
+  it("a tap inside its circumcircle but past a flat wall misses; inside the wall hits", () => {
+    const s = flat();
+    const me = man(s, 0, 500, 1300, 0);
+    const apo = s.bases[0].r * Math.cos(Math.PI / 5);
+    expect(inBase([{ x: 500 + apo + 6, y: 1300 }], s.bases[0])).toHaveLength(0);
+    expect(inBase([{ x: 500 + apo - 1, y: 1300 }], s.bases[0])).toHaveLength(1);
+    const view = { current: 0 as Player, soldiers: s.soldiers, bases: s.bases };
+    expect(pickSoldier(view, { x: 500 + apo + 15, y: 1300 }, { soldier: 3, base: 40 })).toBe(me);
   });
 });

@@ -126,8 +126,8 @@ export interface Convoy {
 
 /** Something that happened along a line, in order. */
 export interface TraceEvent {
-  /** The long war adds: `bank` off a cushion, `split` leaving your prism, `ink` crossing an old line, `rule` passing out through your square. */
-  kind: "wall" | "kill" | "edge" | "bank" | "split" | "ink" | "rule";
+  /** The long war adds: `bank` off a cushion, `split` leaving your prism, `ink` crossing an old line, `rule` passing out through your square, `home` turning toward a man passing out through your pentagon (`soldier`). */
+  kind: "wall" | "kill" | "edge" | "bank" | "split" | "ink" | "rule" | "home";
   at: Pt;
   /** Distance along the line. */
   d: number;
@@ -287,9 +287,9 @@ export function scatterIn(b: { x: number; y: number; r: number; shape?: Shape; r
 // --- shapes -----------------------------------------------------------------
 
 const cornerMemo = new WeakMap<object, Pt[]>();
-const SIDES: Record<Exclude<Shape, "camp">, number> = { prism: 3, square: 4, cushion: 6 };
+const SIDES: Record<Exclude<Shape, "camp">, number> = { prism: 3, square: 4, pentagon: 5, cushion: 6 };
 
-/** A triangle's, square's or hexagon's corners, in order; null for a circle (a camp, or any core base). */
+/** A triangle's, square's, pentagon's or hexagon's corners, in order; null for a circle (a camp, or any core base). */
 export type Walled = { x: number; y: number; r: number; shape?: Shape; rot?: number };
 export function corners(b: Walled): Pt[] | null {
   if (!b.shape || b.shape === "camp") return null;
@@ -660,11 +660,11 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
     return { turn: Math.max(-rate, Math.min(rate, delta)), k: riding ? (own ? L.ink.grooveOwn : L.ink.grooveEnemy) : 1 };
   };
 
-  interface Pen { at: Pt; h: number; sign: number; j: number; rem: number; budget: number; d: number; free: Set<number>; banks: number; jolts: number; well: number; skipBase: number; straight: boolean }
+  interface Pen { at: Pt; h: number; sign: number; j: number; rem: number; budget: number; d: number; free: Set<number>; homed: Set<number>; banks: number; jolts: number; well: number; skipBase: number; straight: boolean }
 
   const walk = (pen: Pen, branch: number, canSplit: boolean): Pt[] => {
     let { at: pos, h, sign, j, rem, budget, d } = pen;
-    const { free } = pen;
+    const { free, homed } = pen;
     let { banks, jolts, well, skipBase, straight } = pen; // skipBase: the base just met here, not to be met again at once; straight: ruled by a square
     let skipStroke = -1; // likewise the old stroke
     const pts: Pt[] = [pos];
@@ -822,11 +822,28 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
         anyRuled = true;
         ev({ kind: "rule", at, d, base: b.id });
       }
+      if (b.shape === "pentagon" && b.owner === me.owner && leaving && !homed.has(b.id)) {
+        // passing out through your own pentagon: turn toward the nearest enemy man ahead, within the cone and the line's reach
+        homed.add(b.id);
+        let best: { o: (typeof targets)[number]; dd: number; da: number } | null = null;
+        for (const o of targets) {
+          if (hit.has(o.id)) continue;
+          const dd = dist(at, o);
+          if (dd > budget) continue;
+          const da = wrap(Math.atan2(o.y - at.y, o.x - at.x) - h);
+          if (Math.abs(da) > L.pentagon.cone) continue;
+          if (!best || dd < best.dd - 1e-9 || (Math.abs(dd - best.dd) <= 1e-9 && o.id < best.o.id)) best = { o, dd, da };
+        }
+        if (best) {
+          h += best.da;
+          ev({ kind: "home", at, d, base: b.id, soldier: best.o.id });
+        }
+      }
       if (b.shape === "prism" && b.owner === me.owner && snipe && leaving && canSplit) {
         // leaving your own prism, a snipe splits in two
         canSplit = false;
         ev({ kind: "split", at, d, base: b.id });
-        const half = { at, sign, j, rem, budget, d, free: new Set(free), banks, jolts, well, skipBase: b.id, straight };
+        const half = { at, sign, j, rem, budget, d, free: new Set(free), homed: new Set(homed), banks, jolts, well, skipBase: b.id, straight };
         branches.push(walk({ ...half, h: h - L.prism.spread }, branches.length + 1, false));
         h += L.prism.spread;
       }
@@ -834,7 +851,7 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
     return pts;
   };
 
-  const pts = walk({ at: { x: me.x, y: me.y }, h: h0, sign: 1, j: 0, rem: len[0] ?? 0, budget: pathLen(raw), d: 0, free, banks: 0, jolts: 0, well: 0, skipBase: -1, straight: ruled }, 0, true);
+  const pts = walk({ at: { x: me.x, y: me.y }, h: h0, sign: 1, j: 0, rem: len[0] ?? 0, budget: pathLen(raw), d: 0, free, homed: new Set<number>(), banks: 0, jolts: 0, well: 0, skipBase: -1, straight: ruled }, 0, true);
   return { pts, events, hits, offPage, ...(branches.length && { branches }), ...(anyRuled && { ruled: true }) };
 }
 
