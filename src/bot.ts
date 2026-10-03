@@ -254,6 +254,7 @@ function intents(c: Ctx, rand: () => number): Intent[] {
   if (s.rules.long && foes.length) {
     out.push(...bentIntents(c, rand, pickMine, pickFoe, must));
     out.push(...ruledIntents(c, rand, mine, pickFoe, must));
+    out.push(...starIntents(c, rand, mine, pickFoe, must));
   }
   return out;
 }
@@ -275,6 +276,31 @@ function ruledIntents(c: Ctx, rand: () => number, mine: GameState["soldiers"], p
     const d = dist(me, foe);
     const want = rand() < 0.5 ? d + 40 + rand() * 60 : d + 150 + rand() * Math.max(0, maxReach(R) - d);
     out.push({ kind, soldier: me.id, angle: Math.atan2(foe.y - me.y, foe.x - me.x) + gauss(rand) * 0.015, power: powerFor(R, want) });
+  }
+  return out;
+}
+
+/**
+ * A line passing out through his own pentagon homes on the nearest man ahead
+ * within 30°, so a man standing in one, or behind one with a foe beyond it,
+ * need only point roughly at the enemy: the aim is off by up to the cone and
+ * the star does the rest. The engine's preview says which come off.
+ */
+function starIntents(c: Ctx, rand: () => number, mine: GameState["soldiers"], pickFoe: (r: () => number) => Pt, must: boolean): Intent[] {
+  const s = c.s, R = s.rules;
+  const stars = s.bases.filter((b) => b.shape === "pentagon" && b.owner === c.me);
+  const out: Intent[] = [];
+  if (!stars.length) return out;
+  const cone = R.long!.pentagon.cone;
+  const shooters = mine.filter((x) => stars.some((b) => inside(b, x) || dist(b, x) < b.r * 2.5));
+  if (!shooters.length) return out;
+  for (let i = 0; i < Math.round(c.sk.tries * 0.5); i++) {
+    const me = shooters[Math.floor(rand() * shooters.length)];
+    const kind: Kind = must || rand() < 0.3 ? "lunge" : "snipe";
+    const foe = pickFoe(rand);
+    const d = dist(me, foe);
+    const want = rand() < 0.5 ? d + 40 + rand() * 60 : d + 150 + rand() * Math.max(0, maxReach(R) - d);
+    out.push({ kind, soldier: me.id, angle: Math.atan2(foe.y - me.y, foe.x - me.x) + (rand() * 2 - 1) * cone * 0.8, power: powerFor(R, want) });
   }
   return out;
 }
@@ -510,10 +536,10 @@ function edgeAt(b: Base, a: number) {
 
 // --- setup ------------------------------------------------------------------
 
-/** The bot's shape for its next long-war base: camp 0.38, cushion 0.27, square 0.18, prism 0.17. */
+/** The bot's shape for its next long-war base: camp 0.32, cushion 0.22, square 0.16, prism 0.15, pentagon 0.15. */
 export function botShape(rand: () => number): Shape {
   const u = rand();
-  return u < 0.38 ? "camp" : u < 0.65 ? "cushion" : u < 0.83 ? "square" : "prism";
+  return u < 0.32 ? "camp" : u < 0.54 ? "cushion" : u < 0.7 ? "square" : u < 0.85 ? "prism" : "pentagon";
 }
 
 /** Where the bot draws its next base: its own half, spread out. */

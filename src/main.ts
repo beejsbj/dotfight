@@ -1746,11 +1746,11 @@ function restoreKindBar() {
   bindKind();
 }
 
-// The long war's setup: four shape cards, each the base drawn in ink with
+// The long war's setup: five shape cards, each the base drawn in ink with
 // its men jotted in. Press one and drag a copy of it up onto the page; let go
 // to draw it there, or back over the cards to put it back. `shape` is the one in hand.
 let shape: Shape = "camp";
-const SHAPE_CARD: Record<Shape, string> = { camp: "12 men · bends lines round it", prism: "6 men · splits your shots", cushion: "8 men · banks glancing lines", square: "6 men · rules your lines straight" };
+const SHAPE_CARD: Record<Shape, string> = { camp: "12 men · bends lines round it", prism: "6 men · splits your shots", cushion: "8 men · banks glancing lines", square: "6 men · rules your lines straight", pentagon: "8 men · homes your lines on them" };
 const CARD_PX = 30; // the card's drawing
 let cardPen = -1; // whose pen the cards are drawn in
 let carrying: { id: number; off: number; shape: Shape; sx: number; sy: number; moved: boolean; el: HTMLButtonElement } | null = null;
@@ -1771,7 +1771,7 @@ function shapeBar() {
   }
 }
 
-/** A shape card's drawing: the base in the current player's ink, its full garrison jotted in, a prism point up, a square flat. */
+/** A shape card's drawing: the base in the current player's ink, its full garrison jotted in, a prism or pentagon point up, a square flat. */
 function drawCard(cv: HTMLCanvasElement, k: Shape) {
   const d = Math.min(2, window.devicePixelRatio || 1);
   cv.width = cv.height = Math.round(CARD_PX * d);
@@ -1779,9 +1779,9 @@ function drawCard(cv: HTMLCanvasElement, k: Shape) {
   const ctx = cv.getContext("2d")!;
   const L = LONG.long!, owner = s.current as Player;
   const r = RULES.baseRadius * L.shapes[k].size, k0 = 12.5 / RULES.baseRadius;
-  const b: Base = { id: 0, owner, x: 0, y: 0, r, seed: 4243 + k.length * 31, shape: k, ...(k !== "camp" && { rot: k === "prism" ? -Math.PI / 2 : k === "square" ? Math.PI / 4 : 0 }) };
+  const b: Base = { id: 0, owner, x: 0, y: 0, r, seed: 4243 + k.length * 31, shape: k, ...(k !== "camp" && { rot: k === "prism" || k === "pentagon" ? -Math.PI / 2 : k === "square" ? Math.PI / 4 : 0 }) };
   ctx.scale(d, d);
-  ctx.translate(CARD_PX / 2, CARD_PX / 2 + (k === "prism" ? r * k0 * 0.22 : 0));
+  ctx.translate(CARD_PX / 2, CARD_PX / 2 + (k === "prism" ? r * k0 * 0.22 : k === "pentagon" ? r * k0 * 0.1 : 0));
   ctx.scale(k0, k0);
   const vs = corners(b), w = (2.8 / k0) * 0.5 * theme.ink.width;
   if (vs) inkLib.inkPolygon(ctx, vs, INK.pens[owner], b.seed, w, 2);

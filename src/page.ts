@@ -310,11 +310,11 @@ type Dotted = { id: number; owner: 0 | 1; shape?: Shape; rot?: number };
 
 /**
  * A man's mark by his base's shape: corners, and the circumradius that gives a
- * triangle, square or hexagon the visual weight of a dot of `soldierRadius` (a triangle
+ * triangle, square, pentagon or hexagon the visual weight of a dot of `soldierRadius` (a triangle
  * in a 7-circle is 41 % of its area; at 9 it's 68 %, and its tips carry the
- * rest; a square at 8.3 is 64 %; a hexagon at 7.6 is 98 %). A look, not a rule: the hit radius stays 7.
+ * rest; a square at 8.3 is 64 %; a pentagon at 8.0 is 99 %; a hexagon at 7.6 is 98 %). A look, not a rule: the hit radius stays 7.
  */
-export const MAN: Record<Shape, { n: number; R: number }> = { camp: { n: 0, R: RULES.soldierRadius }, prism: { n: 3, R: 9 }, cushion: { n: 6, R: 7.6 }, square: { n: 4, R: 8.3 } };
+export const MAN: Record<Shape, { n: number; R: number }> = { camp: { n: 0, R: RULES.soldierRadius }, prism: { n: 3, R: 9 }, cushion: { n: 6, R: 7.6 }, square: { n: 4, R: 8.3 }, pentagon: { n: 5, R: 8.0 } };
 /** His mark's circumradius: a plain dot's unless he has a shape. */
 export const manR = (x: { shape?: Shape }): number => (x.shape ? MAN[x.shape].R : RULES.soldierRadius);
 
