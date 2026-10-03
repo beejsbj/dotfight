@@ -382,7 +382,7 @@ function status(msg?: string) {
     if (screen === "replay") t = "the war, again";
     else if (screen === "game" && roomStatus() !== null) t = roomStatus()!;
     else if (screen === "view") t = viewing ? `page ${viewing.page?.no ?? "?"} · ${viewing.page?.date ?? ""}` : "";
-    else if (s.phase === "setup") t = isBot(s.current) ? `${who} is drawing a ${baseWord()}…` : turn.shaped(s) ? `${who}: pick a shape, draw a ${shape}` : `${who}: draw a camp`;
+    else if (s.phase === "setup") t = isBot(s.current) ? `${who} is drawing a ${baseWord()}…` : turn.shaped(s) ? `${who}: drag a base up from the cards` : `${who}: draw a camp`;
     else if (s.phase === "position") t = isBot(s.current) ? `${who} is arranging…` : dragging ? (dragging.ok ? "let go to put him here" : `too far from his ${baseWord(s.bases[s.soldiers[dragging.id]?.home ?? -1])}`) : `${who}: arrange your men, then done`;
     else if (s.phase === "over") t = `${name(s.winner!)} held the page`;
     else if (res || lapse) t = "";
