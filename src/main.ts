@@ -9,7 +9,7 @@ import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
 import {
-  act, baseAt, canArrange, canSend, corners, garrison, illegal, inLastStand, inside, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax, wallGap,
+  act, baseAt, canArrange, steadyTrace, canSend, corners, garrison, illegal, inLastStand, inside, newGame, other, pathLen, radiusOf, rng, scatterIn, sendMax, wallGap,
   type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
 } from "./game";
 import { offsetPolygon } from "./geom";
@@ -715,6 +715,23 @@ function drawBase(x: number, y: number, quick = 1, sh?: Shape) {
 function afterBase() {
   busy = true;
   after(1000, () => handOver());
+}
+
+// The long war's aim guide follows the ink a steady hand would draw: round a
+// camp's well, off a cushion, along a groove, and a prism's other half. Traced
+// again only when the aim moves past a hair or the page changes.
+let guideKey = "";
+let guideVal: { path?: Pt[]; branches?: Pt[][] } = {};
+function guide(id: number, k: Kind, angle: number, length: number) {
+  const c0 = core();
+  if (!c0?.rules.long || c0.phase !== "play") return {};
+  const key = `${c0.actions.length}|${id}|${k}|${angle.toFixed(3)}|${Math.round(length)}`;
+  if (key !== guideKey) {
+    const tr = steadyTrace(c0, { soldier: id, kind: k, angle, length, bend: 0, wob: 0 });
+    guideKey = key;
+    guideVal = tr ? { path: tr.pts, ...(tr.branches && { branches: tr.branches }) } : {};
+  }
+  return guideVal;
 }
 
 function handOver() {
@@ -3031,7 +3048,7 @@ function currentFrame(): Frame {
     if (aim) {
       const pl = pull(aim);
       const ang = aimAngle + wobble(aim, T, turn.handFor(s, selected, kind));
-      f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: aimError(pl.power, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pl.power), kind };
+      f.aim = { soldierId: selected, angle: ang, power: pl.power, spread: aimError(pl.power, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pl.power), kind, ...guide(selected, kind, ang, turn.lengthFor(s, kind, pl.power)) };
       // at full pull it shivers under the finger (the pen only: the aim is the hand's)
       const sh = LIFE.pen && lively() && pl.live ? shiver(T, pl.power) : 0;
       f.pen = tip(leaning(me.x, me.y, ang + sh * 3, pl.live ? penLean(pl.power) + sh : 0.04, owner, ink), ang, penSide);
@@ -3041,7 +3058,7 @@ function currentFrame(): Frame {
       const k = Math.min(1, (T - botAim.t0) / 700);
       const pw = botAim.power * (1 - Math.pow(1 - k, 2));
       const tremble = Math.sin(T / 1000 * 7.3) * 0.02 * pw;
-      f.aim = { soldierId: selected, angle: botAim.angle + tremble, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind };
+      f.aim = { soldierId: selected, angle: botAim.angle + tremble, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind, ...guide(selected, kind, botAim.angle + tremble, turn.lengthFor(s, kind, pw)) };
       f.pen = leaning(me.x, me.y, botAim.angle + tremble, penLean(pw), owner, ink);
     } else if (motion.gun) {
       // the pen points where the phone does; the sight closes as you hold still
@@ -3052,7 +3069,7 @@ function currentFrame(): Frame {
         const q = cam.toScreen(me.x + Math.cos(ang) * at, me.y + Math.sin(ang) * at);
         if (q && q.x > 50 && q.x < W - 50 && q.y > 150 && q.y < H - 190) break;
       }
-      f.aim = { soldierId: selected, angle: ang, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind, sight: motion.gun.armed, sightAt: at };
+      f.aim = { soldierId: selected, angle: ang, power: pw, spread: aimError(pw, turn.handFor(s, selected, kind)) * 2, reach: turn.lengthFor(s, kind, pw), kind, sight: motion.gun.armed, sightAt: at, ...guide(selected, kind, ang, turn.lengthFor(s, kind, pw)) };
       f.pen = leaning(me.x, me.y, ang, 0.2 + 0.15 * motion.gun.armed, owner, ink);
     } else {
       // set down on the dot: drops in, then rocks a few times finding its balance

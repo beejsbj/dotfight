@@ -578,7 +578,14 @@ export interface Trace {
 const SUB = 14; // the longest step the pen takes between bends
 const LOOK = 20, RIDING = 5; // a groove leans the pen in over this run; it's riding once this close
 
-function traceLong(s: GameState, f: Flick): Trace {
+/**
+ * Where a long-war flick would go if the hand were perfectly steady: the
+ * page's own pull (wells, banks, grooves, splits), without the jolts a hand
+ * takes at walls, men and old ink. The aim guide draws this. (Core: null.)
+ */
+export const steadyTrace = (s: GameState, f: Flick): Trace | null => (s.rules.long ? traceLong(s, f, true) : null);
+
+function traceLong(s: GameState, f: Flick, steady = false): Trace {
   const R = s.rules, L = R.long!;
   const me = s.soldiers[f.soldier];
   const snipe = f.kind === "snipe";
@@ -756,11 +763,11 @@ function traceLong(s: GameState, f: Flick): Trace {
         hit.add(ev0.soldier);
         hits.push(ev0.soldier);
         if (snipe) { budget *= 1 - R.snipeKillLoss; ev({ kind: "kill", at, d, soldier: ev0.soldier }); }
-        else { const a = gauss(rand) * R.lungeKillShake; h += a; ev({ kind: "kill", at, d, soldier: ev0.soldier, jolt: a }); }
+        else { const a = steady ? 0 : gauss(rand) * R.lungeKillShake; h += a; ev({ kind: "kill", at, d, soldier: ev0.soldier, jolt: a }); }
         continue;
       }
       if (ev0.kind === "ink") {
-        const a = gauss(rand) * L.ink.jolt;
+        const a = steady ? 0 : gauss(rand) * L.ink.jolt;
         h += a;
         jolts++;
         skipStroke = ev0.run.stroke;
@@ -797,7 +804,7 @@ function traceLong(s: GameState, f: Flick): Trace {
         // garrisoned walls, as in the core rules: as tough as the men inside at this moment
         const cost = wallCost(s, b, f.kind, hit, me.id);
         if (snipe) { budget *= 1 - cost; ev({ kind: "wall", at, d, base: b.id, cost }); }
-        else { const a = gauss(rand) * cost; h += a; ev({ kind: "wall", at, d, base: b.id, cost, jolt: a }); }
+        else { const a = steady ? 0 : gauss(rand) * cost; h += a; ev({ kind: "wall", at, d, base: b.id, cost, jolt: a }); }
       }
       if (b.shape === "prism" && b.owner === me.owner && snipe && leaving && canSplit) {
         // leaving your own prism, a snipe splits in two
