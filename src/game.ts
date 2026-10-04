@@ -190,6 +190,10 @@ export interface Outcome {
   arrived: number[];
   /** The long war: convoys that walked on along their road as the pen changed hands. */
   advanced?: number[];
+  /** The long war, for the rules lab: total radians camps' wells turned this flick's line(s), and units of line run riding a groove (and how many of them on enemy ink). Measurement only. */
+  bent?: number;
+  rode?: number;
+  rodeFoe?: number;
   /** The pen changed hands. */
   handover: boolean;
 }
@@ -590,6 +594,10 @@ export interface Trace {
   branches?: Pt[][];
   /** The long war: the line was ruled by the shooter's own square (flicked from it, or passing out through it). */
   ruled?: boolean;
+  /** The long war, for the rules lab (measurement only): see `Outcome`. */
+  bent?: number;
+  rode?: number;
+  rodeFoe?: number;
 }
 
 // --- the long war's ink -----------------------------------------------------------
@@ -646,6 +654,7 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
   const events: TraceEvent[] = [];
   const branches: Pt[][] = [];
   let offPage = false;
+  let bentSum = 0, rodeSum = 0, rodeFoeSum = 0; // measurement only: what wells and grooves did to this flick, over every half
 
   // a groove's pull: the nearest old line within reach and within the groove angle of parallel turns the pen along it, leaning in
   const pull = (p: Pt, h: number, left: number, step: number) => {
@@ -675,12 +684,12 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
       near = rho;
       angle = phi;
     }
-    if (!best) return { turn: 0, k: 1 };
+    if (!best) return { turn: 0, k: 1, riding: false, own: false };
     // a flick slows as it runs out: speed goes as the root of the line it has left
     const speed = Math.sqrt(Math.max(0, Math.min(1, left / vmax)));
     const rate = L.ink.groovePull * best * (1 - speed) * step;
     const riding = near < RIDING && angle < max * 0.4;
-    return { turn: Math.max(-rate, Math.min(rate, delta)), k: riding ? (own ? L.ink.grooveOwn : L.ink.grooveEnemy) : 1 };
+    return { turn: Math.max(-rate, Math.min(rate, delta)), k: riding ? (own ? L.ink.grooveOwn : L.ink.grooveEnemy) : 1, riding, own };
   };
 
   interface Pen { at: Pt; h: number; sign: number; j: number; rem: number; budget: number; d: number; free: Set<number>; homed: Set<number>; banks: number; jolts: number; well: number; skipBase: number; straight: boolean }
@@ -719,12 +728,14 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
         wellTurn = dh;
       }
       // a groove: nearly parallel to old ink, the pen is drawn along it; riding it, the line runs further or shorter
-      let k = 1;
+      let k = 1, riding = false, ownInk = false;
       if (!straight && (branch || d >= Math.max(L.ink.clear, L.ink.grooveReach * 1.5))) {
         const g = pull(pos, h, budget, seg);
         h += g.turn;
         grooveTurn = g.turn;
         k = g.k;
+        riding = g.riding;
+        ownInk = g.own;
       }
       const nxt = { x: pos.x + Math.cos(h) * seg, y: pos.y + Math.sin(h) * seg };
       const tEnd = Math.min(1, budget / (seg * k));
@@ -767,10 +778,17 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
         }
       }
       if (!ev0) {
-        if (tEnd < 1) { pts.push({ x: pos.x + vx * tEnd, y: pos.y + vy * tEnd }); break; }
+        if (tEnd < 1) {
+          pts.push({ x: pos.x + vx * tEnd, y: pos.y + vy * tEnd });
+          bentSum += tEnd * Math.abs(wellTurn);
+          if (riding) { rodeSum += tEnd * seg; if (!ownInk) rodeFoeSum += tEnd * seg; }
+          break;
+        }
         budget -= seg * k;
         d += seg;
         rem -= seg;
+        bentSum += Math.abs(wellTurn);
+        if (riding) { rodeSum += seg; if (!ownInk) rodeFoeSum += seg; }
         pts.push(nxt);
         pos = nxt;
         skipBase = skipStroke = -1;
@@ -780,6 +798,8 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
       // cut short: the well and the groove only bent it for the part it walked
       h -= (1 - bt) * (wellTurn + grooveTurn);
       well -= (1 - bt) * Math.abs(wellTurn);
+      bentSum += bt * Math.abs(wellTurn);
+      if (riding) { rodeSum += bt * seg; if (!ownInk) rodeFoeSum += bt * seg; }
       budget -= bt * seg * k;
       d += bt * seg;
       rem -= bt * seg;
@@ -875,7 +895,7 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
   };
 
   const pts = walk({ at: { x: me.x, y: me.y }, h: h0, sign: 1, j: 0, rem: len[0] ?? 0, budget: pathLen(raw), d: 0, free, homed: new Set<number>(), banks: 0, jolts: 0, well: 0, skipBase: -1, straight: ruled }, 0, true);
-  return { pts, events, hits, offPage, ...(branches.length && { branches }), ...(anyRuled && { ruled: true }) };
+  return { pts, events, hits, offPage, ...(branches.length && { branches }), ...(anyRuled && { ruled: true }), bent: bentSum, rode: rodeSum, rodeFoe: rodeFoeSum };
 }
 
 const empty = (): Outcome => ({ path: [], killed: [], lost: false, events: [], again: true, earned: false, stood: [], walked: [], arrived: [], handover: false });
@@ -885,7 +905,7 @@ export function preview(s0: GameState, f: Flick): Outcome {
   // the long war: convoys stand where they'd walked to when this line is released
   const s = marchView(s0, f.ms);
   const tr = trace(s, f);
-  const o: Outcome = { ...empty(), path: tr.pts, killed: tr.hits, events: tr.events, ...(tr.branches && { branches: tr.branches }), ...(tr.ruled && { ruled: true }) };
+  const o: Outcome = { ...empty(), path: tr.pts, killed: tr.hits, events: tr.events, ...(tr.branches && { branches: tr.branches }), ...(tr.ruled && { ruled: true }), ...(tr.bent !== undefined && { bent: tr.bent, rode: tr.rode, rodeFoe: tr.rodeFoe }) };
   if (f.kind === "lunge") {
     const end = tr.pts[tr.pts.length - 1];
     if (tr.offPage) o.lost = true;

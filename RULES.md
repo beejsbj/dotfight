@@ -222,4 +222,4 @@ What Dawood confirmed on 2026-09-25: 5 bases of 10 soldiers; no new soldiers, ev
 - Round 2: lunge and snipe, walking sends, rings, positioning, pen physics, billiards ([report](https://github.com/beejsbj/dotfight/blob/rules/lab-2/docs/rules-lab/round-2.md), [PR #4](https://github.com/beejsbj/dotfight/pull/4)).
 - Round 3: the core rules on the game's own engine, 2,000 games each of Quick and Classic ([report](docs/rules-lab/round-3.md)).
 - Round 4: garrisoned walls, four curves against flat walls, and all-inside against spread out ([report](docs/rules-lab/round-4.md)).
-- Round 5: the long war, each mechanic, armies, pace and shape mixes ([report](https://github.com/beejsbj/dotfight/blob/long-war/lab/docs/rules-lab/round-5.md), [PR #35](https://github.com/beejsbj/dotfight/pull/35)).
+- Round 5: the long war on the game's own engine, each mechanic measured, shape dominance, armies and pace ([report](docs/rules-lab/round-5.md)).
