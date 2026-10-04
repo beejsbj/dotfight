@@ -79,7 +79,7 @@ if (!isMainThread) {
   const out = arg("out");
   const threads = +arg("threads", String(Math.max(1, availableParallelism() - 1)))!;
   const jobs: Job[] = [];
-  const chunk = Math.max(5, Math.ceil((last - first + 1) / threads / 3));
+  const chunk = Math.max(2, Math.ceil((last - first + 1) / threads / 3));
   for (const name of sizes) {
     const size = sizeOf(name);
     const label = tag ? `${name} ${tag}` : name;
