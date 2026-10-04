@@ -40,3 +40,14 @@ Every guarded job, in order. Raw chunks are in `raw/`. Times are wall seconds fo
 - 04:43Z `long baseline` seeds 241–300, args `--sizes long`: rc=0, 444s wall. 0 deferrals. Row: | long long baseline | 60 | 41.4 (53) | 53% | 0% | 63% / 37% | 1.03 | 7.4, 14 | 15% | 60% | 4.03 / 5.72 | 52% | 90% (t26.0; 63%) | t11.6 | 43% of 53 |
 - 04:54Z `long baseline` seeds 301–360, args `--sizes long`: rc=0, 438s wall. 0 deferrals. Row: | long long baseline | 60 | 39.2 (58) | 58% | 0% | 64% / 36% | 1.04 | 7.0, 13 | 16% | 61% | 4.04 / 5.74 | 52% | 89% (t25.6; 65%) | t11.3 | 47% of 55 |
 - 04:59Z `long baseline` seeds 361–400, args `--sizes long`: rc=0, 306s wall. 0 deferrals. Row: | long long baseline | 40 | 37.8 (51) | 55% | 0% | 62% / 38% | 1.09 | 6.3, 9 | 15% | 60% | 4.08 / 6.01 | 52% | 87% (t23.8; 63%) | t10.3 | 43% of 35 |
+- 05:00Z `env JSON=1 node --import ./scripts/ts-resolve.mjs scripts/lab-table.ts docs/rules-lab/data/round-6/raw/*.json`: rc=75, 0s wall. Output: `merge.txt` (local verification capture).
+- 05:00Z `env JSON=1 node --import ./scripts/ts-resolve.mjs scripts/lab-table.ts docs/rules-lab/data/round-6/raw/*.json`: rc=75, 0s wall. Output: `merge.txt` (local verification capture).
+
+- Continuation cutoff: completed simulation chunks total 14,678 s; add the 57 s timing run and the discarded 90 s killed attempt = **14,825 s (4h 07m 05s)** guarded simulation time. The killed chunk produced no retained raw file. Seeds 301–400 in this continuation took 744 s. The original ~4-hour limit therefore stops new screens here. Not run: square soldiers 8; pentagon cone 0.26/0.8 and soldiers 6; walkMs 3000/12000; prism8 matchup seeds 61–120.
+- Aggregate attempts returned rc=75 because another guarded browser job held the global lock; no simulation or aggregate ran during those attempts. Waiting for that job to finish before retrying.
+- 05:00Z `env JSON=1 node --import ./scripts/ts-resolve.mjs scripts/lab-table.ts docs/rules-lab/data/round-6/raw/*.json`: rc=0, 1s wall. Output: `merge.txt` (local verification capture).
+- 05:01Z `npm run typecheck`: rc=0, 3s wall. Output: `typecheck.txt` (local verification capture).
+- 05:03Z `npm test -- --maxWorkers=1`: rc=0, 98s wall. Output: `test.txt` (local verification capture).
+- 05:03Z `npm run build`: rc=0, 3s wall. Output: `build.txt` (local verification capture).
+
+- Final recorded guarded time: **14,930 s (4h 08m 50s)** = 14,825 s simulation + 1 s aggregation + 3 s typecheck + 98 s tests + 3 s build. This continuation: **849 s (14m 09s)**, including 744 s simulation. Final output is preserved in [verification.md](verification.md). Two lock deferrals launched no guarded job.

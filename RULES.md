@@ -223,3 +223,4 @@ What Dawood confirmed on 2026-09-25: 5 bases of 10 soldiers; no new soldiers, ev
 - Round 3: the core rules on the game's own engine, 2,000 games each of Quick and Classic ([report](docs/rules-lab/round-3.md)).
 - Round 4: garrisoned walls, four curves against flat walls, and all-inside against spread out ([report](docs/rules-lab/round-4.md)).
 - Round 5: the long war on the game's own engine, each mechanic measured, shape dominance, armies and pace ([report](docs/rules-lab/round-5.md)).
+- Round 6: the ruler, the star, the prism's men and walking convoys; shape dominance and shared-seed screens ([report](docs/rules-lab/round-6.md)).
