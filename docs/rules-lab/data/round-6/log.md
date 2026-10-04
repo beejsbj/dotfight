@@ -51,3 +51,9 @@ Every guarded job, in order. Raw chunks are in `raw/`. Times are wall seconds fo
 - 05:03Z `npm run build`: rc=0, 3s wall. Output: `build.txt` (local verification capture).
 
 - Final recorded guarded time: **14,930 s (4h 08m 50s)** = 14,825 s simulation + 1 s aggregation + 3 s typecheck + 98 s tests + 3 s build. This continuation: **849 s (14m 09s)**, including 744 s simulation. Final output is preserved in [verification.md](verification.md). Two lock deferrals launched no guarded job.
+
+## Round 6b continuation
+
+The owner authorized the remaining screens on 2026-10-04, in the order from `.runbook-round-6b.md`, with about seven hours of guarded time for this continuation. Previous round-6 time remains recorded above. Same engine, harness, helper `/tmp/lab6run.sh`, seeds and chunk sizes; no shipped numbers changed. Each complete experiment is committed as a checkpoint. Baselines use two 60-game chunks; swapped matchups use four 30-seed chunks (60 games each). A fixed sequential queue stops on any guard deferral or job failure and has no retry loop.
+- 05:18Z `baseline square8` seeds 1–60, args `--sizes long --set long.shapes.square.soldiers=8`: rc=0, 497s wall. 0 deferrals. Row: | long baseline square8 | 60 | 42.9 (53) | 50% | 0% | 60% / 40% | 1.02 | 7.3, 10 | 15% | 60% | 3.99 / 5.64 | 52% | 86% (t26.4; 62%) | t12.2 | 50% of 56 |
+- 05:25Z `baseline square8` seeds 61–120, args `--sizes long --set long.shapes.square.soldiers=8`: rc=0, 439s wall. 0 deferrals. Row: | long baseline square8 | 60 | 38.9 (49) | 62% | 0% | 67% / 33% | 1.10 | 7.0, 11 | 15% | 60% | 4.01 / 5.78 | 50% | 90% (t24.6; 63%) | t8.9 | 53% of 57 |
