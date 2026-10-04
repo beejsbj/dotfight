@@ -15,7 +15,7 @@ import {
   canArrange, canSend, capacity, columnAt, corners, dist, flickers, garrison, hand, hitReach, inside, isRing, maxReach, other, powerFor, preview, reachOf, wildOfLength, sendMax, whoGoes, columnSpots, roadBetween,
   type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
 } from "./game";
-import { gauss, polyHits, rng } from "./geom";
+import { gauss, polyHits, rng, segDist } from "./geom";
 import { FEEL, RULES, type Shape } from "./rules";
 
 export interface Skill {
@@ -254,7 +254,25 @@ function intents(c: Ctx, rand: () => number): Intent[] {
   if (s.rules.long && foes.length) {
     out.push(...bentIntents(c, rand, pickMine, pickFoe, must));
     out.push(...ruledIntents(c, rand, mine, pickFoe, must));
-    out.push(...starIntents(c, rand, mine, pickFoe, must));
+    out.push(...starIntents(c, rand, mine, pickFoe, must, foes));
+    if (!must) out.push(...splitIntents(c, rand, mine, foes, pickFoe));
+  }
+  return out;
+}
+
+/** Does a line from `a` to `to` pass through the middle of the base? */
+function passes(b: Base, a: Pt, to: Pt) {
+  const dx = to.x - a.x, dy = to.y - a.y, l2 = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((b.x - a.x) * dx + (b.y - a.y) * dy) / l2));
+  return t > 0 && t < 1 && Math.hypot(a.x + dx * t - b.x, a.y + dy * t - b.y) < b.r * 0.6;
+}
+
+/** My men who can shoot out through one of my bases of this shape: in it, or close behind it (a line from behind has to `passes` through it). */
+function shootersOf(c: Ctx, mine: GameState["soldiers"], shape: Shape) {
+  const out: { me: GameState["soldiers"][number]; base: Base; at: boolean }[] = [];
+  for (const b of c.s.bases) if (b.shape === shape && b.owner === c.me) for (const x of mine) {
+    const at = inside(b, x);
+    if (at || dist(b, x) < b.r * 2.4) out.push({ me: x, base: b, at });
   }
   return out;
 }
@@ -262,17 +280,29 @@ function intents(c: Ctx, rand: () => number): Intent[] {
 /**
  * A man standing in his own square is the sharpshooter: his line goes exactly
  * where he points (no well, no groove, no jolt), so he gets extra looks, aimed
- * straight at the men worth most. The engine's preview says which come off.
+ * straight at the men worth most. So is a man close behind it, on a line that
+ * passes through it (it rules the line from its far wall on); both look first
+ * at the foe a camp's well would otherwise bend his line off. The engine's
+ * preview says which come off.
  */
 function ruledIntents(c: Ctx, rand: () => number, mine: GameState["soldiers"], pickFoe: (r: () => number) => Pt, must: boolean): Intent[] {
   const s = c.s, R = s.rules;
-  const snipers = mine.filter((x) => s.bases.some((b) => b.shape === "square" && b.owner === c.me && inside(b, x)));
+  const snipers = shootersOf(c, mine, "square");
   const out: Intent[] = [];
   if (!snipers.length) return out;
+  const camps = s.bases.filter((b) => b.shape === "camp" && b.owner !== c.me);
+  const wellsOn = (a: Pt, to: Pt) => camps.filter((k) => segDist(k, a, to) > k.r && segDist(k, a, to) < k.r * R.long!.well.reach).length;
   for (let i = 0; i < Math.round(c.sk.tries * 0.5); i++) {
-    const me = snipers[Math.floor(rand() * snipers.length)];
+    const sh = snipers[Math.floor(rand() * snipers.length)], me = sh.me;
     const kind: Kind = must || rand() < 0.3 ? "lunge" : "snipe";
-    const foe = pickFoe(rand);
+    let foe: Pt | null = null, bw = -1;
+    for (let k = 0; k < 3; k++) {
+      const f = pickFoe(rand);
+      if (!sh.at && !passes(sh.base, me, f)) continue;
+      const w = wellsOn(me, f);
+      if (w > bw) { bw = w; foe = f; }
+    }
+    if (!foe) continue;
     const d = dist(me, foe);
     const want = rand() < 0.5 ? d + 40 + rand() * 60 : d + 150 + rand() * Math.max(0, maxReach(R) - d);
     out.push({ kind, soldier: me.id, angle: Math.atan2(foe.y - me.y, foe.x - me.x) + gauss(rand) * 0.015, power: powerFor(R, want) });
@@ -284,23 +314,66 @@ function ruledIntents(c: Ctx, rand: () => number, mine: GameState["soldiers"], p
  * A line passing out through his own pentagon homes on the nearest man ahead
  * within 30°, so a man standing in one, or behind one with a foe beyond it,
  * need only point roughly at the enemy: the aim is off by up to the cone and
- * the star does the rest. The engine's preview says which come off.
+ * the star does the rest. He looks first at the foe with most company on his
+ * line (a group), since the line runs on through them. The engine's preview
+ * says which come off.
  */
-function starIntents(c: Ctx, rand: () => number, mine: GameState["soldiers"], pickFoe: (r: () => number) => Pt, must: boolean): Intent[] {
+function starIntents(c: Ctx, rand: () => number, mine: GameState["soldiers"], pickFoe: (r: () => number) => Pt, must: boolean, foes: GameState["soldiers"]): Intent[] {
   const s = c.s, R = s.rules;
-  const stars = s.bases.filter((b) => b.shape === "pentagon" && b.owner === c.me);
+  const shooters = shootersOf(c, mine, "pentagon");
   const out: Intent[] = [];
-  if (!stars.length) return out;
-  const cone = R.long!.pentagon.cone;
-  const shooters = mine.filter((x) => stars.some((b) => inside(b, x) || dist(b, x) < b.r * 2.5));
   if (!shooters.length) return out;
+  const cone = R.long!.pentagon.cone;
   for (let i = 0; i < Math.round(c.sk.tries * 0.5); i++) {
-    const me = shooters[Math.floor(rand() * shooters.length)];
+    const sh = shooters[Math.floor(rand() * shooters.length)], me = sh.me;
     const kind: Kind = must || rand() < 0.3 ? "lunge" : "snipe";
-    const foe = pickFoe(rand);
+    let foe: Pt | null = null, bn = -1;
+    for (let k = 0; k < 3; k++) {
+      const f = pickFoe(rand);
+      if (!sh.at && !passes(sh.base, me, f)) continue;
+      const a = Math.atan2(f.y - me.y, f.x - me.x), d = dist(me, f);
+      const company = foes.filter((o) => dist(me, o) >= d - 20 && Math.abs(Math.atan2(Math.sin(Math.atan2(o.y - me.y, o.x - me.x) - a), Math.cos(Math.atan2(o.y - me.y, o.x - me.x) - a))) < 0.12).length;
+      if (company > bn) { bn = company; foe = f; }
+    }
+    if (!foe) continue;
     const d = dist(me, foe);
     const want = rand() < 0.5 ? d + 40 + rand() * 60 : d + 150 + rand() * Math.max(0, maxReach(R) - d);
     out.push({ kind, soldier: me.id, angle: Math.atan2(foe.y - me.y, foe.x - me.x) + (rand() * 2 - 1) * cone * 0.8, power: powerFor(R, want) });
+  }
+  return out;
+}
+
+/**
+ * A snipe leaving his own prism splits in two, the halves turning off by the
+ * spread. So a man standing in one (or close behind one, on a line through it)
+ * gets extra snipes: aimed between two foes about two spreads apart, as the
+ * prism sees them, so a half reaches each, or off a foe by one spread, so one
+ * half does. The engine's preview says which come off.
+ */
+function splitIntents(c: Ctx, rand: () => number, mine: GameState["soldiers"], foes: GameState["soldiers"], pickFoe: (r: () => number) => Pt): Intent[] {
+  const R = c.s.rules, spread = R.long!.prism.spread;
+  const out: Intent[] = [];
+  const shooters = shootersOf(c, mine, "prism");
+  if (!shooters.length) return out;
+  const bearing = (from: Pt, to: Pt) => Math.atan2(to.y - from.y, to.x - from.x);
+  for (let i = 0; i < Math.round(c.sk.tries * 0.5); i++) {
+    const sh = shooters[Math.floor(rand() * shooters.length)];
+    const f = pickFoe(rand);
+    if (!sh.at && !passes(sh.base, sh.me, f)) continue;
+    // a second man about two spreads off the first, as seen from the prism
+    let g: Pt | null = null, gap = Infinity;
+    for (let k = 0; k < 6; k++) {
+      const o = foes[Math.floor(rand() * foes.length)];
+      const da = Math.abs(Math.atan2(Math.sin(bearing(sh.base, o) - bearing(sh.base, f)), Math.cos(bearing(sh.base, o) - bearing(sh.base, f))));
+      const e = Math.abs(da - 2 * spread);
+      if (o !== f && da > 0.1 && e < gap) { gap = e; g = o; }
+    }
+    const between = g && gap < 0.12 && rand() < 0.6;
+    const to: Pt = between ? { x: (f.x + g!.x) / 2, y: (f.y + g!.y) / 2 } : f;
+    const off = between ? gauss(rand) * 0.01 : (rand() < 0.5 ? -1 : 1) * spread + gauss(rand) * 0.01;
+    const d = dist(sh.me, to);
+    const want = rand() < 0.5 ? d + 40 + rand() * 60 : d + 150 + rand() * Math.max(0, maxReach(R) - d);
+    out.push({ kind: "snipe", soldier: sh.me.id, angle: bearing(sh.me, to) + off, power: powerFor(R, want) });
   }
   return out;
 }
@@ -361,8 +434,24 @@ function sends(c: Ctx): Send[] {
   return out;
 }
 
+/** The long war: how far along its road a convoy stands in each of the enemy's turns (it walks `pace` at every hand-over, and arrives when the next hop would reach the far wall). */
+function exposures(road: number, pace: number): number[] {
+  let at = Math.min(road, pace);
+  const out = [at];
+  for (;;) {
+    if (at + pace >= road) break; // arrives as the pen comes back to me
+    at += pace;
+    if (at + pace >= road) break; // arrives as it leaves me
+    at += pace;
+    out.push(at);
+  }
+  return out;
+}
+
 // A send's worth: where everyone stands while the convoy is on the road for
 // the enemy's turn, and once it has arrived, against the same measure before.
+// (Long war: on the road for every one of the enemy's turns it takes, at the
+// stop each finds it at, not only the first hop.)
 function scoreSend(c: Ctx, a: Send, base: { mine: Dot[]; theirs: Dot[] }, before: number): number {
   const s = c.s;
   const from = s.bases[a.from], to = s.bases[a.to];
@@ -371,8 +460,7 @@ function scoreSend(c: Ctx, a: Send, base: { mine: Dot[]; theirs: Dot[] }, before
   const mine = base.mine.filter((d) => !ids.has(d.id));
   const road = roadBetween(from, to);
   const long = s.rules.long;
-  const spots = long ? columnAt(road, long.sendPace, go.length) : columnSpots(road, go.length);
-  const walkers: Dot[] = go.map((x, k) => ({ ...spots[k], id: x.id, w: 1.3, walk: true }));
+  const stops = long ? exposures(dist(road[0], road[1]), long.sendPace).map((at) => columnAt(road, at, go.length)) : [columnSpots(road, go.length)];
   const there: Dot[] = go.map((x, k) => {
     const ang = k * 2.4;
     const r = to.r * (to.shape ? 0.35 : 0.5);
@@ -380,20 +468,35 @@ function scoreSend(c: Ctx, a: Send, base: { mine: Dot[]; theirs: Dot[] }, before
   });
   // with garrisoned walls, both bases' walls change: the one left thinner, the one manned up
   const reweigh = (ds: Dot[]) => { const men = manning(s, c.me, ds.filter((d) => !d.walk)); for (const d of ds) if (!d.walk) d.w = worth(s, { ...d, owner: c.me }, men); return ds; };
-  const onRoad = outlook(c, reweigh([...mine.map((d) => ({ ...d })), ...walkers]), base.theirs, false);
+  const onRoad = stops.reduce((sum, spots) => {
+    const walkers: Dot[] = go.map((x, k) => ({ ...spots[k], id: x.id, w: 1.3, walk: true }));
+    return sum + outlook(c, reweigh([...mine.map((d) => ({ ...d })), ...walkers]), base.theirs, false);
+  }, 0) / stops.length;
   const later = outlook(c, reweigh([...mine.map((d) => ({ ...d })), ...there]), base.theirs, false);
   // a ring manned again is a wall between them and a lunge; a base left empty is not
   const refill = isRing(s, to) ? 0.4 * a.n : 0;
   const left = garrison(s, from).filter((x) => !ids.has(x.id)).length;
   const emptied = left === 0 ? -0.6 : 0;
   // a long road is out for more of the enemy's turns
-  const out = long ? Math.min(0.8, 0.3 * Math.ceil(dist(road[0], road[1]) / long.sendPace)) : 0.5;
+  const out = long ? Math.min(0.8, 0.25 + 0.2 * stops.length) : 0.5;
   return out * onRoad + (1 - out) * later + refill + emptied - before;
 }
 
+/**
+ * The long war's lines bend, bank and split, so a good one is rarer and the
+ * search for it has to be wider: more candidates imagined, more of the best
+ * re-tried with a shaky hand, and more samples of each. Its strength follows
+ * the search closely (scripts/bot-bench.ts h2h: the old bot on half its search
+ * loses 3 wars in 4 to itself), and a move costs about 1.7 times what the old
+ * bot's did, so the page asks for it on a worker (`botclient.ts`).
+ */
+const LONG_SEARCH = 1.5;
+const widened = (k: Skill): Skill => ({ ...k, tries: Math.round(k.tries * LONG_SEARCH), keep: Math.round(k.keep * LONG_SEARCH), samples: Math.round(k.samples * LONG_SEARCH) });
+
 /** What Dawood-bot does now. Always a legal action. */
 export function botAction(s: GameState, level: Level | Skill = 1, seed = Date.now()): Action {
-  const sk = typeof level === "number" ? SKILLS[level] : level;
+  const skill = typeof level === "number" ? SKILLS[level] : level;
+  const sk = s.rules.long ? widened(skill) : skill;
   const rand = rng(seed);
   const me = s.current;
   const c: Ctx = { s, me, sk, reach: hitReach() };

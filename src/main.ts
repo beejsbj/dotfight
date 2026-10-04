@@ -5,6 +5,7 @@ import "@fontsource/special-elite/400.css";
 import "./style.css";
 
 import { botArrange, botBase, botShape, LEVELS, type Level } from "./bot";
+import { botMoveLater } from "./botclient";
 import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
 import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
@@ -527,14 +528,21 @@ function next() {
     return;
   }
   if (s.phase === "position" && c0) return botArranges(c0);
-  after(500, () => {
-    const a = turn.botMove(s, level, (Math.random() * 2 ** 32) >>> 0);
+  const botGoes = (a: Action) => {
     if (a.t === "send") return botSends(a);
     if (a.t === "stop") { lastNote = `${name(s.current)} stopped`; return perform(a, () => { busy = false; next(); }); }
     if (a.t !== "flick") return;
     const { t: _t, ...f } = a;
     void _t;
     showFlick(f, true);
+  };
+  after(500, () => {
+    const seed = (Math.random() * 2 ** 32) >>> 0;
+    const c1 = core();
+    if (!c1?.rules.long) return botGoes(turn.botMove(s, level, seed));
+    // a long-war move is a few hundred previews: think on a worker, and carry on when it answers
+    const g0 = gen, n0 = c1.actions.length;
+    void botMoveLater(c1, level, seed).then((a) => after(0, () => { if (g0 === gen && c1 === s && n0 === c1.actions.length) botGoes(a); }));
   });
 }
 
