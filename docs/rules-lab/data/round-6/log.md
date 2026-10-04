@@ -97,3 +97,7 @@ The owner authorized the remaining screens on 2026-10-04, in the order from `.ru
 - 09:29Z `python3 docs/rules-lab/data/round-6/paired-analysis.py`: rc=0, 2s wall. Round 6b paired; output retained in final verification capture.
 - 09:30Z `python3 /tmp/lab6b-tables.py /tmp/lab6b-analysis.json`: rc=0, 0s wall. Round 6b format-tables; output retained in final verification capture.
 - 09:30Z `npm run typecheck`: rc=0, 2s wall. Round 6b typecheck; output retained in final verification capture.
+- 09:32Z `npm test -- --maxWorkers=1`: rc=0, 81s wall. Round 6b test; output retained in final verification capture.
+- 09:36Z `npm run build`: rc=0, 3s wall. Round 6b build; output retained in final verification capture.
+
+- Round 6b complete: 38 new raw chunks, 2,280 games; 15,545 s guarded simulation plus 89 s guarded aggregation/analysis/checks = **15,634 s (4h 20m 34s)**. Earlier round-6 total 14,930 s; combined recorded guarded time **30,564 s (8h 29m 24s)**. 73 raw chunks (35 prior + 38 new), 21 complete labels, 4,360 retained games. All requested screens completed, no continuation deferrals or failed guarded jobs. Final checks: 34 test files / 487 tests passed; 79.16 s test duration; build 782 ms. Final process inventory showed no guarded helper or simulation processes remaining.

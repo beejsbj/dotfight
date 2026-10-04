@@ -1,21 +1,25 @@
-# Round 6 final verification
+# Round 6b final verification
 
-_2026-10-04. Sequential guarded jobs on `long-war/lab6`; one Vitest worker. The passing suite includes `src/record.test.ts` and its Core step-by-step replay pin. No shipped rule numbers changed._
+_2026-10-04. Sequential guarded jobs on `long-war/lab6`; one Vitest worker. The passing suite includes the Core step-by-step replay pin in `src/record.test.ts`. No shipped rule numbers or game implementation changed._
 
 ## typecheck
 
-Command: `/home/admin/.local/bin/t3-test-run npm run typecheck`. Exit status: **0**.
+Command: `/home/admin/.local/bin/t3-test-run npm run typecheck`. Exit status: **0**. Recorded wall time: **2 s**.
 
 ```text
+Guarded test: three CPUs, 2 GiB RAM, no swap, 20-minute timeout; temp=/mnt/server-ssd/t3-test-tmp/run.fZXKz8fo
+
 > dotfight@0.1.0 typecheck
 > tsc --noEmit
 ```
 
 ## test
 
-Command: `/home/admin/.local/bin/t3-test-run npm test -- --maxWorkers=1`. Exit status: **0**.
+Command: `/home/admin/.local/bin/t3-test-run npm test -- --maxWorkers=1`. Exit status: **0**. Recorded wall time: **81 s**.
 
 ```text
+Guarded test: three CPUs, 2 GiB RAM, no swap, 20-minute timeout; temp=/mnt/server-ssd/t3-test-tmp/run.WDgqbWrk
+
 > dotfight@0.1.0 test
 > vitest run --maxWorkers=1
 
@@ -25,18 +29,20 @@ Command: `/home/admin/.local/bin/t3-test-run npm test -- --maxWorkers=1`. Exit s
 
  Test Files  34 passed (34)
       Tests  487 passed (487)
-   Start at  01:01:28
-   Duration  96.46s (tests 96%, transform 2%, import 2%)
+   Start at  05:31:17
+   Duration  79.16s (tests 95%, transform 2%, import 2%)
 
-    Isolate  34 workers spawned · ~228ms startup each (spawn + environment, per file)
-             at least ~7.54s faster with isolate: false — reuses workers across files instead of one per file
+    Isolate  34 workers spawned · ~182ms startup each (spawn + environment, per file)
+             at least ~6.02s faster with isolate: false — reuses workers across files instead of one per file
 ```
 
 ## build
 
-Command: `/home/admin/.local/bin/t3-test-run npm run build`. Exit status: **0**.
+Command: `/home/admin/.local/bin/t3-test-run npm run build`. Exit status: **0**. Recorded wall time: **3 s**.
 
 ```text
+Guarded test: three CPUs, 2 GiB RAM, no swap, 20-minute timeout; temp=/mnt/server-ssd/t3-test-tmp/run.CFqBh9Rs
+
 > dotfight@0.1.0 build
 > tsc --noEmit && vite build
 
@@ -81,5 +87,17 @@ dist/assets/main-B5JPimAZ.js                                    41.21 kB │ gzi
 dist/assets/textures-CYl0cGof.js                                64.84 kB │ gzip: 24.79 kB
 dist/assets/main-CWIfUb8c.js                                   228.06 kB │ gzip: 88.61 kB
 
-✓ built in 896ms
+✓ built in 782ms
 ```
+
+## Data verification and time
+
+- Guarded `scripts/lab-table.ts`: **21 labels, 4,360 games**, configurations consistent and no duplicate seed/seat identities. Both artifacts regenerated from all 73 raw chunks.
+- Guarded `paired-analysis.py`: all expected labels present, all 12 treatment comparisons have 120 shared seeds; kit win differences exclude the shipped prism stall's whole seed (119 complete decided pairs), with the half-win sensitivity retained.
+- Independent inventory read: shipped baseline seeds 1–400; all other labels seeds 1–120; every matchup contains 120 swapped games and 120 ordinary games.
+- Every requested continuation screen completed. No guard deferrals or failed simulation/check jobs occurred in round 6b.
+- Round 6b guarded simulation **15,545 s (4h 19m 05s)**, other guarded jobs **89 s**, total **15,634 s (4h 20m 34s)**. Prior total **14,930 s (4h 08m 50s)**; combined **30,564 s (8h 29m 24s)**. Times are sums of recorded integer wall seconds.
+
+## Final document audit
+
+A separate Sol worker reviewed the report, PR body, stored summaries, paired denominators, raw inventory, run log and check captures without launching guarded jobs. It found one bookkeeping defect: the raw-chunk count was understated by one. Corrected everywhere to **73 chunks (35 prior + 38 new)**. Its remaining numerical, coverage, uncertainty and placeholder checks passed. Final process inventory found no guarded helper or simulation processes remaining.
