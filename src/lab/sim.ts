@@ -1,4 +1,4 @@
-// The rules lab (rounds 3 to 5): bot-vs-bot games on the core and long-war rules as the
+// The rules lab (rounds 3 to 6): bot-vs-bot games on the core and long-war rules as the
 // game plays them (src/game.ts), headless, and what they tell us. Pure and
 // seeded: the same size, rules, stances and seed always play the same game.
 
@@ -54,6 +54,16 @@ export interface GameStats {
   banks: number;
   splits: number;
   jolts: number;
+  /** Round 6. Passes out through the mover's own square (`rule` events) and pentagon (`home` events), summed over every flick. */
+  rules: number;
+  homes: number;
+  /** Flicks whose line was ruled (a `rule` event, or flicked from inside the square), and the soldiers those lines crossed out; flicks with a `home` event, and theirs. */
+  ruledFlicks: number;
+  ruledKills: number;
+  homeFlicks: number;
+  homeKills: number;
+  /** Soldiers sent down a road (the walkers). */
+  walkersSent: number;
   /** Total radians that camps' wells turned lines, flicks a well turned more than 0.05 rad, and units of line run riding a groove (and the part on enemy ink). */
   wellBent: number;
   bentFlicks: number;
@@ -103,7 +113,7 @@ export function playGame(size: Size, seed: number, opts: Opts = {}): { st: GameS
     label: opts.label ?? size.name, seed, winner: -1, turns: 0, flicks: 0, snipes: 0, lunges: 0, sends: 0, stops: 0, perFlick: [], doubles: 0,
     lungeChains: [], crashes: 0, offPage: 0, roadKills: 0, longestTurn: 0, stands: [], arranged: 0, outside: 0, midLeaderLost: null, army: alive(s, 0).length,
     expIn: 0, expOut: 0, killsIn: 0, killsOut: 0, bases: s.bases.length, emptiedAt: s.bases.map(() => null), insideAtStart: [0, 0],
-    banks: 0, splits: 0, jolts: 0, wellBent: 0, bentFlicks: 0, rode: 0, rodeFoe: 0, convoyTurns: 0, walkerTurns: 0, armies: [alive(s, 0).length, alive(s, 1).length],
+    banks: 0, splits: 0, jolts: 0, rules: 0, homes: 0, ruledFlicks: 0, ruledKills: 0, homeFlicks: 0, homeKills: 0, walkersSent: 0, wellBent: 0, bentFlicks: 0, rode: 0, rodeFoe: 0, convoyTurns: 0, walkerTurns: 0, armies: [alive(s, 0).length, alive(s, 1).length],
     ...(s.rules.long && { long: true as const }), ...(opts.kitNames && { kits: opts.kitNames }), ...(opts.swap && { swap: true as const }),
   };
   st.army = (st.armies[0] + st.armies[1]) / 2;
@@ -142,7 +152,16 @@ export function playGame(size: Size, seed: number, opts: Opts = {}): { st: GameS
       st.flicks++;
       turnFlicks++;
       st.perFlick.push(o.killed.length);
-      for (const e of o.events) if (e.kind === "bank") st.banks++; else if (e.kind === "split") st.splits++; else if (e.kind === "ink") st.jolts++;
+      let ruled = !!o.ruled, homed = false;
+      for (const e of o.events) {
+        if (e.kind === "bank") st.banks++;
+        else if (e.kind === "split") st.splits++;
+        else if (e.kind === "ink") st.jolts++;
+        else if (e.kind === "rule") { st.rules++; ruled = true; }
+        else if (e.kind === "home") { st.homes++; homed = true; }
+      }
+      if (ruled) { st.ruledFlicks++; st.ruledKills += o.killed.length; }
+      if (homed) { st.homeFlicks++; st.homeKills += o.killed.length; }
       st.wellBent += o.bent ?? 0;
       if ((o.bent ?? 0) > 0.05) st.bentFlicks++;
       st.rode += o.rode ?? 0;
@@ -160,7 +179,7 @@ export function playGame(size: Size, seed: number, opts: Opts = {}): { st: GameS
         if (!o.earned) { st.lungeChains.push(lungeRun); lungeRun = 0; }
       }
       for (const p of o.stood) st.stands.push(p);
-    } else if (a.t === "send") st.sends++;
+    } else if (a.t === "send") { st.sends++; st.walkersSent += a.n; }
     else if (a.t === "stop") { st.stops++; if (lungeRun) { st.lungeChains.push(lungeRun); lungeRun = 0; } }
     if (s.turn !== turn || s.phase !== "play") {
       counts.push([alive(s, 0).length, alive(s, 1).length]);
@@ -243,6 +262,16 @@ export function summarise(recs: GameStats[]) {
     banks: mean(recs.map((r) => r.banks)),
     splits: mean(recs.map((r) => r.splits)),
     jolts: mean(recs.map((r) => r.jolts)),
+    /** Round 6, per game: rule and home events, and flicks ruled / homed (with the kills a flick of each kind made). */
+    rules: mean(recs.map((r) => r.rules ?? 0)),
+    homes: mean(recs.map((r) => r.homes ?? 0)),
+    ruledFlicks: mean(recs.map((r) => r.ruledFlicks ?? 0)),
+    ruledKillsPerFlick: recs.reduce((a, r) => a + (r.ruledKills ?? 0), 0) / Math.max(1, recs.reduce((a, r) => a + (r.ruledFlicks ?? 0), 0)),
+    homeFlicks: mean(recs.map((r) => r.homeFlicks ?? 0)),
+    homeKillsPerFlick: recs.reduce((a, r) => a + (r.homeKills ?? 0), 0) / Math.max(1, recs.reduce((a, r) => a + (r.homeFlicks ?? 0), 0)),
+    walkersSent: mean(recs.map((r) => r.walkersSent ?? 0)),
+    /** Share of the soldiers sent down a road that were crossed out on it. */
+    walkersLostShare: recs.reduce((a, r) => a + r.roadKills, 0) / Math.max(1, recs.reduce((a, r) => a + (r.walkersSent ?? 0), 0)),
     bentFlicks: mean(recs.map((r) => r.bentFlicks)),
     bentShare: recs.reduce((a, r) => a + r.bentFlicks, 0) / Math.max(1, flicks),
     wellBent: mean(recs.map((r) => r.wellBent)),
@@ -298,12 +327,26 @@ export function round5Table(sums: Summary[]): string {
   const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
   const f1 = (x: number) => x.toFixed(1);
   const rows = [
-    "| variant | games | turns mean (p90) | 1st wins ± se | stalled | lunge / snipe | kills/flick | sends (road kills) | banks | splits | jolts | well-bent flicks (share of flicks) | groove ridden (on enemy ink) | army |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| variant | games | turns mean (p90) | 1st wins ± se | stalled | lunge / snipe | kills/flick | sends (road kills) | banks | splits | jolts | rules | homes | well-bent flicks (share of flicks) | groove ridden (on enemy ink) | army |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
   ];
   for (const s of sums) {
     const n = Math.round(s.games * (1 - s.stalled));
-    rows.push(`| ${s.label} | ${s.games} | ${f1(s.turns.mean)} (${s.turns.p90}) | ${pct(s.firstWins)} ± ${se(s.firstWins, n).toFixed(1)} | ${pct(s.stalled)} | ${pct(s.lungeShare)} / ${pct(s.snipeShare)} | ${s.killsPerFlick.toFixed(2)} | ${f1(s.sendsPerGame)} (${f1(s.roadKills)}) | ${f1(s.banks)} | ${f1(s.splits)} | ${f1(s.jolts)} | ${f1(s.bentFlicks)} (${pct(s.bentShare)}) | ${f1(s.rode)} (${f1(s.rodeFoe)}) | ${f1(s.armyMean)} |`);
+    rows.push(`| ${s.label} | ${s.games} | ${f1(s.turns.mean)} (${s.turns.p90}) | ${pct(s.firstWins)} ± ${se(s.firstWins, n).toFixed(1)} | ${pct(s.stalled)} | ${pct(s.lungeShare)} / ${pct(s.snipeShare)} | ${s.killsPerFlick.toFixed(2)} | ${f1(s.sendsPerGame)} (${f1(s.roadKills)}) | ${f1(s.banks)} | ${f1(s.splits)} | ${f1(s.jolts)} | ${f1(s.rules)} | ${f1(s.homes)} | ${f1(s.bentFlicks)} (${pct(s.bentShare)}) | ${f1(s.rode)} (${f1(s.rodeFoe)}) | ${f1(s.armyMean)} |`);
+  }
+  return rows.join("\n");
+}
+
+/** Round 6's table: what the square and the pentagon do, and what the walking convoys lose. */
+export function round6Table(sums: Summary[]): string {
+  const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
+  const f1 = (x: number) => x.toFixed(1);
+  const rows = [
+    "| variant | games | turns mean (p90) | rule events | flicks ruled (kills each) | home events | flicks homed (kills each) | walkers sent | road kills | share of walkers lost |",
+    "|---|---|---|---|---|---|---|---|---|---|",
+  ];
+  for (const s of sums) {
+    rows.push(`| ${s.label} | ${s.games} | ${f1(s.turns.mean)} (${s.turns.p90}) | ${f1(s.rules)} | ${f1(s.ruledFlicks)} (${s.ruledKillsPerFlick.toFixed(2)}) | ${f1(s.homes)} | ${f1(s.homeFlicks)} (${s.homeKillsPerFlick.toFixed(2)}) | ${f1(s.walkersSent)} | ${f1(s.roadKills)} | ${pct(s.walkersLostShare)} |`);
   }
   return rows.join("\n");
 }
@@ -366,9 +409,9 @@ export function sizeOf(name: string): Size {
   return { name: "custom", bases: +m[1], soldiers: +m[2] };
 }
 
-const SHAPE_OF: Record<string, Shape> = { c: "camp", p: "prism", h: "cushion" };
+const SHAPE_OF: Record<string, Shape> = { c: "camp", p: "prism", h: "cushion", s: "square", t: "pentagon" };
 
-/** `--kits A:B`: each side's shapes in draw order (c camp, p prism, h cushion), or `mix` for the bot's own picks. */
+/** `--kits A:B`: each side's shapes in draw order (c camp, p prism, h cushion, s square, t pentagon), or `mix` for the bot's own picks. */
 export function parseKits(spec: string | undefined): [Shape[] | null, Shape[] | null] | undefined {
   if (spec === undefined) return undefined;
   const sides = spec.split(":");
@@ -376,7 +419,7 @@ export function parseKits(spec: string | undefined): [Shape[] | null, Shape[] | 
   const [a, b] = sides.map((side): Shape[] | null => {
     if (side === "mix") return null;
     if (!side) throw new Error(`empty kit in ${spec}`);
-    return [...side].map((ch) => SHAPE_OF[ch] ?? (() => { throw new Error(`unknown shape ${ch} in ${spec} (c, p, h or mix)`); })());
+    return [...side].map((ch) => SHAPE_OF[ch] ?? (() => { throw new Error(`unknown shape ${ch} in ${spec} (c, p, h, s, t or mix)`); })());
   });
   return [a, b];
 }

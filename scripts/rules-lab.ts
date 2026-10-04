@@ -1,4 +1,4 @@
-// Rules lab (rounds 3 to 5): bot-vs-bot games on the core or long-war rules across
+// Rules lab (rounds 3 to 6): bot-vs-bot games on the core or long-war rules across
 // worker threads, and the table. No browser. On bjslab, run it inside
 // t3-test-run with --threads 3, in chunks that finish well inside its
 // 20-minute cap (--from/--to), writing --raw files that scripts/lab-table.ts
@@ -14,7 +14,7 @@
 //   npm run lab -- --rules long --sizes long --from 1 --to 120 --max-turns 250 --threads 3
 //   ... --set long.well.pull=0.002,long.cushion.maxBanks=0,long.prism.ownFree=false --label weak
 //   ... --sizes long4,long6                (N bases a side)
-//   ... --kits ccccc:hhhhh --swap          (each side's shapes in draw order: c camp, p prism, h cushion, or mix; --swap plays every seed twice, seats swapped)
+//   ... --kits ccccc:hhhhh --swap          (each side's shapes in draw order: c camp, p prism, h cushion, s square, t pentagon, or mix; --swap plays every seed twice, seats swapped)
 //
 // Seeds are 1..games for every size and variant, so they're compared on the same seeds.
 
@@ -22,7 +22,7 @@ import { availableParallelism } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
-import { botAgent, kitTable, parseKits, parseSet, playGame, round4Table, round5Table, sizeOf, summarise, type GameStats, type Summary } from "../src/lab/sim";
+import { botAgent, kitTable, parseKits, parseSet, playGame, round4Table, round5Table, round6Table, sizeOf, summarise, type GameStats, type Summary } from "../src/lab/sim";
 import { SKILLS, STANCES } from "../src/bot";
 import { type CoreRules, type Garrison, type Shape, type Size } from "../src/rules";
 
@@ -119,6 +119,7 @@ if (!isMainThread) {
   console.log("\n" + round4Table(sums));
   if (base === "long") {
     console.log("\n" + round5Table(sums));
+    console.log("\n" + round6Table(sums));
     if (kits) console.log("\n" + kitTable(sums));
   }
   console.log(`\nrules: ${JSON.stringify(rules)}; stances ${stances.join(" v ")}`);

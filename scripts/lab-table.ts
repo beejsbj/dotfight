@@ -6,7 +6,7 @@
 
 import { readFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
-import { kitTable, round4Table, round5Table, summarise, type GameStats } from "../src/lab/sim";
+import { kitTable, round4Table, round5Table, round6Table, summarise, type GameStats } from "../src/lab/sim";
 
 const byLabel = new Map<string, GameStats[]>();
 const configurations = new Map<string, unknown>();
@@ -39,6 +39,7 @@ console.log("|---|---|---|---|---|---|");
 for (const s of sums) console.log(`| ${s.label} | ${s.chain.share.map(pct).join("/")} | ${s.longestTurn.p90} | ${s.sendsPerGame.toFixed(1)} (${s.roadKills.toFixed(1)}) | ${pct(s.comeback)} | ${pct(s.standGames)} |`);
 if ([...byLabel.values()].some((r) => r.some((g) => g.long))) {
   console.log("\nRound 5, the long war:\n\n" + round5Table(sums));
+  console.log("\nRound 6, the ruler, the star and the walking convoys:\n\n" + round6Table(sums));
   if (sums.some((s) => Object.keys(s.kits).length)) console.log("\nShape kits:\n\n" + kitTable(sums));
 }
 if (process.env.JSON) console.log(JSON.stringify(sums));
