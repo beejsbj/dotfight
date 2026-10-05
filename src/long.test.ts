@@ -901,6 +901,23 @@ describe("the page's pencil notes: a star where a shape acted on a line", () => 
     expect((stars(s)[0] as { h: number }).h).toBeCloseTo(0, 9);
   });
 
+  it("files a ruler edge for each prism half leaving a different square", () => {
+    const sp = L.prism.spread, y = 1300 - RULES.baseRadius * L.shapes.prism.size / 2;
+    const s = field([["prism", 0, 500, 1300, Math.PI / 2],
+      ["square", 0, 500 + Math.sin(sp) * 250, y - Math.cos(sp) * 250, Math.PI / 4],
+      ["square", 0, 500 - Math.sin(sp) * 500, y - Math.cos(sp) * 500, Math.PI / 4],
+      ["camp", 1, 100, 200]]);
+    const me = man(s, 0, 500, 1300, 0);
+    man(s, 1, 100, 200, 3);
+    const f = shot(me, -Math.PI / 2, 800);
+    const rules = preview(s, f).events.filter(e => e.kind === "rule");
+    expect(rules.map(e => e.branch ?? 0).sort()).toEqual([0, 1]);
+    flick(s, f);
+    const marks = stars(s).filter(m => m.kind === "rule");
+    expect(marks).toHaveLength(2);
+    for (const e of rules) expect(marks).toContainEqual(expect.objectContaining({ x: e.at.x, y: e.at.y }));
+  });
+
   it("a line flicked from inside your square (no rule event) gets its ruler's edge at the wall it left by, once", () => {
     const s = field([["square", 0, 150, 1000, Math.PI / 4]]);
     const me = man(s, 0, 150, 1000, 0);

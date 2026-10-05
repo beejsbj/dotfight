@@ -990,15 +990,18 @@ function flick(s: GameState, f: Flick, seed: number): Outcome {
   // the long war: a pencil star where a shape acted on the line, so a finished page tells it (a core page gains nothing).
   // A line flicked from inside your square has no `rule` event: its ruler's edge goes at the wall it left by, once
   if (s.rules.long) {
-    let ruled = false;
+    let startingRule = false;
     o.events.forEach((e, k) => {
       let kind = STARRED.has(e.kind) ? (e.kind as StarKind) : undefined;
       if (!kind && o.ruled && e.kind === "wall" && e.free && !e.branch) {
         const b = s.bases[e.base!];
-        if (b.shape === "square" && b.owner === who) kind = "rule";
+        if (b.shape === "square" && b.owner === who) {
+          if (startingRule) return;
+          startingRule = true;
+          kind = "rule";
+        }
       }
       if (!kind) return;
-      if (kind === "rule") { if (ruled) return; ruled = true; }
       const pts = e.branch && o.branches ? o.branches[e.branch - 1] : o.path;
       s.marks.push({ t: "star", kind, owner: who, x: e.at.x, y: e.at.y, h: headingFrom(pts, e.at), seed: seed + 700 + k, turn: s.turn });
     });
