@@ -804,7 +804,6 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
       d += bt * seg;
       rem -= bt * seg;
       if (bt > 0) pts.push(at);
-      const was = pos;
       pos = at;
       skipBase = skipStroke = -1;
       if (ev0.kind === "edge") {
@@ -831,9 +830,11 @@ function traceLong(s: GameState, f: Flick, steady = false): Trace {
       // a wall: which way through?
       const b = ev0.base;
       skipBase = b.id;
-      const e = Math.min(0.5, 0.5 / seg);
-      const before = { x: was.x + vx * Math.max(0, bt - e), y: was.y + vy * Math.max(0, bt - e) };
-      const after = { x: was.x + vx * Math.min(1, bt + e), y: was.y + vy * Math.min(1, bt + e) };
+      // Probe both sides of the wall even when it ends this step. A probe
+      // clamped to the endpoint is still on the wall and loses an exit.
+      const e = 0.5 / seg;
+      const before = { x: at.x - vx * e, y: at.y - vy * e };
+      const after = { x: at.x + vx * e, y: at.y + vy * e };
       const inBefore = inside(b, before, 1), inAfter = inside(b, after, 1);
       const entering = !inBefore && inAfter, leaving = inBefore && !inAfter;
       if (!entering && !leaving) continue; // grazed a corner

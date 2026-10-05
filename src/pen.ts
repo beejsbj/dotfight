@@ -24,6 +24,8 @@ export interface PenPose {
   alpha: number;
   /** How much ink is left in the refill, 0..1. */
   ink: number;
+  /** While a flick is pulled back: its power, 0..1, shown as the refill filling from the tip in place of `ink`. */
+  charge?: number;
 }
 
 /** A pen leaning `lean` radians off vertical, its top toward page direction `toward`. */
@@ -94,7 +96,7 @@ export function drawPen(g: CanvasRenderingContext2D, p: PenPose, v: View) {
   };
   const R = PEN.R;
   if (theme.ink.tool === "pencil") {
-    drawPencil(g, P, quad, nx, ny, mark, ink);
+    drawPencil(g, P, quad, nx, ny, mark, ink, p.charge);
     g.restore();
     return;
   }
@@ -112,15 +114,20 @@ export function drawPen(g: CanvasRenderingContext2D, p: PenPose, v: View) {
   quad(cone, capA, R, R);
   g.fillStyle = grad;
   g.fill();
-  // the refill inside, with its ink showing how much war is left in it
-  const tubeEnd = P(0.085 + 0.6 * Math.max(0.04, p.ink));
+  // the refill inside, with its ink showing how much war is left in it; while a
+  // flick is pulled back it shows the power instead, filling up from the tip
+  const charging = p.charge !== undefined;
+  const fill = charging ? Math.max(0, Math.min(1, p.charge!)) : Math.max(0.04, p.ink);
+  const tubeEnd = P(0.085 + 0.6 * fill);
   const tubeTop = P(0.69);
   g.strokeStyle = "rgba(235,235,230,0.8)";
-  g.lineWidth = R * 0.34 * mid.k;
+  g.lineWidth = R * (charging ? 0.5 : 0.34) * mid.k;
   g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeTop.x, tubeTop.y); g.stroke();
-  g.strokeStyle = mark;
-  g.lineWidth = R * 0.26 * mid.k;
-  g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeEnd.x, tubeEnd.y); g.stroke();
+  if (fill > 0 && !charging) {
+    g.strokeStyle = mark;
+    g.lineWidth = R * 0.26 * mid.k;
+    g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeEnd.x, tubeEnd.y); g.stroke();
+  }
   // facet edges
   g.strokeStyle = "rgba(255,255,255,0.7)";
   g.lineWidth = Math.max(0.6, 0.12 * R * mid.k);
@@ -150,6 +157,28 @@ export function drawPen(g: CanvasRenderingContext2D, p: PenPose, v: View) {
       const q = P(0.1 + i * 0.025);
       g.beginPath(); g.moveTo(q.x + nx * R * 1.06 * q.k, q.y + ny * R * 1.06 * q.k); g.lineTo(q.x - nx * R * 1.06 * q.k, q.y - ny * R * 1.06 * q.k); g.stroke();
     }
+  }
+
+  // the charge, drawn over the grip: you see the ink through a gel pen's rubber
+  if (charging && fill > 0) {
+    if (fill >= 1) {
+      // full: the ink brims and glows through the plastic
+      g.strokeStyle = mark;
+      g.globalAlpha = p.alpha * 0.45;
+      g.lineWidth = R * 1.5 * mid.k;
+      g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeEnd.x, tubeEnd.y); g.stroke();
+      g.globalAlpha = p.alpha;
+    }
+    g.strokeStyle = mark;
+    g.lineWidth = R * 0.42 * mid.k;
+    g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(tubeEnd.x, tubeEnd.y); g.stroke();
+    // a glint down the ink, so it reads as liquid in a tube
+    g.strokeStyle = "rgba(255,255,255,0.45)";
+    g.lineWidth = Math.max(0.6, R * 0.08 * mid.k);
+    g.beginPath();
+    g.moveTo(cone.x - nx * R * 0.1 * cone.k, cone.y - ny * R * 0.1 * cone.k);
+    g.lineTo(tubeEnd.x - nx * R * 0.1 * tubeEnd.k, tubeEnd.y - ny * R * 0.1 * tubeEnd.k);
+    g.stroke();
   }
 
   // the cap, posted on the back: opaque coloured plastic with a clip
@@ -217,7 +246,7 @@ type Proj = { x: number; y: number; k: number };
 // lead at its point, and a brass ferrule holding a pink eraser at the top.
 function drawPencil(
   g: CanvasRenderingContext2D, P: (t: number) => Proj,
-  quad: (a: Proj, b: Proj, ra: number, rb: number) => void, nx: number, ny: number, mark: string, paintC: string,
+  quad: (a: Proj, b: Proj, ra: number, rb: number) => void, nx: number, ny: number, mark: string, paintC: string, charge?: number,
 ) {
   const R = PEN.R * 0.82;
   const tip = P(0), lead = P(0.035), cone = P(0.13), fer = P(0.86), rub = P(0.93), top = P(1);
@@ -228,9 +257,36 @@ function drawPencil(
   };
   // the painted barrel: three visible facets
   const mid = P(0.5);
-  quad(cone, fer, R, R);
-  g.fillStyle = across(mid, R, [[0, shade(paintC, -0.45)], [0.33, shade(paintC, -0.1)], [0.34, shade(paintC, 0.3)], [0.66, paintC], [0.67, shade(paintC, -0.25)], [1, shade(paintC, -0.5)]]);
-  g.fill();
+  const paint = (c: string) => across(mid, R, [[0, shade(c, -0.45)], [0.33, shade(c, -0.1)], [0.34, shade(c, 0.3)], [0.66, c], [0.67, shade(c, -0.25)], [1, shade(c, -0.5)]]);
+  if (charge === undefined) {
+    quad(cone, fer, R, R);
+    g.fillStyle = paint(paintC);
+    g.fill();
+  } else {
+    // while a flick is pulled back the paint goes dull, and its colour comes
+    // back up from the wood as the pull builds; at full it glows (a pencil has
+    // no refill to fill, and a fill in its own ink wouldn't show on its paint)
+    const k = Math.max(0, Math.min(1, charge)), lit = P(0.13 + (0.86 - 0.13) * k);
+    if (k >= 1) {
+      // a soft round halo in its paint, two passes
+      g.strokeStyle = paintC;
+      g.lineCap = "round";
+      for (const [w, a] of [[3.6, 0.14], [2.6, 0.22]] as const) {
+        g.globalAlpha *= a;
+        g.lineWidth = R * w * mid.k;
+        g.beginPath(); g.moveTo(cone.x, cone.y); g.lineTo(fer.x, fer.y); g.stroke();
+        g.globalAlpha /= a;
+      }
+    }
+    quad(cone, fer, R, R);
+    g.fillStyle = paint(dull(paintC));
+    g.fill();
+    if (k > 0) {
+      quad(cone, lit, R, R);
+      g.fillStyle = paint(paintC);
+      g.fill();
+    }
+  }
   // the wood cone and the lead
   quad(lead, cone, R * 0.22, R);
   g.fillStyle = across(P(0.08), R, [[0, "#b08a5a"], [0.4, "#ecd2a8"], [1, "#a47c4c"]]);
@@ -245,6 +301,13 @@ function drawPencil(
   quad(rub, top, R * 0.98, R * 0.95);
   g.fillStyle = across(P(0.96), R, [[0, "#b8686a"], [0.35, "#f2a4a2"], [1, "#9c5054"]]);
   g.fill();
+}
+
+/** A pencil's paint gone dull while unlit by the pull: greyed halfway and darkened. */
+function dull(hex: string) {
+  const n = parseInt(hex.slice(1), 16), ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const grey = (ch[0] * 0.3 + ch[1] * 0.59 + ch[2] * 0.11);
+  return "#" + ch.map((c) => Math.round((c * 0.5 + grey * 0.5) * 0.55).toString(16).padStart(2, "0")).join("");
 }
 
 /** Lighten (k>0) or darken (k<0) a hex colour. */
@@ -269,13 +332,15 @@ export function settle(t: number) {
 }
 
 /**
- * At full pull the pen shivers under the finger: a fine fast tremble on top
- * of the hand's slow wobble. Radians, 0 below nine tenths of full. Pure.
+ * At full pull the pen shivers under the finger: a faint tremble on top of
+ * the hand's slow wobble, about 8 and 13 a second, slow enough that 60 fps
+ * shows a tremble rather than a stutter. Radians, 0 below nine tenths of
+ * full. Pure.
  */
 export function shiver(ms: number, power: number) {
   const k = Math.max(0, (power - 0.9) / 0.1);
   if (k <= 0) return 0;
-  return 0.011 * k * (Math.sin(ms * 0.21) * 0.6 + Math.sin(ms * 0.37 + 1.1) * 0.4);
+  return 0.004 * k * (Math.sin(ms * 0.05) * 0.6 + Math.sin(ms * 0.08 + 1.1) * 0.4);
 }
 
 /** Put down and lifted off: up and fading, `t` ms after it was lifted (height, alpha), or null when gone. */

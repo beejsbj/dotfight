@@ -495,26 +495,38 @@ class BoilCanvas {
       return x < a + c && a < x + w && y < b + d && b < y + h;
     };
     const whole = all || (!gone.length && dirty.length === this.things.length);
-    const redraw = whole ? this.things.map((_, i) => i) : this.things.flatMap((_, i) => (rects.some((r) => touches(i, r)) ? [i] : []));
+    const ink = (list: number[]) => {
+      // ink multiplies (light ink on dark paper screens), on this layer as on the page, so overlaps build the same way
+      g.globalCompositeOperation = inkOp();
+      for (const i of list) {
+        const t = this.things[i], q = pose[i];
+        if (!this.paint(t, now[i] % BOIL.variants, X, Y, q)) steady = false;
+        if (t.body && q) { this.poses[i] = q; this.drawn[i] = bodyBox(t.body, q); }
+      }
+      g.globalCompositeOperation = "source-over";
+    };
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.globalCompositeOperation = "source-over";
-    if (all) g.clearRect(0, 0, this.c.width, this.c.height);
-    else for (const [x, y, w, h] of rects) g.clearRect(x, y, w, h);
-    g.save();
-    if (!whole) {
-      g.beginPath();
-      for (const [x, y, w, h] of rects) g.rect(x, y, w, h);
-      g.clip();
+    if (whole) {
+      if (all) g.clearRect(0, 0, this.c.width, this.c.height);
+      else for (const [x, y, w, h] of rects) g.clearRect(x, y, w, h);
+      ink(this.things.map((_, i) => i));
+    } else {
+      // One box at a time, each cleared and redrawn whole inside a clip to it
+      // alone, so where boxes overlap the ink isn't laid twice. Never one clip
+      // made of several boxes: Chrome on Android (S23+, Chrome 154) draws no
+      // image at all through one when the ink multiplies, and camps vanished.
+      for (const r of rects) {
+        const [x, y, w, h] = r;
+        g.clearRect(x, y, w, h);
+        g.save();
+        g.beginPath();
+        g.rect(x, y, w, h);
+        g.clip();
+        ink(this.things.flatMap((_, i) => (touches(i, r) ? [i] : [])));
+        g.restore();
+      }
     }
-    // ink multiplies (light ink on dark paper screens), on this layer as on the page, so overlaps build the same way
-    g.globalCompositeOperation = inkOp();
-    for (const i of redraw) {
-      const t = this.things[i], q = pose[i];
-      if (!this.paint(t, now[i] % BOIL.variants, X, Y, q)) steady = false;
-      if (t.body && q) { this.poses[i] = q; this.drawn[i] = bodyBox(t.body, q); }
-    }
-    g.restore();
-    g.globalCompositeOperation = "source-over";
     this.shown = now;
     this.steady = steady;
     return true;

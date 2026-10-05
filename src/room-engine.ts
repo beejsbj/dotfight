@@ -78,7 +78,10 @@ export function hash(s: GameState): string {
   for (const x of s.soldiers) { mix(Math.round(x.x * 100)); mix(Math.round(x.y * 100)); mix(x.alive ? 1 : 0); }
   if (s.rules.long) {
     mix(s.marks.length);
-    for (const m of s.marks) if (m.t === "stroke") { const e = m.pts[m.pts.length - 1]; mix(m.pts.length); mix(Math.round(e.x * 100)); mix(Math.round(e.y * 100)); }
+    for (const m of s.marks) if (m.t === "stroke") {
+      mix(m.owner); mix(m.pts.length);
+      for (const p of m.pts) { mix(Math.round(p.x * 100)); mix(Math.round(p.y * 100)); }
+    }
     for (const c of s.convoys) mix(Math.round((c.at ?? 0) * 100));
   }
   return h.toString(36);

@@ -255,12 +255,12 @@ describe("room engines", () => {
     expect(canRead(engine)).toBe(true);
     const { garrison: _g, ...flat } = CORE;
     void _g;
-    const rules = engine === "core-4" ? CORE : engine === "core-3" ? flat : { ...flat, version: 1, reach: { min: 300, max: 1800 } };
+    const rules = engine === "core-4" ? CORE : engine === "core-3" ? { ...flat, reach: { min: 200, max: 1200, curve: 1.5 } } : { ...flat, version: 1, reach: { min: 300, max: 1800 } };
     const old: Setup = JSON.parse(JSON.stringify({ ...setup, rules }));
     const s = fresh(old);
     expect(s.rules.garrison).toEqual(engine === "core-4" ? CORE.garrison : null);
     expect(reachOf(s.rules, 0)).toBe(engine === "core-2" ? 300 : 200);
-    expect(reachOf(s.rules, 1)).toBe(engine === "core-2" ? 1800 : 1200);
+    expect(reachOf(s.rules, 1)).toBe(engine === "core-2" ? 1800 : engine === "core-3" ? 1200 : CORE.reach.max);
     const log: { seat: Seat; a: Payload }[] = [];
     while (s.phase !== "over" && log.length < 150) {
       const a = botMove(s);
@@ -309,6 +309,18 @@ describe("long-1 rooms", () => {
     expect(unfile(JSON.parse(JSON.stringify(file(s, { kind: "pnp" }))))).toEqual(s);
     expect(readSave(JSON.stringify({ s, mode: { kind: "pnp" } }))!.s).toEqual(s);
   }, 60_000);
+
+  it("a long war's hash detects interior ink drift and groove ownership", () => {
+    const s = fresh({ seed: 9, size: SIZES.long, rules: LONG });
+    const mark = { t: "stroke" as const, kind: "snipe" as const, owner: 0 as Seat, pts: [{ x: 100, y: 100 }, { x: 150, y: 120 }, { x: 200, y: 100 }], seed: 1, turn: 1 };
+    s.marks.push(mark);
+    const original = hash(s);
+    mark.pts[1].y = 180;
+    expect(hash(s)).not.toBe(original);
+    mark.pts[1].y = 120;
+    mark.owner = 1;
+    expect(hash(s)).not.toBe(original);
+  });
 
   it("a long war's hash notices ink and roads that a core hash wouldn't", () => {
     const s = fresh({ seed: 9, size: SIZES.long, rules: LONG });
