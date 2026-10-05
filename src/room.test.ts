@@ -310,6 +310,18 @@ describe("long-1 rooms", () => {
     expect(readSave(JSON.stringify({ s, mode: { kind: "pnp" } }))!.s).toEqual(s);
   }, 60_000);
 
+  it("a long war's hash detects interior ink drift and groove ownership", () => {
+    const s = fresh({ seed: 9, size: SIZES.long, rules: LONG });
+    const mark = { t: "stroke" as const, kind: "snipe" as const, owner: 0 as Seat, pts: [{ x: 100, y: 100 }, { x: 150, y: 120 }, { x: 200, y: 100 }], seed: 1, turn: 1 };
+    s.marks.push(mark);
+    const original = hash(s);
+    mark.pts[1].y = 180;
+    expect(hash(s)).not.toBe(original);
+    mark.pts[1].y = 120;
+    mark.owner = 1;
+    expect(hash(s)).not.toBe(original);
+  });
+
   it("a long war's hash notices ink and roads that a core hash wouldn't", () => {
     const s = fresh({ seed: 9, size: SIZES.long, rules: LONG });
     const h = hash(s);

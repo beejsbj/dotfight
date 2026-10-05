@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { act, canArrange, columnAt, capacity, corners, illegal, inside, newGame, preview, scatterIn, trace, wallGap, wallStrength, type Base, type Flick, type GameState, type Player } from "./game";
+import { act, canArrange, columnAt, capacity, corners, illegal, inside, newGame, preview, roadBetween, scatterIn, trace, wallGap, wallStrength, type Base, type Flick, type GameState, type Player } from "./game";
 import { dist, insidePoly, pathLen, polyHits, polygon, type Pt } from "./geom";
 import { LONG, RULES, SIZES, type Shape } from "./rules";
 
@@ -162,6 +162,23 @@ describe("a cushion", () => {
 });
 
 describe("a prism", () => {
+  it("splits at a wall exit exactly on an internal turtle step endpoint", () => {
+    const s = field([["prism", 0, 500, 1300, Math.PI]]);
+    s.bases[0].r = 84; // the right-facing flat wall is 42 units away: three 14-unit steps
+    const me = man(s, 0, 500, 1300, 0);
+    const tr = trace(s, shot(me, 0, 448));
+    expect(tr.events.filter((e) => e.kind === "split")).toHaveLength(1);
+    expect(tr.branches).toHaveLength(1);
+  });
+
+  it("records both enemy wall crossings when the exit ends an internal step", () => {
+    const s = field([["prism", 1, 500, 1300, Math.PI]]);
+    s.bases[0].r = 84;
+    const me = man(s, 0, 402, 1300);
+    const tr = trace(s, shot(me, 0, 448));
+    expect(tr.events.filter((e) => e.kind === "wall")).toHaveLength(2);
+  });
+
   const page = () => {
     const s = field([["prism", 0, 500, 1300, Math.PI / 2], ["camp", 1, 500, 300]]); // a corner down, a flat side facing up the page
     const me = man(s, 0, 500, 1300, 0);
@@ -261,6 +278,28 @@ describe("long war lines keep the core's walls and kills", () => {
 });
 
 describe("long roads", () => {
+  it("rotated polygon roads start and end just outside the actual flat walls", () => {
+    const s = field([["prism", 0, 300, 1300, Math.PI], ["cushion", 0, 800, 1300, Math.PI / 6]]);
+    const [a, b] = s.bases;
+    const [start, end] = roadBetween(a, b);
+    expect(start.x).toBeCloseTo(a.x + a.r / 2 + 6, 9);
+    expect(end.x).toBeCloseTo(b.x - b.r * Math.cos(Math.PI / 6) - 6, 9);
+    expect(start.y).toBeCloseTo(1300, 9);
+    expect(end.y).toBeCloseTo(1300, 9);
+  });
+
+  it("keeps a convoy exposed until it reaches a polygon's actual wall", () => {
+    const r = RULES.baseRadius * L.shapes.prism.size;
+    const s = field([["prism", 0, 300, 1300, Math.PI], ["prism", 0, 300 + 315 + r + 12, 1300, 0], ["camp", 1, 500, 200]]);
+    for (const b of [0, 1, 2]) fill(s, b, 3);
+    act(s, { t: "send", from: 0, to: 1, n: 2 });
+    act(s, { t: "stop" });
+    act(s, { t: "stop" });
+    expect(s.convoys[0].state).toBe("road");
+    expect(s.convoys[0].at).toBe(300);
+    expect(act(s, { t: "stop" }).arrived).toEqual([0]);
+  });
+
   // two of player 0's camps 700 apart, one enemy camp out of the way
   const page = () => {
     const s = field([["camp", 0, 200, 1500], ["camp", 0, 900, 1100], ["camp", 1, 500, 200]]);

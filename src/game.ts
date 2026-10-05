@@ -726,7 +726,6 @@ function traceLong(s: GameState, f: Flick): Trace {
       d += bt * seg;
       rem -= bt * seg;
       if (bt > 0) pts.push(at);
-      const was = pos;
       pos = at;
       skipBase = skipStroke = -1;
       if (ev0.kind === "edge") {
@@ -753,9 +752,11 @@ function traceLong(s: GameState, f: Flick): Trace {
       // a wall: which way through?
       const b = ev0.base;
       skipBase = b.id;
-      const e = Math.min(0.5, 0.5 / seg);
-      const before = { x: was.x + vx * Math.max(0, bt - e), y: was.y + vy * Math.max(0, bt - e) };
-      const after = { x: was.x + vx * Math.min(1, bt + e), y: was.y + vy * Math.min(1, bt + e) };
+      // Probe both sides of the wall even when it ends this step. A probe
+      // clamped to the endpoint is still on the wall and loses an exit.
+      const e = 0.5 / seg;
+      const before = { x: at.x - vx * e, y: at.y - vy * e };
+      const after = { x: at.x + vx * e, y: at.y + vy * e };
       const inBefore = inside(b, before, 1), inAfter = inside(b, after, 1);
       const entering = !inBefore && inAfter, leaving = inBefore && !inAfter;
       if (!entering && !leaving) continue; // grazed a corner
@@ -958,12 +959,17 @@ export function sendMax(s: GameState, from: number) {
 }
 
 /** The road between two bases: wall to wall. */
-export function roadBetween(a: Pt & { r: number }, b: Pt & { r: number }): [Pt, Pt] {
+export function roadBetween(a: Pt & { r: number; shape?: Shape; rot?: number }, b: Pt & { r: number; shape?: Shape; rot?: number }): [Pt, Pt] {
   const l = dist(a, b) || 1;
   const ux = (b.x - a.x) / l, uy = (b.y - a.y) / l;
+  const wall = (base: typeof a, target: Pt) => {
+    const vs = corners(base);
+    return vs ? (polyHits(base, target, vs)[0]?.t ?? 0) * l : base.r;
+  };
+  const ar = wall(a, b), br = wall(b, a);
   return [
-    { x: a.x + ux * (a.r + 6), y: a.y + uy * (a.r + 6) },
-    { x: b.x - ux * (b.r + 6), y: b.y - uy * (b.r + 6) },
+    { x: a.x + ux * (ar + 6), y: a.y + uy * (ar + 6) },
+    { x: b.x - ux * (br + 6), y: b.y - uy * (br + 6) },
   ];
 }
 
