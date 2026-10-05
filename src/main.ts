@@ -867,7 +867,8 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     if (m.t !== "cross") continue;
     if (m.kind === "kill") {
       // a man the prism's other half crosses out falls when that ink reaches him
-      const by = o.events.find((e) => e.kind === "kill" && e.soldier === o.killed[killed++])?.branch ?? 0;
+      const victim = o.killed[killed++];
+      const by = o.events.find((e) => e.kind === "kill" && e.soldier === victim)?.branch ?? 0;
       const at = inkAt(o, dur, by, m);
       const last = over && i === lastKill;
       kills.push({ i, at, hit: false, last });
