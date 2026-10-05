@@ -19,10 +19,10 @@ import type { Soldier } from "./game";
 import type { AnyState as GameState } from "./record";
 import { inBase } from "./hand";
 import { INK, inkCircle, inkOp } from "./ink";
-import { CLARITY, dotSpots, drawBase, drawDot, drawMark, wentTo, type Ink, type Spot } from "./page";
-import { FPS as LIFE_FPS, FRAME as LIFE_FRAME, LIFE_BOX, type Life, type Pose } from "./life";
+import { CLARITY, STAR, dotSpots, drawBase, drawDot, drawMark, manR, starPoints, wentTo, type Ink, type Spot } from "./page";
+import { FPS as LIFE_FPS, FRAME as LIFE_FRAME, lifeBox, type Life, type Pose } from "./life";
 import { theme } from "./theme";
-import { RULES } from "./rules";
+import { RULES, type Shape } from "./rules";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -136,7 +136,7 @@ export const spotKey = (x: Pick<Soldier, "id" | "x" | "y">) => `${x.id}@${x.x},$
 /**
  * What to hold off the page and what the boil layer draws this frame.
  * `on` false: nothing boils (reduced motion, a slow phone), and the only thing
- * held is a soldier riding his ink (`moving`).
+ * held is a soldier riding his ink (`moving`) or walking a long-war road.
  */
 export function planBoil(s: GameState, ink: Ink, o: { on: boolean; side?: "living" | "dead"; moving?: number }): Plan {
   const side = o.side ?? BOILS;
@@ -170,6 +170,17 @@ export function planBoil(s: GameState, ink: Ink, o: { on: boolean; side?: "livin
       });
     }
   }
+  // Road men keep moving even when cosmetic boil is unaffordable or disabled.
+  // Hold only their current dot: old departure footprints stay on the page.
+  if (!o.on && s.v !== 1 && s.rules.long) {
+    const roads = new Set(s.convoys.filter((c) => c.state === "road").map((c) => c.id));
+    for (const spot of dotSpots(s)) {
+      const x = s.soldiers[spot.id];
+      if (!x.alive || x.convoy === undefined || !roads.has(x.convoy) || spot.key !== spotKey(x)) continue;
+      hold.dots.add(spot.key);
+      if (spot.key !== riding && !ink.live.has(`d${spot.id}`)) plan.dots.push({ spot, boils: false });
+    }
+  }
   hold.sig = `${[...hold.dots].join()}|${[...hold.bases].join()}|${hold.marks.size}`;
   plan.sig = `${plan.dots.map((d) => d.spot.key + +d.boils).join()}|${plan.bases.map((b) => b.id + "" + +b.boils).join()}|${plan.marks.map((m) => m.i).join()}`;
   return plan;
@@ -189,7 +200,7 @@ interface Thing {
   /** Its pictures' page box, if smaller than its own (a living soldier's box has room to move in). */
   sbox?: { x0: number; y0: number; x1: number; y1: number };
   /** A living soldier (life.ts): drawn in his pose, round his spot. */
-  body?: { id: number; x: number; y: number };
+  body?: { id: number; x: number; y: number; r: number };
 }
 
 // Things bigger than this (page px, either side) are drawn as vectors each tick, not cached.
@@ -205,15 +216,15 @@ function pixels(t: Thing, S: number) {
 /** The layer looks at the clock this often: fine enough for 8 fps swaps and soldiers' 12 fps poses. */
 const GRID_FPS = 24;
 
-/** A living soldier's drawing in pose `q`: his picture's box, moved and scaled (page units). */
-function bodyBox(b: { x: number; y: number }, q: Pose) {
-  const h = (RULES.soldierRadius * 1.4 + 3) * q.k * Math.max(q.st, 1 / q.st) + 1, x = b.x + q.ox, y = b.y + q.oy;
+/** A living soldier's drawing in pose `q`: his picture's box, moved and scaled (page units). `r`: his mark's circumradius (page.ts manR). */
+function bodyBox(b: { x: number; y: number; r: number }, q: Pose) {
+  const h = (b.r * 1.4 + 3) * q.k * Math.max(q.st, 1 / q.st) + 1, x = b.x + q.ox, y = b.y + q.oy;
   return [x - h, y - h, x + h, y + h];
 }
 
 /** At rest to a third of a pixel at scale S: drawn by the plain copy. */
-function atRest(q: Pose, S: number) {
-  const R = RULES.soldierRadius * 1.3 * S;
+function atRest(q: Pose, S: number, r: number = RULES.soldierRadius) {
+  const R = r * 1.3 * S;
   return Math.abs(q.ox * S) < 0.33 && Math.abs(q.oy * S) < 0.33 && Math.abs(q.k * q.st - 1) * R < 0.33 && Math.abs(q.k / q.st - 1) * R < 0.33;
 }
 
@@ -222,8 +233,8 @@ function atRest(q: Pose, S: number) {
  * (to an eighth of a page unit): 0 at rest. Any change in how he's drawn is a
  * change of look, so he's redrawn whole, never half-moved under someone else's box.
  */
-function poseCode(q: Pose, S: number) {
-  if (atRest(q, S)) return 0;
+function poseCode(q: Pose, S: number, r?: number) {
+  if (atRest(q, S, r)) return 0;
   const n = [q.ox * 8, q.oy * 8, q.k * 256, q.st * 256, q.ax * 256].map(Math.round);
   let h = 7;
   for (const v of n) h = (Math.imul(h ^ v, 16777619) >>> 0);
@@ -321,11 +332,12 @@ class BoilCanvas {
     this.sig = sig;
     this.S = S;
     const pad = 3;
-    const R = RULES.soldierRadius * 1.4 + pad;
     const things: Thing[] = [];
     const life = this.life();
     for (const { spot, boils } of rings ? [] : plan.dots) {
       const x = s.soldiers[spot.id];
+      // his box is his own mark's size: a dot's, or a triangle's (the long war)
+      const r = manR(x as { shape?: Shape }), R = r * 1.4 + pad;
       const sbox = { x0: spot.x - R, y0: spot.y - R, x1: spot.x + R, y1: spot.y + R };
       const paint = (g: Ctx, w: number, amp: number) => {
         drawDot(g, x, 1, 1, spot, w, amp);
@@ -335,13 +347,13 @@ class BoilCanvas {
       if (!boils || !life) { things.push({ key: spot.key, boils, ...sbox, paint }); continue; }
       // a living soldier with a life: room round his spot to move in, drawn in his
       // pose; his heartbeat is how fast his drawings swap (racing, or held still)
-      const L = LIFE_BOX, id = x.id, key = spot.key;
+      const L = lifeBox(r), id = x.id, key = spot.key;
       things.push({
-        key, boils, x0: spot.x - L, y0: spot.y - L, x1: spot.x + L, y1: spot.y + L, sbox, paint, body: { id, x: spot.x, y: spot.y },
+        key, boils, x0: spot.x - L, y0: spot.y - L, x1: spot.x + L, y1: spot.y + L, sbox, paint, body: { id, x: spot.x, y: spot.y, r },
         look: (ms) => {
           const f = boilFrame(ms, LIFE_FPS);
           const wob = variantAt(Math.floor((life.scribble(id, f) * BOIL.fps) / LIFE_FPS), key);
-          return wob + BOIL.variants * poseCode(life.pose(id, f * LIFE_FRAME), S);
+          return wob + BOIL.variants * poseCode(life.pose(id, f * LIFE_FRAME), S, r);
         },
       });
     }
@@ -363,9 +375,9 @@ class BoilCanvas {
     for (const { i, boils } of rings ? [] : plan.marks) {
       const m = s.marks[i];
       let x0: number, y0: number, x1: number, y1: number;
-      const pts = m.t === "stroke" ? m.pts : m.t === "walk" ? [m.a, m.b] : m.t === "stand" ? m.at : null;
+      const pts = m.t === "stroke" ? m.pts : m.t === "walk" ? [m.a, m.b] : m.t === "stand" ? m.at : m.t === "star" ? starPoints(m) : null;
       if (pts) {
-        const e = m.t === "stand" ? RULES.soldierRadius + 16 : 10;
+        const e = m.t === "stand" ? RULES.soldierRadius + 16 : m.t === "star" ? STAR.arm + 6 : 10;
         x0 = Math.min(...pts.map((p) => p.x)) - e; x1 = Math.max(...pts.map((p) => p.x)) + e;
         y0 = Math.min(...pts.map((p) => p.y)) - e; y1 = Math.max(...pts.map((p) => p.y)) + e;
       } else if (m.t === "cross") {
@@ -464,7 +476,7 @@ class BoilCanvas {
       const was = this.poses[i];
       if (was && !dset.has(i) && !all) return was;
       const q = life.pose(t.body.id, f * LIFE_FRAME);
-      return was && poseCode(was, S) === poseCode(q, S) ? was : q;
+      return was && poseCode(was, S, t.body.r) === poseCode(q, S, t.body.r) ? was : q;
     });
     // each thing's page box this tick: a living soldier's is where he was drawn and where he's going
     const ext = this.things.map((t, i) => {
@@ -536,7 +548,7 @@ class BoilCanvas {
     const g = this.g, S = this.S;
     const { px0, py0, pw, ph } = pixels(t, S);
     const sp = this.sprite(t, wob);
-    if (t.body && q && !atRest(q, S)) {
+    if (t.body && q && !atRest(q, S, t.body.r)) {
       // a living soldier, in his pose: one transformed copy
       posed(g, q, t.body, S, X, Y);
       if (sp) g.drawImage(sp.batch.src, sp.x, sp.y, pw, ph, px0 / S, py0 / S, pw / S, ph / S);

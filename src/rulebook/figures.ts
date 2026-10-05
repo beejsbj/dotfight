@@ -3,7 +3,7 @@
 // goes on the way a hand would put it there, and at t = 1 it's the finished
 // drawing. Everything is seeded, so a figure always looks the same.
 
-import { distToPath, rng, type Pt } from "../game";
+import { distToPath, type Pt } from "../game";
 import { INK, handText, inkCircle, inkCross, inkDot, inkPolygon, pencilArrow, pencilLine, pencilLoop } from "../ink";
 
 type Ctx = CanvasRenderingContext2D;
@@ -664,58 +664,6 @@ const well: Figure = {
   },
 };
 
-/** Ink piles up round a base over a war, and becomes cover: a line jolts at every old line and never gets there. */
-const COVER = (() => {
-  const base = P(292, 120), r = 46, rand = rng(4242);
-  const old: { pts: Pt[]; owner: 0 | 1 }[] = [];
-  // lines that ran at the base from above and below, a war's worth
-  [96, 132, 166, 198, 226].forEach((x, i) => {
-    const top = i % 2 === 0, a = (top ? 1 : -1) * (0.75 + rand() * 0.45);
-    const through = P(x, 132 + (rand() - 0.5) * 10), d = dirOf(a);
-    old.push({ pts: bowed(add(through, d, -(62 + rand() * 50)), add(through, d, 46 + rand() * 60), (rand() - 0.5) * 0.05), owner: rand() < 0.55 ? 1 : 0 });
-  });
-  for (let i = 0; i < 6; i++) {
-    const top = i % 2 === 0;
-    const from = P(150 + rand() * 90, top ? 10 + rand() * 26 : 200 + rand() * 20);
-    const aim = add(base, dirOf((top ? -1 : 1) * (1.6 + rand() * 1.2)), r * (0.6 + rand() * 0.6));
-    old.push({ pts: bowed(from, lerp(from, aim, 0.8 + rand() * 0.3), (rand() - 0.5) * 0.05), owner: rand() < 0.55 ? 1 : 0 });
-  }
-  const cross = (a: Pt, b: Pt, c: Pt, d: Pt) => {
-    const r1 = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x), r2 = (b.x - a.x) * (d.y - a.y) - (b.y - a.y) * (d.x - a.x);
-    const r3 = (d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x), r4 = (d.x - c.x) * (b.y - c.y) - (d.y - c.y) * (b.x - c.x);
-    return r1 * r2 < 0 && r3 * r4 < 0;
-  };
-  // the new line: every old line it crosses jolts it and costs it reach
-  const s0 = P(18, 132), step = 3;
-  let p = { ...s0 }, h = 0, budget = 300, flip = 1;
-  const pts: Pt[] = [{ ...p }], at: { p: Pt; ang: number }[] = [];
-  for (let s = 0; s < budget; s += step) {
-    const q = add(p, dirOf(h), step);
-    const hit = old.some((o) => o.pts.some((b, j) => j > 0 && cross(p, q, o.pts[j - 1], b)));
-    p = q;
-    pts.push({ ...p });
-    if (hit) { at.push({ p: { ...p }, ang: h }); h += flip * 0.13; flip = -flip; budget -= 30; }
-    if (Math.hypot(p.x - base.x, p.y - base.y) < r + 14) break;
-  }
-  return { base, r, old, pts, at };
-})();
-const cover: Figure = {
-  w: 400, h: 256, dur: 3400,
-  draw(g, t) {
-    const { base, r, old, pts, at: jolts } = COVER;
-    inkCircle(g, base.x, base.y, r, RED, 290);
-    jot(base, r, 6, 1.4).forEach((p, i) => dot(g, p, RED, 291 + i));
-    old.forEach((o, i) => taperLine(g, o.pts, (u) => 1.7 * (1 - u * 0.5), INK.pens[o.owner], 300 + i, ease(seg(t, i * 0.02, 0.2 + i * 0.02))));
-    dot(g, pts[0], BLUE, 320);
-    const k = ease(seg(t, 0.36, 0.8));
-    flick(g, pts, BLUE, 321, k);
-    jolts.forEach((j, i) => { if (k > along(pts, j.p)) zigzag(g, j.p, j.ang - Math.PI / 2 - 0.3, seg(t, 0.4 + i * 0.06, 0.46 + i * 0.06)); });
-    note(g, "old ink piles up round a base", 250, 24, seg(t, 0.24, 0.36), { align: "center" });
-    note(g, "a jolt at every line: it never gets there", 200, 246, seg(t, 0.84, 1), { align: "center" });
-  },
-};
-
-/** Shaped soldiers: each drawn in its base's shape. */
 function shapeDot(g: Ctx, p: Pt, n: number, color: string, seed: number, grow = 1) {
   if (grow <= 0) return;
   if (n === 0) return dot(g, p, color, seed, grow);
@@ -730,19 +678,78 @@ function shapeDot(g: Ctx, p: Pt, n: number, color: string, seed: number, grow = 
   g.globalAlpha = 1;
   inkPolygon(g, pts, color, seed, 1.3, 1);
 }
+// The five shapes' corners for a figure: a triangle and a pentagon point up, a square sits flat.
+const turnOf = (n: number) => (n === 3 || n === 5 ? -Math.PI / 2 : n === 4 ? Math.PI / 4 : 0);
+const shapeAt = (c: Pt, n: number, R: number) => Array.from({ length: n }, (_, k) => add(c, dirOf(turnOf(n) + (k * Math.PI * 2) / n), R));
+
 const soldiers: Figure = {
-  w: 400, h: 180, dur: 3000,
+  w: 400, h: 170, dur: 3600,
   draw(g, t) {
-    const bases: [Pt, number][] = [[P(70, 90), 0], [P(200, 92), 3], [P(330, 90), 6]];
+    const bases: [Pt, number][] = [[P(44, 84), 0], [P(122, 90), 3], [P(200, 84), 6], [P(278, 84), 4], [P(356, 86), 5]];
     bases.forEach(([c, n], b) => {
-      const t0 = b * 0.28;
-      const R = 50;
-      if (n === 0) inkCircle(g, c.x, c.y, R, BLUE, 330 + b, 2.6, 2, ease(seg(t, t0, t0 + 0.14)));
-      else inkPolygon(g, Array.from({ length: n }, (_, k) => add(P(c.x, c.y + (n === 3 ? 10 : 0)), dirOf((n === 3 ? -Math.PI / 2 : 0) + (k * Math.PI * 2) / n), n === 3 ? R * 1.18 : R)), BLUE, 330 + b, 2.6, 2, ease(seg(t, t0, t0 + 0.14)));
-      const men = jot(P(c.x, c.y + (n === 3 ? 16 : 0)), n === 3 ? 38 : R, n === 3 ? 4 : 6, 0.5 + b);
-      men.forEach((p, i) => shapeDot(g, p, n, BLUE, 340 + b * 10 + i, seg(t, t0 + 0.14 + i * 0.02, t0 + 0.22 + i * 0.02)));
+      const t0 = b * 0.15;
+      const R = 32;
+      if (n === 0) inkCircle(g, c.x, c.y, R, BLUE, 330 + b, 2.4, 2, ease(seg(t, t0, t0 + 0.12)));
+      else inkPolygon(g, shapeAt(c, n, n === 3 ? R * 1.3 : n === 4 ? R * 1.15 : R * 1.05), BLUE, 330 + b, 2.4, 2, ease(seg(t, t0, t0 + 0.12)));
+      const men = jot(P(c.x, c.y + (n === 3 ? 6 : 0)), n === 3 ? 20 : 26, 4, 0.5 + b);
+      men.forEach((p, i) => shapeDot(g, p, n, BLUE, 340 + b * 10 + i, seg(t, t0 + 0.12 + i * 0.02, t0 + 0.2 + i * 0.02)));
     });
-    note(g, "a look, for now", 146, 172, seg(t, 0.86, 1));
+    note(g, "each man keeps his shape, wherever he's sent", 200, 160, seg(t, 0.84, 1), { align: "center" });
+  },
+};
+
+// The square, the ruler: a blue line from a camp passes out through a blue
+// square and runs dead straight past a full red camp; the same flick without
+// the square (pencil) curls into the camp's well.
+const ruler: Figure = {
+  w: 400, h: 220, dur: 3400,
+  draw(g, t) {
+    const camp = P(56, 150), r = 34;
+    inkCircle(g, camp.x, camp.y, r, BLUE, 410);
+    jot(camp, r, 5, 0.3).forEach((p, i) => dot(g, p, BLUE, 411 + i));
+    const sq = shapeAt(P(140, 150), 4, 30);
+    inkPolygon(g, sq, BLUE, 417);
+    jot(P(140, 150), 18, 3, 1.2).forEach((p, i) => shapeDot(g, p, 4, BLUE, 418 + i));
+    const foe = P(262, 92), fr = 36;
+    inkCircle(g, foe.x, foe.y, fr, RED, 422);
+    jot(foe, fr, 6, 0.9).forEach((p, i) => dot(g, p, RED, 423 + i));
+    const shooter = P(66, 150), target = P(372, 150);
+    dot(g, target, RED, 430);
+    // without the square: the well bends it up into their camp (pencil)
+    const bent = walk(P(170, 150), 0, 160, { pull: (p, v) => { const dx = foe.x - p.x, dy = foe.y - p.y, d = Math.hypot(dx, dy); return d < fr + 6 ? v : { x: v.x + (dx / d ** 3) * 900, y: v.y + (dy / d ** 3) * 900 }; } }).pts;
+    if (t > 0.6) { g.globalAlpha = 0.55; for (let i = 1; i < bent.length; i += 2) pencilLine(g, bent[i - 1], bent[i], 1.2, 432 + i, false); g.globalAlpha = 1; }
+    const line = bowed(shooter, target, 0);
+    const k = ease(seg(t, 0.1, 0.55));
+    flick(g, line, BLUE, 440, k, 2.9);
+    if (k > 0.97) kill(g, target, BLUE, 441, seg(t, 0.55, 0.62));
+    note(g, "out through the square: ruled straight", 232, 196, seg(t, 0.64, 0.8), { align: "center" });
+    note(g, "the well can't touch it", 262, 36, seg(t, 0.82, 1), { align: "center" });
+  },
+};
+
+// The pentagon, the star: a blue line from a camp passes out through a blue
+// pentagon and turns on the nearest red man ahead (within 30°), crossing him out.
+const homing: Figure = {
+  w: 400, h: 230, dur: 3400,
+  draw(g, t) {
+    const camp = P(56, 130), r = 34;
+    inkCircle(g, camp.x, camp.y, r, BLUE, 450);
+    jot(camp, r, 5, 0.6).forEach((p, i) => dot(g, p, BLUE, 451 + i));
+    const pc = P(150, 130), pent = shapeAt(pc, 5, 32).map((q) => P(q.y - pc.y + pc.x, -(q.x - pc.x) + pc.y)); // a corner pointing right, along the line
+    inkPolygon(g, pent, BLUE, 457);
+    jot(pc, 18, 3, 2.1).forEach((p, i) => shapeDot(g, p, 5, BLUE, 458 + i));
+    const exit = P(182, 130), foe = P(330, 70), far = P(370, 175);
+    [foe, far].forEach((p, i) => dot(g, p, RED, 462 + i));
+    const into = bowed(P(66, 130), exit, 0);
+    const k1 = ease(seg(t, 0.08, 0.38));
+    flick(g, into, BLUE, 465, k1, 2.9);
+    // the cone it looks in, then the turn on the nearest man inside it
+    if (t > 0.38) cone(g, exit, 0, 0.52, 190, 466, seg(t, 0.38, 0.5));
+    const k2 = ease(seg(t, 0.5, 0.8));
+    if (k2 > 0) { star(g, exit, seg(t, 0.5, 0.56)); taperLine(g, bowed(exit, add(foe, dirOf(Math.atan2(foe.y - exit.y, foe.x - exit.x)), 40), 0.004), (u) => 2.6 * (1 - u * 0.4), BLUE, 467, k2); }
+    if (k2 > 0.8) kill(g, foe, BLUE, 468, seg(t, 0.74, 0.8));
+    note(g, "turns on the nearest man ahead", 200, 210, seg(t, 0.8, 0.9), { align: "center" });
+    note(g, "up to 30°", 300, 128, seg(t, 0.9, 1), { size: 15 });
   },
 };
 
@@ -761,6 +768,7 @@ export const FIGURES: Record<string, Figure> = {
   "lunge-through": lungeThrough,
   garrison: garrisonWalls,
   well,
-  cover,
   soldiers,
+  ruler,
+  star: homing,
 };

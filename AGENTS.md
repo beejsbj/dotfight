@@ -21,8 +21,9 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 - `src/rules.ts`: every tunable rule and the flick feel
 - `src/game.ts`: game state, setup, flick resolution, hits, win (pure, tested)
 - `src/flick.ts`: pull-back gesture → flick, with wobble and release error
-- `src/bot.ts`: Dawood-bot
+- `src/bot.ts`: Dawood-bot. `src/botclient.ts`, `botworker.ts`, `botask.ts`: a long-war move is asked of a Web Worker (same action as the page would work out; falls back to the page without one). `scripts/bot-bench.ts`: move timing, shape-play counts, head-to-head against the old bot, core pin
 - `src/record.ts`: a page as seed + camps + flicks; replay, the drawer, old saves (pure, tested)
+- `src/inkgrid.ts`: the long war's old ink as a grid of runs, for jolts and grooves (pure, tested)
 - `src/projection.ts`: world ↔ screen through the tilted-desk camera; CSS perspective and touch input share it (pure, tested)
 - `src/inkclock.ts`: ink time, which snags on every soldier crossed (pure, tested)
 - `src/camera.ts`: bird's-eye by default, leaning in to aim, turning the page
@@ -48,7 +49,7 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 
 ## Rules: where they stand
 
-`RULES.md` is the single rulebook: Core (Quick battle) and Advanced (Long war), with an open/to-test table. **The Core rules are in the game** (#15): `src/game.ts` is `GameState` v2, with camps, a positioning phase, snipe and lunge, sends (convoys) and the last stand; `src/cues.ts` names the moments presentation can hang on (`lunge-death`, `last-stand`, …). Old v1 saves (shoot or move) still load through `src/legacy.ts`, and `record.ts`'s `AnyState` covers both. **The Advanced rules (Long war) aren't built yet.** The rules lab's round 3 (`docs/rules-lab/round-3.md`) simulated the Core rules on the game's own engine; rounds 1 and 2 (`docs/rules-lab/report.md`, `round-2.md`, on the rules-lab branches) ran on a retired lab copy. Rule decisions are Burooj's; record them in `RULES.md` and on the `/rules` pages together.
+`RULES.md` is the single rulebook: Core (Quick battle) and Advanced (Long war), with an open/to-test table. **The Core rules are in the game** (#15): `src/game.ts` is `GameState` v2, with camps, a positioning phase, snipe and lunge, sends (convoys) and the last stand; `src/cues.ts` names the moments presentation can hang on (`lunge-death`, `last-stand`, …). Old v1 saves (shoot or move) still load through `src/legacy.ts`, and `record.ts`'s `AnyState` covers both. **The Long war (Advanced rules) is in the game behind `rules.long` (`LONG` in `src/rules.ts`, `traceLong`/`endLongTurn` in `src/game.ts`, rooms on engine `long-1`): five shapes of base (camp, prism, cushion, square, pentagon), light ink, long roads. A core game never takes a long-war path; the core-4 fixture pins that.** The rules lab's round 3 (`docs/rules-lab/round-3.md`) simulated the Core rules on the game's own engine; rounds 1 and 2 (`docs/rules-lab/report.md`, `round-2.md`, on the rules-lab branches) ran on a retired lab copy. Rule decisions are Burooj's; record them in `RULES.md` and on the `/rules` pages together.
 
 ## Coordination
 

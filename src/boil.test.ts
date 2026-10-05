@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BOIL, BOILS, boilFrame, boldAt, lookAt, lifeOf, planBoil, spotKey, variantAt } from "./boil";
-import { act, alive, newGame, rng, type GameState } from "./game";
-import { CORE, type Size } from "./rules";
+import { act, alive, marchView, newGame, rng, type GameState } from "./game";
+import { CORE, LONG, type Size } from "./rules";
 import { redrawn } from "./ink";
 import { dotSpots, SETTLED, type Ink } from "./page";
 import { beforeMarch } from "./life";
@@ -274,4 +274,26 @@ describe("pending convoy presentation", () => {
       expect(settled.hold.dots.has(old)).toBe(false);
     });
   }
+});
+
+
+it("keeps road men on a still live layer at each march position with boil disabled", () => {
+  const s = setup();
+  s.rules = LONG;
+  const x = s.soldiers[0];
+  x.convoy = 0;
+  const start = { x: x.x, y: x.y };
+  s.convoys.push({ id: 0, owner: 0, from: 0, to: 2, ids: [x.id], state: "road", road: [start, { x: start.x + 500, y: start.y }], turn: 1, at: 0 });
+  for (const ms of [0, 1800, 3700, LONG.long!.walkMs]) {
+    const view = marchView(s, ms);
+    const plan = planBoil(view, SETTLED, { on: false });
+    const key = spotKey(view.soldiers[x.id]);
+    expect(plan.hold.dots.has(key)).toBe(true);
+    expect(plan.dots).toEqual([{ spot: expect.objectContaining({ key }), boils: false }]);
+    expect(plan.hold.bases.size).toBe(0);
+    // A dot currently being animated is held but never duplicated on the layer.
+    expect(planBoil(view, drawing({ d0: 0.5 }), { on: false }).dots).toEqual([]);
+  }
+  s.convoys[0].state = "arrived";
+  expect(planBoil(s, SETTLED, { on: false }).hold.dots.size).toBe(0);
 });

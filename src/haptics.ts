@@ -31,6 +31,11 @@ export type HapticEvent =
   | "thud" // a lunge dies at a base wall
   | "turn" // the page turned round, the book opened
   | "stand" // a side's last stand begins
+  | "bank" // the long war, your own line: it came off a cushion
+  | "split" // it left your prism in two
+  | "rule" // it passed out through your square: ruled
+  | "home" // it passed out through your pentagon and turned on a man
+  | "jolt" // it crossed old ink and kinked
   | "cheer"
   | "flinch"
   | "unitcam"
@@ -91,6 +96,15 @@ export function pattern(ev: HapticEvent, arg = 0): Pattern {
     case "thud": return { android: [110, 40, 45], ios: [0, IOS_TICK_GAP, IOS_TICK_GAP * 2], priority: 5 };
     // a paper riffle, quickening
     case "turn": return { android: [14, 45, 14, 35, 14, 25, 22], ios: [0, 90, 160], priority: 2 };
+    // the long war's shapes under the thumb, one tick each, lighter than a cross and never over one:
+    // a bank is one firm knock (the ball off the cushion); a split two light ticks (one line is two);
+    // a rule the lightest (the ruler set down); a home a light tick then a firmer (it turned and locked on);
+    // a jolt a ridge of dried ink under the ball
+    case "bank": return { android: [26], ios: [0], priority: 2 };
+    case "split": return { android: [9, 40, 9], ios: [0, IOS_TICK_GAP], priority: 2 };
+    case "rule": return { android: [7], ios: [0], priority: 1 };
+    case "home": return { android: [10, 35, 22], ios: [0, IOS_TICK_GAP], priority: 2 };
+    case "jolt": return { android: [6], ios: [0], priority: 1 };
     // two slow heartbeats
     case "stand": return { android: [65, 90, 65, 110, 90], ios: [0, 160, 340], priority: 5 };
     // the final cross, and the page settling under it

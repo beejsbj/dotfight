@@ -13,7 +13,7 @@
 // Poses are sampled on the boil's 12 fps grid ("on twos"), so reactions are
 // written as key drawings a frame apart, the way a 2D animator would.
 
-import { type Player, type Pt, type Soldier } from "./game";
+import { inside, type Player, type Pt, type Soldier } from "./game";
 import type { AnyState as GameState } from "./record";
 import { inBase } from "./hand";
 import { RULES } from "./rules";
@@ -58,8 +58,9 @@ export const FRAME = 1000 / FPS;
 
 /** How far a pose may take a dot from his spot: the boil layer's box has room for this, no more. */
 export const REACH = { offset: 9, stretch: 1.42, scale: 1.14 };
-/** Half the side of a living soldier's box on the boil layer (page units): his scribble at full stretch, off his spot. */
-export const LIFE_BOX = REACH.offset + RULES.soldierRadius * 1.3 * REACH.stretch * REACH.scale + 3;
+/** Half the side of a living soldier's box on the boil layer (page units): his scribble at full stretch, off his spot. `r`: his mark's circumradius (a dot's, or a shaped man's). */
+export const lifeBox = (r: number = RULES.soldierRadius) => REACH.offset + r * 1.3 * REACH.stretch * REACH.scale + 3;
+export const LIFE_BOX = lifeBox();
 
 export interface Pose {
   /** Off his spot, page units. */
@@ -311,6 +312,8 @@ export interface Pass {
   /** Page direction from the line to him: away. */
   away: number;
   fatal: boolean;
+  /** The long war: 0 the main line, k the k-th half a prism split off (path k - 1 of `branches`). */
+  branch?: number;
 }
 
 /**
@@ -338,6 +341,26 @@ export function passes(soldiers: readonly Soldier[], path: Pt[], shooter: number
     out.push({ id: x.id, index: bi, d: best, away, fatal: dead.has(x.id) });
   }
   return out.sort((p, q) => p.index - q.index);
+}
+
+/**
+ * `passes` for a line and the halves a prism split off it: each man is met by
+ * the line that crossed him out, or else the one that comes nearest. `branchOf`
+ * says which line killed a man (0 the main one). Pure.
+ */
+export function passesAll(
+  soldiers: readonly Soldier[], path: Pt[], branches: readonly Pt[][] | undefined, shooter: number, killed: readonly number[],
+  branchOf: (id: number) => number = () => 0,
+): Pass[] {
+  if (!branches?.length) return passes(soldiers, path, shooter, killed);
+  const best = new Map<number, Pass>();
+  [path, ...branches].forEach((P, k) => {
+    for (const p of passes(soldiers, P, shooter, killed.filter((id) => branchOf(id) === k))) {
+      const was = best.get(p.id);
+      if (!was || (p.fatal && !was.fatal) || (p.fatal === was.fatal && p.d < was.d)) best.set(p.id, { ...p, branch: k });
+    }
+  });
+  return [...best.values()].sort((p, q) => p.index - q.index);
 }
 
 /**
@@ -587,8 +610,8 @@ export const NEAR = 85;
  */
 export function planFlick(
   s: GameState,
-  o: { path: Pt[]; killed: readonly number[]; lost: boolean; movedTo?: Pt },
-  shooter: number, kind: "shoot" | "move", when: (index: number) => number, arrive: number,
+  o: { path: Pt[]; killed: readonly number[]; lost: boolean; movedTo?: Pt; branches?: Pt[][]; events?: readonly { kind: string; soldier?: number; branch?: number }[] },
+  shooter: number, kind: "shoot" | "move", when: (index: number, branch?: number) => number, arrive: number,
   // Wall ms relative to the flick; only the lost shooter waits for a volley cross.
   lostDeathAt = arrive,
 ): FlickPlan {
@@ -607,12 +630,13 @@ export function planFlick(
       plan.cues.push({ at: arrive, id: shooter, say: "land", gain: 0.7 });
     }
   }
-  const ps = passes(s.soldiers, P, shooter, o.killed);
+  const killedOn = (id: number) => o.events?.find((e) => e.kind === "kill" && e.soldier === id)?.branch ?? 0;
+  const ps = passesAll(s.soldiers, P, o.branches, shooter, o.killed, killedOn);
   let eeps = 0, phews = 0;
   const near = new Set(ps.map((p) => p.id));
   const twitched = new Set<number>();
   for (const p of ps) {
-    const at = when(p.index);
+    const at = when(p.index, p.branch);
     const x = s.soldiers[p.id];
     if (p.fatal) {
       // he sees it coming, and rears back: the cross cuts him off
@@ -634,7 +658,7 @@ export function planFlick(
     }
   }
   // the fallen: his campmates hold still for him, and one of them says so
-  const fallen = ps.filter((p) => p.fatal).map((p) => ({ x: s.soldiers[p.id], at: when(p.index) }));
+  const fallen = ps.filter((p) => p.fatal).map((p) => ({ x: s.soldiers[p.id], at: when(p.index, p.branch) }));
   // Lost shooter: mourned by the camp he left when his cross starts.
   if (o.lost) fallen.push({ x: { ...me, x: P[0].x, y: P[0].y }, at: lostDeathAt });
   let ohs = 0;
@@ -647,7 +671,7 @@ export function planFlick(
       act(c.id, { kind: "mourn", t0: f.at + 60 + rank * 30, dir: Math.atan2(f.x.y - c.y, f.x.x - c.x), amp: 1 });
     });
     if (near[0] && ohs++ < 2) plan.cues.push({ at: f.at + 420 + ohs * 180, id: near[0].id, say: "oh", gain: 0.8 });
-    const home = s.bases.find((b) => b.owner === f.x.owner && Math.hypot(b.x - f.x.x, b.y - f.x.y) <= b.r * 1.05);
+    const home = s.bases.find((b) => b.owner === f.x.owner && inside(b, f.x));
     if (home) plan.hush.push({ base: home.id, at: f.at, ms: MOURN.still });
   }
   // the shooter's side cheers a kill: him first and loudest, then his campmates in a ripple

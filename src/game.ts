@@ -48,6 +48,14 @@ export interface Soldier {
   home?: number;
   /** In a send: ordered this turn (still standing at home), or out on the road. */
   convoy?: number;
+  /**
+   * The long war: the shape of the base he was jotted into, and its turn on the
+   * page (a triangle's or hexagon's `rot`). Set once at the jot and kept for the
+   * whole page: a prism's man is a triangle wherever he's sent. Only a look;
+   * absent in a core game.
+   */
+  shape?: Shape;
+  rot?: number;
 }
 
 /** Everything inked on the page, in order. The page is append-only: marks are never removed. */
@@ -59,7 +67,22 @@ export type Mark =
   // a convoy's footprints, from `a` to `b`
   | { t: "walk"; owner: Player; a: Pt; b: Pt; n: number; seed: number; turn: number }
   // a side's last stand begins: its survivors are ringed where they stand
-  | { t: "stand"; owner: Player; at: Pt[]; seed: number; turn: number };
+  | { t: "stand"; owner: Player; at: Pt[]; seed: number; turn: number }
+  // the long war: a pencil note where a shape acted on a line, at the point the ink
+  // banked off a cushion, split leaving a prism, was ruled by a square or homed from a
+  // pentagon (the rulebook's star). `h`: the line's heading leaving the point
+  | { t: "star"; kind: StarKind; owner: Player; x: number; y: number; h: number; seed: number; turn: number };
+
+export type StarKind = "bank" | "split" | "rule" | "home";
+const STARRED: ReadonlySet<TraceEvent["kind"]> = new Set<TraceEvent["kind"]>(["bank", "split", "rule", "home"]);
+
+/** The line's heading leaving `p` (the point of an event along it): the segment out of the nearest point, or into it at the end. */
+export function headingFrom(pts: Pt[], p: Pt): number {
+  let bi = 0, bd = Infinity;
+  pts.forEach((q, i) => { const dd = Math.hypot(q.x - p.x, q.y - p.y); if (dd < bd) { bd = dd; bi = i; } });
+  const a = pts[bi < pts.length - 1 ? bi : Math.max(0, bi - 1)], b = pts[bi < pts.length - 1 ? bi + 1 : bi];
+  return Math.atan2(b.y - a.y, b.x - a.x);
+}
 
 /** A flick, randomness already resolved: exactly what the ink will do. */
 export interface Flick {
@@ -73,6 +96,12 @@ export interface Flick {
   bend: number;
   /** Seed for the jolts a lunger's hand takes crossing walls and soldiers (uint32). */
   wob: number;
+  /**
+   * The long war: the moment it was released, ms on this turn's clock. Convoys
+   * walk their road in real time, so this says where every walker stood when
+   * the line was drawn. Never earlier than the turn's last flick.
+   */
+  ms?: number;
 }
 
 /**
@@ -118,8 +147,8 @@ export interface Convoy {
 
 /** Something that happened along a line, in order. */
 export interface TraceEvent {
-  /** The long war adds: `bank` off a cushion, `split` leaving your prism, `ink` crossing an old line. */
-  kind: "wall" | "kill" | "edge" | "bank" | "split" | "ink";
+  /** The long war adds: `bank` off a cushion, `split` leaving your prism, `ink` crossing an old line, `rule` passing out through your square, `home` turning toward a man passing out through your pentagon (`soldier`). */
+  kind: "wall" | "kill" | "edge" | "bank" | "split" | "ink" | "rule" | "home";
   at: Pt;
   /** Distance along the line. */
   d: number;
@@ -140,6 +169,8 @@ export interface Outcome {
   path: Pt[];
   /** The long war: the other half of a line your prism split. */
   branches?: Pt[][];
+  /** The long war: a ruled line, straightened by the shooter's own square (flicked from it, or passing out through it). */
+  ruled?: boolean;
   killed: number[];
   /** A lunger who lived: where he stands now. */
   movedTo?: Pt;
@@ -159,6 +190,10 @@ export interface Outcome {
   arrived: number[];
   /** The long war: convoys that walked on along their road as the pen changed hands. */
   advanced?: number[];
+  /** The long war, for the rules lab: total radians camps' wells turned this flick's line(s), and units of line run riding a groove (and how many of them on enemy ink). Measurement only. */
+  bent?: number;
+  rode?: number;
+  rodeFoe?: number;
   /** The pen changed hands. */
   handover: boolean;
 }
@@ -181,6 +216,8 @@ export interface GameState {
   sent: boolean;
   /** Positioning: which sides are done. */
   ready: [boolean, boolean];
+  /** The long war: this turn's clock at its last flick (ms); convoys on the road stand where it put them. */
+  clock?: number;
   /** The turn each side's last stand began (0: not yet). */
   stand: [number, number];
   bases: Base[];
@@ -221,9 +258,8 @@ export function canPlaceBase(s: GameState, x: number, y: number, shape?: Shape):
   return null;
 }
 
-function placeBase(s: GameState, x: number, y: number, shape?: Shape) {
-  const why = canPlaceBase(s, x, y, shape);
-  if (why) throw new Error(why);
+/** The base the current player would draw here next, as it would land (shape, size and seeded turn). */
+export function baseAt(s: GameState, x: number, y: number, shape?: Shape): Base {
   const id = s.bases.length;
   const base: Base = { id, owner: s.current, x, y, r: RULES.baseRadius, seed: (s.seed ^ (id * 7919)) >>> 0 };
   if (s.rules.long && shape) {
@@ -231,9 +267,19 @@ function placeBase(s: GameState, x: number, y: number, shape?: Shape) {
     base.r = radiusOf(s, shape);
     if (shape !== "camp") base.rot = rng(base.seed ^ 0x2545f491)() * 2 * Math.PI;
   }
+  return base;
+}
+
+function placeBase(s: GameState, x: number, y: number, shape?: Shape) {
+  const why = canPlaceBase(s, x, y, shape);
+  if (why) throw new Error(why);
+  const id = s.bases.length;
+  const base = baseAt(s, x, y, shape);
   s.bases.push(base);
+  // the long war: each man takes his base's shape (and its turn) for the whole page
+  const look = s.rules.long && base.shape ? { shape: base.shape, ...(base.rot !== undefined && { rot: base.rot }) } : {};
   for (const p of scatterIn(base, capacity(s, base), base.seed)) {
-    s.soldiers.push({ id: s.soldiers.length, owner: base.owner, x: p.x, y: p.y, alive: true, home: id });
+    s.soldiers.push({ id: s.soldiers.length, owner: base.owner, x: p.x, y: p.y, alive: true, home: id, ...look });
   }
   if (basesLeft(s, 0) === 0 && basesLeft(s, 1) === 0) {
     // everyone arranges their soldiers first: whoever flicks first arranges first
@@ -259,7 +305,7 @@ export function scatterIn(b: { x: number; y: number; r: number; shape?: Shape; r
     const a = rand() * Math.PI * 2;
     const d = Math.sqrt(rand()) * inner;
     const p = { x: b.x + Math.cos(a) * d, y: b.y + Math.sin(a) * d };
-    if (vs && !(insidePoly(p, vs) && vs.every((v, i) => segDist(p, v, vs[(i + 1) % vs.length]) >= dot * 2.2))) continue; // a triangle's or hexagon's corners are cut off
+    if (vs && !(insidePoly(p, vs) && vs.every((v, i) => segDist(p, v, vs[(i + 1) % vs.length]) >= dot * 2.2))) continue; // a polygon's corners are cut off
     if (pts.every((q) => dist(q, p) >= minD) && avoid.every((q) => dist(q, p) >= minD)) pts.push(p);
   }
   return pts;
@@ -268,17 +314,19 @@ export function scatterIn(b: { x: number; y: number; r: number; shape?: Shape; r
 // --- shapes -----------------------------------------------------------------
 
 const cornerMemo = new WeakMap<object, Pt[]>();
+const SIDES: Record<Exclude<Shape, "camp">, number> = { prism: 3, square: 4, pentagon: 5, cushion: 6 };
 
-/** A triangle's or hexagon's corners, in order; null for a circle (a camp, or any core base). */
-export function corners(b: { x: number; y: number; r: number; shape?: Shape; rot?: number }): Pt[] | null {
-  if (b.shape !== "prism" && b.shape !== "cushion") return null;
+/** A triangle's, square's, pentagon's or hexagon's corners, in order; null for a circle (a camp, or any core base). */
+export type Walled = { x: number; y: number; r: number; shape?: Shape; rot?: number };
+export function corners(b: Walled): Pt[] | null {
+  if (!b.shape || b.shape === "camp") return null;
   let vs = cornerMemo.get(b);
-  if (!vs) { vs = polygon(b.shape === "prism" ? 3 : 6, b, b.r, b.rot ?? 0); cornerMemo.set(b, vs); }
+  if (!vs) { vs = polygon(SIDES[b.shape], b, b.r, b.rot ?? 0); cornerMemo.set(b, vs); }
   return vs;
 }
 
 /** How far `p` is outside the base's wall (negative: inside). */
-export function wallGap(b: Base, p: Pt) {
+export function wallGap(b: Walled, p: Pt) {
   const vs = corners(b);
   if (!vs) return dist(b, p) - b.r;
   const d = Math.min(...vs.map((v, i) => segDist(p, v, vs[(i + 1) % vs.length])));
@@ -315,7 +363,7 @@ export function alive(s: GameState, p: Player) {
 const onRoad = (s: GameState, x: Soldier) => x.convoy !== undefined && s.convoys[x.convoy]?.state === "road";
 
 /** Is this point inside the base's wall? Dots drawn on the line count. `slack` scales the wall about its centre. */
-export function inside(b: Base, p: Pt, slack = 1.05) {
+export function inside(b: Walled, p: Pt, slack = 1.05) {
   const vs = corners(b);
   if (!vs) return dist(b, p) <= b.r * slack;
   return insidePoly({ x: b.x + (p.x - b.x) / slack, y: b.y + (p.y - b.y) / slack }, vs);
@@ -544,6 +592,12 @@ export interface Trace {
   offPage: boolean;
   /** The long war: a prism's split-off halves. */
   branches?: Pt[][];
+  /** The long war: the line was ruled by the shooter's own square (flicked from it, or passing out through it). */
+  ruled?: boolean;
+  /** The long war, for the rules lab (measurement only): see `Outcome`. */
+  bent?: number;
+  rode?: number;
+  rodeFoe?: number;
 }
 
 // --- the long war's ink -----------------------------------------------------------
@@ -560,11 +614,23 @@ export interface Trace {
 const SUB = 14; // the longest step the pen takes between bends
 const LOOK = 20, RIDING = 5; // a groove leans the pen in over this run; it's riding once this close
 
-function traceLong(s: GameState, f: Flick): Trace {
+/**
+ * Where a long-war flick would go if the hand were perfectly steady: the
+ * page's own pull (wells, banks, grooves, splits), without the jolts a hand
+ * takes at walls, men and old ink. The aim guide draws this. (Core: null.)
+ */
+export const steadyTrace = (s: GameState, f: Flick): Trace | null => (s.rules.long ? traceLong(marchView(s, f.ms), f, true) : null);
+
+function traceLong(s: GameState, f: Flick, steady = false): Trace {
   const R = s.rules, L = R.long!;
   const me = s.soldiers[f.soldier];
   const snipe = f.kind === "snipe";
-  const raw = flickPath(me, f);
+  // your own square rules your line: from where it passes out through the wall, no arc, no well, no groove, no jolts.
+  // A man standing in it rules his from the start. Walls, men and banks act as ever.
+  const free = new Set(s.bases.filter((b) => wallGap(b, me) < 0).map((b) => b.id));
+  const ruled = s.bases.some((b) => b.shape === "square" && b.owner === me.owner && free.has(b.id));
+  let anyRuled = ruled;
+  const raw = flickPath(me, ruled ? { ...f, bend: 0 } : f);
   // the arc as the turtle walks it: each step's turn (from the one before) and length
   const turn: number[] = [], len: number[] = [];
   let h0 = f.angle, prev = NaN;
@@ -588,6 +654,7 @@ function traceLong(s: GameState, f: Flick): Trace {
   const events: TraceEvent[] = [];
   const branches: Pt[][] = [];
   let offPage = false;
+  let bentSum = 0, rodeSum = 0, rodeFoeSum = 0; // measurement only: what wells and grooves did to this flick, over every half
 
   // a groove's pull: the nearest old line within reach and within the groove angle of parallel turns the pen along it, leaning in
   const pull = (p: Pt, h: number, left: number, step: number) => {
@@ -617,20 +684,20 @@ function traceLong(s: GameState, f: Flick): Trace {
       near = rho;
       angle = phi;
     }
-    if (!best) return { turn: 0, k: 1 };
+    if (!best) return { turn: 0, k: 1, riding: false, own: false };
     // a flick slows as it runs out: speed goes as the root of the line it has left
     const speed = Math.sqrt(Math.max(0, Math.min(1, left / vmax)));
     const rate = L.ink.groovePull * best * (1 - speed) * step;
     const riding = near < RIDING && angle < max * 0.4;
-    return { turn: Math.max(-rate, Math.min(rate, delta)), k: riding ? (own ? L.ink.grooveOwn : L.ink.grooveEnemy) : 1 };
+    return { turn: Math.max(-rate, Math.min(rate, delta)), k: riding ? (own ? L.ink.grooveOwn : L.ink.grooveEnemy) : 1, riding, own };
   };
 
-  interface Pen { at: Pt; h: number; sign: number; j: number; rem: number; budget: number; d: number; free: Set<number>; banks: number; jolts: number; well: number; skipBase: number }
+  interface Pen { at: Pt; h: number; sign: number; j: number; rem: number; budget: number; d: number; free: Set<number>; homed: Set<number>; banks: number; jolts: number; well: number; skipBase: number; straight: boolean }
 
   const walk = (pen: Pen, branch: number, canSplit: boolean): Pt[] => {
     let { at: pos, h, sign, j, rem, budget, d } = pen;
-    const { free } = pen;
-    let { banks, jolts, well, skipBase } = pen; // the base just met here, not to be met again at once
+    const { free, homed } = pen;
+    let { banks, jolts, well, skipBase, straight } = pen; // skipBase: the base just met here, not to be met again at once; straight: ruled by a square
     let skipStroke = -1; // likewise the old stroke
     const pts: Pt[] = [pos];
     let lastInk = { stroke: -1, d: -1 };
@@ -638,12 +705,12 @@ function traceLong(s: GameState, f: Flick): Trace {
     for (let guard = 0; budget > 1e-6 && guard < 4000; guard++) {
       if (rem <= 1e-9) {
         j++;
-        if (j < len.length) { h += sign * turn[j]; rem = len[j]; } else rem = Infinity; // past the arc with line to spare (a friendly groove): straight on
+        if (j < len.length) { if (!straight) h += sign * turn[j]; rem = len[j]; } else rem = Infinity; // past the arc with line to spare (a friendly groove): straight on
       }
       const seg = Math.min(rem, SUB);
       let wellTurn = 0, grooveTurn = 0; // what the well and the groove turned the pen for this step
       // a camp's well: lines outside its wall turn toward it, as hard as its garrison
-      if (well < L.well.maxTurn) {
+      if (!straight && well < L.well.maxTurn) {
         let dh = 0;
         for (const c of camps) {
           if (free.has(c.b.id)) continue; // still leaving his own camp
@@ -661,12 +728,14 @@ function traceLong(s: GameState, f: Flick): Trace {
         wellTurn = dh;
       }
       // a groove: nearly parallel to old ink, the pen is drawn along it; riding it, the line runs further or shorter
-      let k = 1;
-      if (branch || d >= Math.max(L.ink.clear, L.ink.grooveReach * 1.5)) {
+      let k = 1, riding = false, ownInk = false;
+      if (!straight && (branch || d >= Math.max(L.ink.clear, L.ink.grooveReach * 1.5))) {
         const g = pull(pos, h, budget, seg);
         h += g.turn;
         grooveTurn = g.turn;
         k = g.k;
+        riding = g.riding;
+        ownInk = g.own;
       }
       const nxt = { x: pos.x + Math.cos(h) * seg, y: pos.y + Math.sin(h) * seg };
       const tEnd = Math.min(1, budget / (seg * k));
@@ -695,7 +764,7 @@ function traceLong(s: GameState, f: Flick): Trace {
         if (!branch && d + t * seg <= RULES.soldierRadius * 1.5) continue; // the first sliver sits on the shooter's own dot
         bt = t; ev0 = { kind: "kill", soldier: o.id };
       }
-      if (ink.size && jolts < L.ink.joltMax) {
+      if (!straight && ink.size && jolts < L.ink.joltMax) {
         for (const r of ink.near(Math.min(pos.x, nxt.x) - 1, Math.min(pos.y, nxt.y) - 1, Math.max(pos.x, nxt.x) + 1, Math.max(pos.y, nxt.y) + 1, runs)) {
           const t = segT(pos, nxt, r.a, r.b);
           if (t === null || t > tEnd || t >= bt) continue;
@@ -709,10 +778,17 @@ function traceLong(s: GameState, f: Flick): Trace {
         }
       }
       if (!ev0) {
-        if (tEnd < 1) { pts.push({ x: pos.x + vx * tEnd, y: pos.y + vy * tEnd }); break; }
+        if (tEnd < 1) {
+          pts.push({ x: pos.x + vx * tEnd, y: pos.y + vy * tEnd });
+          bentSum += tEnd * Math.abs(wellTurn);
+          if (riding) { rodeSum += tEnd * seg; if (!ownInk) rodeFoeSum += tEnd * seg; }
+          break;
+        }
         budget -= seg * k;
         d += seg;
         rem -= seg;
+        bentSum += Math.abs(wellTurn);
+        if (riding) { rodeSum += seg; if (!ownInk) rodeFoeSum += seg; }
         pts.push(nxt);
         pos = nxt;
         skipBase = skipStroke = -1;
@@ -722,6 +798,8 @@ function traceLong(s: GameState, f: Flick): Trace {
       // cut short: the well and the groove only bent it for the part it walked
       h -= (1 - bt) * (wellTurn + grooveTurn);
       well -= (1 - bt) * Math.abs(wellTurn);
+      bentSum += bt * Math.abs(wellTurn);
+      if (riding) { rodeSum += bt * seg; if (!ownInk) rodeFoeSum += bt * seg; }
       budget -= bt * seg * k;
       d += bt * seg;
       rem -= bt * seg;
@@ -737,11 +815,11 @@ function traceLong(s: GameState, f: Flick): Trace {
         hit.add(ev0.soldier);
         hits.push(ev0.soldier);
         if (snipe) { budget *= 1 - R.snipeKillLoss; ev({ kind: "kill", at, d, soldier: ev0.soldier }); }
-        else { const a = gauss(rand) * R.lungeKillShake; h += a; ev({ kind: "kill", at, d, soldier: ev0.soldier, jolt: a }); }
+        else { const a = steady ? 0 : gauss(rand) * R.lungeKillShake; h += a; ev({ kind: "kill", at, d, soldier: ev0.soldier, jolt: a }); }
         continue;
       }
       if (ev0.kind === "ink") {
-        const a = gauss(rand) * L.ink.jolt;
+        const a = steady ? 0 : gauss(rand) * L.ink.jolt;
         h += a;
         jolts++;
         skipStroke = ev0.run.stroke;
@@ -780,13 +858,36 @@ function traceLong(s: GameState, f: Flick): Trace {
         // garrisoned walls, as in the core rules: as tough as the men inside at this moment
         const cost = wallCost(s, b, f.kind, hit, me.id);
         if (snipe) { budget *= 1 - cost; ev({ kind: "wall", at, d, base: b.id, cost }); }
-        else { const a = gauss(rand) * cost; h += a; ev({ kind: "wall", at, d, base: b.id, cost, jolt: a }); }
+        else { const a = steady ? 0 : gauss(rand) * cost; h += a; ev({ kind: "wall", at, d, base: b.id, cost, jolt: a }); }
+      }
+      if (b.shape === "square" && b.owner === me.owner && leaving && !straight) {
+        // passing out through your own square: ruled from its wall on
+        straight = true;
+        anyRuled = true;
+        ev({ kind: "rule", at, d, base: b.id });
+      }
+      if (b.shape === "pentagon" && b.owner === me.owner && leaving && !homed.has(b.id)) {
+        // passing out through your own pentagon: turn toward the nearest enemy man ahead, within the cone and the line's reach
+        homed.add(b.id);
+        let best: { o: (typeof targets)[number]; dd: number; da: number } | null = null;
+        for (const o of targets) {
+          if (hit.has(o.id)) continue;
+          const dd = dist(at, o);
+          if (dd > budget) continue;
+          const da = wrap(Math.atan2(o.y - at.y, o.x - at.x) - h);
+          if (Math.abs(da) > L.pentagon.cone) continue;
+          if (!best || dd < best.dd - 1e-9 || (Math.abs(dd - best.dd) <= 1e-9 && o.id < best.o.id)) best = { o, dd, da };
+        }
+        if (best) {
+          h += best.da;
+          ev({ kind: "home", at, d, base: b.id, soldier: best.o.id });
+        }
       }
       if (b.shape === "prism" && b.owner === me.owner && snipe && leaving && canSplit) {
         // leaving your own prism, a snipe splits in two
         canSplit = false;
         ev({ kind: "split", at, d, base: b.id });
-        const half = { at, sign, j, rem, budget, d, free: new Set(free), banks, jolts, well, skipBase: b.id };
+        const half = { at, sign, j, rem, budget, d, free: new Set(free), homed: new Set(homed), banks, jolts, well, skipBase: b.id, straight };
         branches.push(walk({ ...half, h: h - L.prism.spread }, branches.length + 1, false));
         h += L.prism.spread;
       }
@@ -794,17 +895,18 @@ function traceLong(s: GameState, f: Flick): Trace {
     return pts;
   };
 
-  const free = new Set(s.bases.filter((b) => wallGap(b, me) < 0).map((b) => b.id));
-  const pts = walk({ at: { x: me.x, y: me.y }, h: h0, sign: 1, j: 0, rem: len[0] ?? 0, budget: pathLen(raw), d: 0, free, banks: 0, jolts: 0, well: 0, skipBase: -1 }, 0, true);
-  return { pts, events, hits, offPage, ...(branches.length && { branches }) };
+  const pts = walk({ at: { x: me.x, y: me.y }, h: h0, sign: 1, j: 0, rem: len[0] ?? 0, budget: pathLen(raw), d: 0, free, homed: new Set<number>(), banks: 0, jolts: 0, well: 0, skipBase: -1, straight: ruled }, 0, true);
+  return { pts, events, hits, offPage, ...(branches.length && { branches }), ...(anyRuled && { ruled: true }), bent: bentSum, rode: rodeSum, rodeFoe: rodeFoeSum };
 }
 
 const empty = (): Outcome => ({ path: [], killed: [], lost: false, events: [], again: true, earned: false, stood: [], walked: [], arrived: [], handover: false });
 
 /** What a flick would do, without doing it. */
-export function preview(s: GameState, f: Flick): Outcome {
+export function preview(s0: GameState, f: Flick): Outcome {
+  // the long war: convoys stand where they'd walked to when this line is released
+  const s = marchView(s0, f.ms);
   const tr = trace(s, f);
-  const o: Outcome = { ...empty(), path: tr.pts, killed: tr.hits, events: tr.events, ...(tr.branches && { branches: tr.branches }) };
+  const o: Outcome = { ...empty(), path: tr.pts, killed: tr.hits, events: tr.events, ...(tr.branches && { branches: tr.branches }), ...(tr.ruled && { ruled: true }), ...(tr.bent !== undefined && { bent: tr.bent, rode: tr.rode, rodeFoe: tr.rodeFoe }) };
   if (f.kind === "lunge") {
     const end = tr.pts[tr.pts.length - 1];
     if (tr.offPage) o.lost = true;
@@ -865,6 +967,7 @@ export function illegal(s: GameState, a: Action): string | null {
       if (!canFlick(s, a.soldier, a.kind)) return s.chain ? "an earned lunge is his to take" : "not his to flick";
       if (a.kind !== "snipe" && a.kind !== "lunge") return "unknown flick";
       if (![a.angle, a.length, a.bend].every(Number.isFinite) || a.length <= 0) return "bad numbers";
+      if (s.rules.long && a.ms !== undefined && !(Number.isFinite(a.ms) && a.ms >= (s.clock ?? 0))) return "time runs one way";
       return null;
     }
     case "send": return canSend(s, a.from, a.to, a.n);
@@ -874,11 +977,35 @@ export function illegal(s: GameState, a: Action): string | null {
 }
 
 function flick(s: GameState, f: Flick, seed: number): Outcome {
+  if (s.rules.long) {
+    // the convoys walk on to the moment it's released, and stand there
+    s.clock = Math.max(s.clock ?? 0, f.ms ?? 0);
+    marchTo(s, s.clock);
+  }
   const o = preview(s, f);
   const me = s.soldiers[f.soldier];
   const who = me.owner;
   s.marks.push({ t: "stroke", kind: f.kind, owner: who, pts: o.path, seed, turn: s.turn });
   o.branches?.forEach((pts, k) => s.marks.push({ t: "stroke", kind: f.kind, owner: who, pts, seed: seed + 3 + k, turn: s.turn }));
+  // the long war: a pencil star where a shape acted on the line, so a finished page tells it (a core page gains nothing).
+  // A line flicked from inside your square has no `rule` event: its ruler's edge goes at the wall it left by, once
+  if (s.rules.long) {
+    let startingRule = false;
+    o.events.forEach((e, k) => {
+      let kind = STARRED.has(e.kind) ? (e.kind as StarKind) : undefined;
+      if (!kind && o.ruled && e.kind === "wall" && e.free && !e.branch) {
+        const b = s.bases[e.base!];
+        if (b.shape === "square" && b.owner === who) {
+          if (startingRule) return;
+          startingRule = true;
+          kind = "rule";
+        }
+      }
+      if (!kind) return;
+      const pts = e.branch && o.branches ? o.branches[e.branch - 1] : o.path;
+      s.marks.push({ t: "star", kind, owner: who, x: e.at.x, y: e.at.y, h: headingFrom(pts, e.at), seed: seed + 700 + k, turn: s.turn });
+    });
+  }
   for (const id of o.killed) {
     const v = s.soldiers[id];
     v.alive = false;
@@ -958,18 +1085,25 @@ export function sendMax(s: GameState, from: number) {
   return Math.min(s.rules.sendMax, sendable(s, a).length);
 }
 
-/** The road between two bases: wall to wall. */
-export function roadBetween(a: Pt & { r: number; shape?: Shape; rot?: number }, b: Pt & { r: number; shape?: Shape; rot?: number }): [Pt, Pt] {
+/** How far out from a base's centre, along unit direction `u`, its wall is `gap` behind you (a circle: `r + gap`). */
+function standoff(b: Walled, u: Pt, gap: number): number {
+  if (!corners(b)) return b.r + gap;
+  let lo = 0, hi = b.r + gap; // a corner is never further than r, so `hi` is clear by `gap`
+  for (let i = 0; i < 40; i++) {
+    const t = (lo + hi) / 2;
+    if (wallGap(b, { x: b.x + u.x * t, y: b.y + u.y * t }) < gap) lo = t; else hi = t;
+  }
+  return hi;
+}
+
+/** The road between two bases: wall to wall (a triangle's or hexagon's wall, where it is). */
+export function roadBetween(a: Walled, b: Walled): [Pt, Pt] {
   const l = dist(a, b) || 1;
   const ux = (b.x - a.x) / l, uy = (b.y - a.y) / l;
-  const wall = (base: typeof a, target: Pt) => {
-    const vs = corners(base);
-    return vs ? (polyHits(base, target, vs)[0]?.t ?? 0) * l : base.r;
-  };
-  const ar = wall(a, b), br = wall(b, a);
+  const ta = standoff(a, { x: ux, y: uy }, 6), tb = standoff(b, { x: -ux, y: -uy }, 6);
   return [
-    { x: a.x + ux * (ar + 6), y: a.y + uy * (ar + 6) },
-    { x: b.x - ux * (br + 6), y: b.y - uy * (br + 6) },
+    { x: a.x + ux * ta, y: a.y + uy * ta },
+    { x: b.x - ux * tb, y: b.y - uy * tb },
   ];
 }
 
@@ -1041,9 +1175,34 @@ function endTurn(s: GameState, seed: number, o: Outcome) {
 // walks `sendPace` further (going in if that reaches the far wall), and the
 // outgoing side's sends walk out. They're exposed the whole way, and always
 // for at least one enemy turn.
+/** Where a long-war convoy's head stands `ms` into the turn: walking its stretch from `at`, then waiting at its end (or the far wall). */
+export function headAt(s: GameState, c: Convoy, ms: number) {
+  const L = s.rules.long!;
+  return Math.min(dist(c.road[0], c.road[1]), c.at! + L.sendPace * Math.min(1, Math.max(0, ms) / L.walkMs));
+}
+
+/** Put every long-war convoy on the road where it has walked to `ms` into this turn. */
+export function marchTo(s: GameState, ms: number) {
+  if (!s.rules.long) return;
+  for (const c of s.convoys) {
+    if (c.state !== "road") continue;
+    const go = c.ids.map((id) => s.soldiers[id]).filter((x) => x.alive && x.convoy === c.id);
+    columnAt(c.road, headAt(s, c, ms), go.length).forEach((p, k) => { go[k].x = p.x; go[k].y = p.y; });
+  }
+}
+
+/** The page as it stands `ms` into this turn, convoys walked on; the same state when nothing walks. */
+export function marchView(s: GameState, ms: number | undefined): GameState {
+  if (!s.rules.long || ms === undefined || !s.convoys.some((c) => c.state === "road")) return s;
+  const v = { ...s, soldiers: s.soldiers.map((x) => ({ ...x })) };
+  marchTo(v, Math.max(s.clock ?? 0, ms));
+  return v;
+}
+
 function endLongTurn(s: GameState, seed: number, o: Outcome) {
   const who = s.current, foe = other(who), pace = s.rules.long!.sendPace;
   o.advanced = [];
+  s.clock = undefined; // a fresh clock for the next turn
   for (const c of s.convoys) {
     if (c.state !== "road") continue;
     const go = c.ids.map((id) => s.soldiers[id]).filter((x) => x.alive && x.convoy === c.id);
@@ -1060,7 +1219,8 @@ function endLongTurn(s: GameState, seed: number, o: Outcome) {
     if (c.owner !== who || c.state !== "ordered") continue;
     const go = c.ids.map((id) => s.soldiers[id]).filter((x) => x.alive);
     if (!go.length) { c.state = "cut"; continue; }
-    c.at = Math.min(dist(c.road[0], c.road[1]), pace);
+    // the head steps onto the road with the column behind it, and walks on during their turn
+    c.at = Math.min(dist(c.road[0], c.road[1]), (go.length - 1) * RULES.soldierRadius * 2.6);
     const spots = columnAt(c.road, c.at, go.length);
     go.forEach((x, k) => {
       s.marks.push({ t: "cross", kind: "moved", owner: c.owner, x: x.x, y: x.y, seed: seed + 11 + x.id, turn: s.turn, id: x.id });

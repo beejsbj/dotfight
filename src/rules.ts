@@ -133,15 +133,19 @@ export interface Garrison {
 
 export type CoreRules = typeof CORE;
 
-/** A long war base's shape: a circle (camp), a triangle (prism), a hexagon (cushion). */
-export type Shape = "camp" | "prism" | "cushion";
-export const SHAPES: readonly Shape[] = ["camp", "prism", "cushion"];
+/** A long war base's shape: a circle (camp), a triangle (prism), a hexagon (cushion), a square (the ruler), a pentagon (the star). */
+export type Shape = "camp" | "prism" | "cushion" | "square" | "pentagon";
+export const SHAPES: readonly Shape[] = ["camp", "prism", "cushion", "square", "pentagon"];
 
 /** The long war's numbers (RULES.md, "Long war rules"). All (to test): lab guesses, for round 5 to tune. */
 export interface Long {
   /** Bumped when a long-war rule's *logic* changes. */
   version: number;
-  /** Per shape: soldiers jotted in it (also what "full" means for its wall), and its size as a multiple of `RULES.baseRadius` (circumradius for polygons). */
+  /**
+   * Per shape: soldiers jotted in it (also what "full" means for its wall), and its size as a multiple of `RULES.baseRadius` (circumradius for polygons).
+   * The square (8 men, size 1.0; Burooj, 2026-10-05, after round 6) is the ruler: your lines passing out through it are ruled from its wall on, a man standing in it from the start (dead straight; see `traceLong`). Both numbers (to test).
+   * The pentagon (8 men, size 1.05) is the star: your lines passing out through it home on the nearest enemy man ahead (see `pentagon`). Both numbers (to test).
+   */
   shapes: Record<Shape, { soldiers: number; size: number }>;
   /**
    * A camp's gravity well. Outside the wall and within `reach` × its radius, a
@@ -154,6 +158,14 @@ export interface Long {
   well: { pull: number; reach: number; floor: number; maxTurn: number };
   /** Your snipe leaving your own prism splits: the halves turn ± `spread` radians. `ownFree`: your own prism's walls cost your lines nothing. */
   prism: { spread: number; ownFree: boolean };
+  /**
+   * The star (to test). A line of yours passing out through your own pentagon, by any wall, turns
+   * by the exact angle to the nearest living enemy man ahead of it (not yet crossed out by this
+   * line) within `cone` radians of its heading and within what's left of the line, measured from
+   * the wall; nearest wins, the lower id on a tie. The line then runs on as ever (the hand's arc,
+   * wells), so it can still miss. Once a pentagon a line. `cone`: radians; 0.52 is about 30°.
+   */
+  pentagon: { cone: number };
   /** A line coming at a cushion's wall more than `glance` radians off square banks off it; at most `maxBanks` a line. */
   cushion: { glance: number; maxBanks: number };
   /**
@@ -165,8 +177,14 @@ export interface Long {
    * Ink within `clear` of where a line starts doesn't count.
    */
   ink: { jolt: number; joltMax: number; groove: number; grooveReach: number; groovePull: number; grooveOwn: number; grooveEnemy: number; clear: number };
-  /** How far a convoy walks along its road at each hand-over of the pen. */
+  /**
+   * How far a convoy walks along its road each turn. It walks it in real time,
+   * over `walkMs` of the turn's clock, then waits; where it stands when a line
+   * is released is where it is (each flick records its moment, `Flick.ms`).
+   */
   sendPace: number;
+  /** How long a convoy takes to walk a turn's stretch, ms of the turn's clock (to test). */
+  walkMs: number;
 }
 
 /**
@@ -178,12 +196,14 @@ export const LONG: CoreRules = {
   ...CORE,
   long: {
     version: 1,
-    shapes: { camp: { soldiers: 12, size: 1 }, prism: { soldiers: 6, size: 1.35 }, cushion: { soldiers: 8, size: 1.1 } },
+    shapes: { camp: { soldiers: 12, size: 1 }, prism: { soldiers: 8, size: 1.35 }, cushion: { soldiers: 8, size: 1.1 }, square: { soldiers: 8, size: 1.0 }, pentagon: { soldiers: 8, size: 1.05 } },
     well: { pull: 0.004, reach: 3.5, floor: 0.12, maxTurn: 1.2 },
     prism: { spread: 0.2, ownFree: true },
+    pentagon: { cone: 0.52 },
     cushion: { glance: 0.6, maxBanks: 3 },
     ink: { jolt: 0.03, joltMax: 1, groove: 0.12, grooveReach: 12, groovePull: 0.02, grooveOwn: 0.7, grooveEnemy: 1.4, clear: 14 },
     sendPace: 150,
+    walkMs: 6000,
   },
 };
 
@@ -207,8 +227,8 @@ export const SIZES = {
   quick: { name: "quick", bases: 3, soldiers: 8 },
   /** Dawood's own. */
   classic: { name: "classic", bases: 5, soldiers: 10 },
-  /** The long war: five shaped bases a side (to test: "bigger armies" is undecided). `soldiers` is a camp's. */
-  long: { name: "long", bases: 5, soldiers: 12 },
+  /** The long war: six shaped bases a side (Burooj, 2026-10-02, after round 5: five fielded fewer men than Classic). `soldiers` is a camp's. */
+  long: { name: "long", bases: 6, soldiers: 12 },
 } as const satisfies Record<string, Size>;
 
 /** What Custom lets you pick. */

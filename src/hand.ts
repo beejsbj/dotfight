@@ -1,19 +1,19 @@
 // How a hand does things on the page: which soldier it means when it taps,
 // and the order it jots dots into a fresh base. Pure, so it can be tested.
 
-import type { Player, Pt } from "./game";
+import { inside, wallGap, type Player, type Pt, type Walled } from "./game";
 
 /** What a tap needs to know about a page: either rules' state fits. */
 export interface Tappable {
   current: Player;
   soldiers: { id: number; owner: Player; x: number; y: number; alive: boolean }[];
-  bases: { id: number; owner: Player; x: number; y: number; r: number }[];
+  bases: ({ id: number; owner: Player } & Walled)[];
 }
 
 export interface PickTol {
   /** A tap within this many world units of a soldier means that soldier. */
   soldier: number;
-  /** A tap within base radius + this means "one of the soldiers in this base". */
+  /** A tap within this far of a base's wall means "one of the soldiers in this base". */
   base: number;
 }
 
@@ -36,7 +36,7 @@ export function pickSoldier(s: Tappable, w: Pt, tol: PickTol, can: (id: number) 
   for (const b of s.bases) {
     if (b.owner !== s.current) continue;
     const d = Math.hypot(b.x - w.x, b.y - w.y);
-    if (d <= b.r + tol.base && d < bb && inBase(mine, b).length) { bb = d; base = b; }
+    if (wallGap(b, w) <= tol.base && d < bb && inBase(mine, b).length) { bb = d; base = b; }
   }
   if (!base) return undefined;
   bd = Infinity;
@@ -47,9 +47,9 @@ export function pickSoldier(s: Tappable, w: Pt, tol: PickTol, can: (id: number) 
   return best;
 }
 
-/** Living soldiers still standing inside a base's circle. */
-export function inBase<T extends Pt>(soldiers: T[], b: { x: number; y: number; r: number }) {
-  return soldiers.filter((x) => Math.hypot(x.x - b.x, x.y - b.y) <= b.r * 1.05);
+/** Living soldiers still standing inside a base's wall (its circle, or in the long war its triangle or hexagon). */
+export function inBase<T extends Pt>(soldiers: T[], b: Walled) {
+  return soldiers.filter((x) => inside(b, x));
 }
 
 /**

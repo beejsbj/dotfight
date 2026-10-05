@@ -214,6 +214,63 @@ export function inkDot(ctx: Ctx, x: number, y: number, r: number, color: string,
   ctx.globalAlpha = 1;
 }
 
+/**
+ * The corners of a soldier's shape as a hand presses it: `n` corners about
+ * (x, y), turned by `rot` plus a seeded wobble of its own, each a little off
+ * the circumradius `R`. Shared by the pressed mark (inkShape) and the hollow
+ * one he leaves (page.ts drawSpent), so the hollow sits where the solid was.
+ * Takes four seeded values, then two per corner, in that order.
+ */
+export function shapeCorners(x: number, y: number, R: number, n: number, rot: number, rand: () => number): Pt[] {
+  const turn = rot + (rand() - 0.5) * 0.3;
+  const out: Pt[] = [];
+  for (let k = 0; k < n; k++) {
+    const a = turn + (k * Math.PI * 2) / n + (rand() - 0.5) * 0.12;
+    const rr = R * (0.86 + rand() * 0.26);
+    out.push({ x: x + Math.cos(a) * rr, y: y + Math.sin(a) * rr });
+  }
+  return out;
+}
+
+// A soldier in his base's shape (the long war): the same pressed ballpoint
+// mark as inkDot, with `n` corners instead of ten lumps. `R` is the
+// circumradius, `rot` the base's turn. Sides bow a hair, the pen goes round
+// twice for a darker off-centre core; no outline stroke, it's pressed, not
+// drawn. `grow`, `wob` and `amp` as inkDot; n under 3 is the plain dot.
+export function inkShape(ctx: Ctx, x: number, y: number, R: number, n: number, rot: number, color: string, seed: number, alpha = 1, grow = 1, wob = 0, amp = 1) {
+  if (grow <= 0) return;
+  if (n < 3) return inkDot(ctx, x, y, R, color, seed, alpha, grow, wob, amp);
+  const rand = redrawn(seed, wob, REDRAW.dot * amp);
+  if (grow < 1) {
+    const e = 1 - Math.pow(1 - grow, 3);
+    R *= 0.35 + 0.65 * e;
+    alpha *= 0.5 + 0.5 * e;
+  }
+  const vs = shapeCorners(x, y, R, n, rot, rand);
+  const bow = n === 3 ? 0.18 : 0.3; // a straighter triangle reads better
+  const bows = vs.map(() => (rand() - 0.5) * bow);
+  const path = (k: number, ox: number, oy: number) => {
+    ctx.beginPath();
+    vs.forEach((a, i) => {
+      const b = vs[(i + 1) % n];
+      const ax = x + (a.x - x) * k + ox, ay = y + (a.y - y) * k + oy, bx = x + (b.x - x) * k + ox, by = y + (b.y - y) * k + oy;
+      const dx = bx - ax, dy = by - ay;
+      if (i === 0) ctx.moveTo(ax, ay);
+      ctx.quadraticCurveTo((ax + bx) / 2 - dy * bows[i], (ay + by) / 2 + dx * bows[i], bx, by);
+    });
+    ctx.closePath();
+  };
+  ctx.fillStyle = paint(ctx, color);
+  ctx.globalAlpha = 0.9 * alpha;
+  path(1, 0, 0);
+  ctx.fill();
+  // the pen goes round twice: a darker core, a little off centre
+  ctx.globalAlpha = 0.5 * alpha;
+  path(0.55, (rand() - 0.5) * R * 0.3, (rand() - 0.5) * R * 0.3);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
 // A cross: two quick strokes. Kills are big and hard; "moved" is small and light.
 // `upTo` (0..1) draws it the way a hand does: one stroke, a beat, the other.
 export function inkCross(ctx: Ctx, x: number, y: number, size: number, color: string, seed: number, width = 2.4, alpha = 1, upTo = 1, wob = 0) {
@@ -398,6 +455,44 @@ export function pencilLoop(ctx: Ctx, cx: number, cy: number, r: number, seed: nu
   for (let i = 0; i < Math.ceil(head); i++) {
     const t0 = i / steps, t1 = Math.min(head, i + 1) / steps;
     const ends = Math.min(1, t0 / 0.08, (1 - t0) / 0.1); // pressure: light in, light out
+    ctx.globalAlpha = alpha * (0.35 + shade[i] * 0.35) * (0.4 + 0.6 * Math.max(0, ends));
+    ctx.lineWidth = width * (0.75 + shade[i] * 0.5);
+    const a = at(t0), b = at(t1);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// The same loose loop round a closed outline (a triangle's or hexagon's walls) instead of a circle:
+// `ring` is the corners in order, and the pencil starts somewhere on it and runs a hair past its start.
+export function pencilRing(ctx: Ctx, ring: Pt[], seed: number, width: number, upTo = 1, alpha = 1) {
+  if (upTo <= 0 || alpha <= 0 || ring.length < 2) return;
+  const rand = rng(seed);
+  const w = wave(seed + 3);
+  const closed = [...ring, ring[0]];
+  const cum = [0];
+  for (let i = 1; i < closed.length; i++) cum.push(cum[i - 1] + Math.hypot(closed[i].x - closed[i - 1].x, closed[i].y - closed[i - 1].y));
+  const total = cum[cum.length - 1];
+  const start = rand(), sweep = 1.05 + rand() * 0.1;
+  const steps = Math.max(28, Math.round(total / 8));
+  const shade = Array.from({ length: steps }, () => rand());
+  const at = (t: number) => {
+    const d = (((start + sweep * t) % 1) + 1) % 1 * total;
+    let i = 1;
+    while (i < cum.length - 1 && cum[i] < d) i++;
+    const u = (d - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]), a = closed[i - 1], b = closed[i];
+    const nx = (b.y - a.y), ny = -(b.x - a.x), nl = Math.hypot(nx, ny) || 1, off = w(t * 2) * 0.007 * total;
+    return { x: a.x + (b.x - a.x) * u + (nx / nl) * off, y: a.y + (b.y - a.y) * u + (ny / nl) * off };
+  };
+  const head = steps * Math.min(1, upTo);
+  ctx.strokeStyle = INK.pencil;
+  ctx.lineCap = "round";
+  for (let i = 0; i < Math.ceil(head); i++) {
+    const t0 = i / steps, t1 = Math.min(head, i + 1) / steps;
+    const ends = Math.min(1, t0 / 0.08, (1 - t0) / 0.1);
     ctx.globalAlpha = alpha * (0.35 + shade[i] * 0.35) * (0.4 + 0.6 * Math.max(0, ends));
     ctx.lineWidth = width * (0.75 + shade[i] * 0.5);
     const a = at(t0), b = at(t1);

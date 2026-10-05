@@ -168,5 +168,5 @@ export function readDrawer(raw: string | null): Filed[] {
 /** The size a new game gets from the picker. */
 export function sizeFor(name: Size["name"], custom?: { bases: number; soldiers: number }): Size {
   if (name === "custom" && custom) return { name, bases: custom.bases, soldiers: custom.soldiers };
-  return { ...(name === "quick" ? SIZES.quick : SIZES.classic) };
+  return { ...(name === "quick" ? SIZES.quick : name === "long" ? SIZES.long : SIZES.classic) };
 }

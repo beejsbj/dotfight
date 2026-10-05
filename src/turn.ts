@@ -9,6 +9,7 @@ import * as core from "./game";
 import type { Action, Flick, GameState, Kind, Outcome, Player } from "./game";
 import * as legacy from "./legacy";
 import { isLegacy, type AnyState } from "./record";
+import type { Shape } from "./rules";
 
 export { isLegacy, LEVELS, type Level };
 
@@ -20,10 +21,13 @@ export const aliveOf = (s: AnyState, p: Player) => s.soldiers.filter((x) => x.al
 
 export const basesLeft = (s: AnyState, p: Player) => (isLegacy(s) ? legacy.basesLeft(s, p) : core.basesLeft(s, p));
 
-export const canPlaceBase = (s: AnyState, x: number, y: number) => (isLegacy(s) ? legacy.canPlaceBase(s, x, y) : core.canPlaceBase(s, x, y));
+export const canPlaceBase = (s: AnyState, x: number, y: number, shape?: Shape) => (isLegacy(s) ? legacy.canPlaceBase(s, x, y) : core.canPlaceBase(s, x, y, shape));
 
-/** Soldiers a new base is jotted with. */
-export const perBase = (s: AnyState) => (isLegacy(s) ? 10 : s.size.soldiers);
+/** Soldiers a new base is jotted with (in the long war, a base of this shape). */
+export const perBase = (s: AnyState, shape?: Shape) => (isLegacy(s) ? 10 : s.rules.long && shape ? s.rules.long.shapes[shape].soldiers : s.size.soldiers);
+
+/** A long war: each base is drawn in a shape. */
+export const shaped = (s: AnyState) => !isLegacy(s) && !!s.rules.long;
 
 /** How long a flick of this power is (snipe and lunge reach alike; the legacy game had its own). */
 export const lengthFor = (s: AnyState, k: Kind, power: number) => (isLegacy(s) ? legacy.legacyReach(toLegacy(k), power) : core.reachOf(s.rules, power));
@@ -45,10 +49,10 @@ export function flick(s: AnyState, f: Flick): Outcome {
   };
 }
 
-/** A base drawn in setup. */
-export function placeBase(s: AnyState, x: number, y: number) {
+/** A base drawn in setup (in the long war, in this shape). */
+export function placeBase(s: AnyState, x: number, y: number, shape?: Shape) {
   if (isLegacy(s)) legacy.placeBase(s, x, y);
-  else core.act(s, { t: "base", x, y });
+  else core.act(s, { t: "base", x, y, ...(s.rules.long && { shape: shape ?? "camp" }) });
 }
 
 /** What Dawood-bot does now (a prototype page: always a flick). */
