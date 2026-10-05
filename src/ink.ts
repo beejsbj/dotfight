@@ -494,6 +494,8 @@ export function bowed(a: Pt, b: Pt, bend: number, n = 10): Pt[] {
 // over what's left, and a few crumbs lie where the eraser has been, brushed off
 // at the end. `e` (0..1) is how far the rubbing has got; at 1 nothing is left.
 // Seeded, so a frame draws the same way every time.
+const smearCanvases = new WeakMap<Ctx, HTMLCanvasElement>();
+
 export function rubOut(ctx: Ctx, x0: number, y0: number, x1: number, y1: number, seed: number, e: number, size: number, color: string, crumbs = 7) {
   if (e <= 0) return;
   const rand = rng(seed);
@@ -519,31 +521,57 @@ export function rubOut(ctx: Ctx, x0: number, y0: number, x1: number, y1: number,
   };
   const one = strokes(0, w * 0.1), two = strokes(gap * 0.5, w * 0.12);
   const p1 = Math.min(1, e / 0.58), p2 = Math.max(0, (e - 0.5) / 0.5);
-  const scrub = (set: Pt[][], p: number, alpha: number, width: number, op: GlobalCompositeOperation, style: string | CanvasPattern) => {
+  const scrub = (set: Pt[][], p: number, alpha: number, width: number, op: GlobalCompositeOperation, style: string | CanvasPattern, g = ctx) => {
     if (p <= 0) return;
     const head = set.length * p;
-    ctx.globalCompositeOperation = op;
-    ctx.strokeStyle = style;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.lineWidth = width;
-    ctx.globalAlpha = alpha;
+    g.globalCompositeOperation = op;
+    g.strokeStyle = style;
+    g.lineCap = "round";
+    g.lineJoin = "round";
+    g.lineWidth = width;
+    g.globalAlpha = alpha;
     for (let i = 0; i < Math.ceil(head); i++) {
       const pts = set[i], f = Math.min(1, head - i), m = (pts.length - 1) * f, k = Math.floor(m);
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (let j = 1; j <= k; j++) ctx.lineTo(pts[j].x, pts[j].y);
-      if (k < pts.length - 1) { const a = pts[k], b = pts[k + 1], t = m - k; ctx.lineTo(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t); }
-      ctx.stroke();
+      g.beginPath();
+      g.moveTo(pts[0].x, pts[0].y);
+      for (let j = 1; j <= k; j++) g.lineTo(pts[j].x, pts[j].y);
+      if (k < pts.length - 1) { const a = pts[k], b = pts[k + 1], t = m - k; g.lineTo(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t); }
+      g.stroke();
     }
   };
   // first scrub: most of the lead comes off, a ghost stays
   scrub(one, p1, 0.72, w, "destination-out", "#000");
-  // the lead it dragged: a faint smudge along the strokes, rubbed off in turn by
-  // the second scrub. Only over lead still there (source-atop): laid on bare
-  // paper too, it tinted the whole box, a rectangle round the words.
+  // Deposit a little lead through the remaining lead's alpha mask. Same-colour
+  // source-atop cannot add density; source-over without a mask tints bare paper.
+  // Reuse a scratch canvas for just this region, in device pixels, so rotated
+  // and scaled notes work without copying or redrawing the full page.
   const smear = 0.04 * Math.min(1, p1 * 1.4) * Math.max(0, 1 - p2 * 1.25);
-  if (smear > 0.003) scrub(one, p1, smear, w * 1.1, "source-atop", paint(ctx, color, 0.35));
+  if (smear > 0.003) {
+    const tr = ctx.getTransform();
+    const bleed = w * 2 + (bx1 - bx0) * Math.tan(tilt);
+    const corners = [[x0 - bleed, y0 - bleed], [x1 + bleed, y0 - bleed], [x0 - bleed, y1 + bleed], [x1 + bleed, y1 + bleed]];
+    const xs = corners.map(([x, y]) => tr.a * x + tr.c * y + tr.e);
+    const ys = corners.map(([x, y]) => tr.b * x + tr.d * y + tr.f);
+    const left = Math.max(0, Math.floor(Math.min(...xs))), top = Math.max(0, Math.floor(Math.min(...ys)));
+    const right = Math.min(ctx.canvas.width, Math.ceil(Math.max(...xs))), bottom = Math.min(ctx.canvas.height, Math.ceil(Math.max(...ys)));
+    const width = right - left, height = bottom - top;
+    if (width > 0 && height > 0) {
+      let c = smearCanvases.get(ctx);
+      if (!c) { c = document.createElement("canvas"); smearCanvases.set(ctx, c); }
+      if (c.width !== width) c.width = width;
+      if (c.height !== height) c.height = height;
+      const g = c.getContext("2d")!;
+      g.resetTransform(); g.clearRect(0, 0, width, height);
+      g.setTransform(tr.a, tr.b, tr.c, tr.d, tr.e - left, tr.f - top);
+      scrub(one, p1, smear, w * 1.1, "source-over", paint(g, color, 0.35), g);
+      g.resetTransform(); g.globalAlpha = 1; g.globalCompositeOperation = "destination-in";
+      g.drawImage(ctx.canvas, left, top, width, height, 0, 0, width, height);
+      ctx.save();
+      ctx.resetTransform(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+      ctx.drawImage(c, left, top);
+      ctx.restore();
+    }
+  }
   // second scrub: the rest
   scrub(two, p2, 1, w * 1.1, "destination-out", "#000");
   if (p2 >= 1) scrub(one, 1, 1, w * 1.1, "destination-out", "#000");
