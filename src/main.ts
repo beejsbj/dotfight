@@ -1641,7 +1641,13 @@ function sheet(html: string, cls = "") {
   el.onclick = null;
   return card;
 }
-function closeSheet() { $("#sheet").hidden = true; }
+function closeSheet() {
+  const el = $("#sheet");
+  if (el.hidden) return;
+  el.hidden = true;
+  // A sparse next frame must spend only time since play became eligible again.
+  last = performance.now();
+}
 
 function showHow() {
   if (turn.shaped(s)) return showHowLong();
