@@ -7,7 +7,7 @@ import "./style.css";
 import { botArrange, botBase, LEVELS, type Level } from "./bot";
 import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
-import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
+import { aimError, pull, pullSpan, release, wobble, type Aim as Pull } from "./flick";
 import {
   act, canArrange, canSend, garrison, illegal, inLastStand, newGame, other, pathLen, sendMax,
   type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
@@ -2330,7 +2330,8 @@ over.addEventListener("pointermove", (e) => {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
       if (!leanedIn(selected)) { standUp(); g = { t: "none" }; return; }
       if (leanOf() < 0.6) return; // still easing in from the page view: the aim waits until he's under the fog
-      aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
+      // a pull begun low on the screen (a camp near the bottom of the page) gets full power in the room it has
+      aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false, span: pullSpan(g.sy, H) };
       aimFrom = forwardAngle();
       speak("aim", selected);
       ratchet.reset();
