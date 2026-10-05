@@ -435,8 +435,8 @@ function sends(c: Ctx): Send[] {
 }
 
 /** The long war: how far along its road a convoy stands in each of the enemy's turns (it walks `pace` at every hand-over, and arrives when the next hop would reach the far wall). */
-function exposures(road: number, pace: number): number[] {
-  let at = Math.min(road, pace);
+export function exposures(road: number, pace: number, n = 1): number[] {
+  let at = Math.min(road, (n - 1) * RULES.soldierRadius * 2.6);
   const out = [at];
   for (;;) {
     if (at + pace >= road) break; // arrives as the pen comes back to me
@@ -460,7 +460,7 @@ function scoreSend(c: Ctx, a: Send, base: { mine: Dot[]; theirs: Dot[] }, before
   const mine = base.mine.filter((d) => !ids.has(d.id));
   const road = roadBetween(from, to);
   const long = s.rules.long;
-  const stops = long ? exposures(dist(road[0], road[1]), long.sendPace).map((at) => columnAt(road, at, go.length)) : [columnSpots(road, go.length)];
+  const stops = long ? exposures(dist(road[0], road[1]), long.sendPace, go.length).map((at) => columnAt(road, at, go.length)) : [columnSpots(road, go.length)];
   const there: Dot[] = go.map((x, k) => {
     const ang = k * 2.4;
     const r = to.r * (to.shape ? 0.35 : 0.5);
