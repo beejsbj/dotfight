@@ -3,7 +3,11 @@ import { idle } from "../lib/phone.mjs";
 
 export default async function (T, out) {
   const { page, cdp } = T;
+  page.setDefaultTimeout(120000);
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  await page.waitForFunction(() => !!window.pft);
+  await page.evaluate(() => document.fonts.ready);
   const fixture = await page.evaluate(async () => {
     const { newGame, act } = await import("/src/game.ts");
     const { LONG } = await import("/src/rules.ts");
@@ -18,13 +22,22 @@ export default async function (T, out) {
     return { r, ids: s.convoys[0].ids };
   });
   await idle(T);
+  await page.waitForTimeout(1000);
+  // Settle initial layer visibility before comparing later incremental frames.
+  await page.evaluate(() => { window.pft.renderNow(); window.pft.redrawCheck(); });
   const rate = +(process.env.THROTTLE ?? 1);
   if (rate > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate });
-  await page.evaluate(() => { window.pft.frames(true); window.pft.clockHeld = false; });
+  const pageVersion = await page.evaluate(() => { window.pft.frames(true); window.pft.clockHeld = false; return window.pft.page.version; });
   await page.waitForFunction(() => window.pft.turnClock >= 3000, undefined, { timeout: 30000 });
   await page.evaluate(() => { window.pft.clockHeld = true; });
   await page.waitForTimeout(300);
   console.log("mid-march perf", JSON.stringify(await page.evaluate(() => window.pft.frames())));
+  const afterVersion = await page.evaluate(() => window.pft.page.version);
+  console.log("settled page versions", pageVersion, afterVersion);
+  const roadLayerEmpty = await page.evaluate(() => window.pft.boil.parts[1].empty);
+  console.log("road live layer empty", roadLayerEmpty);
+  if (process.env.BASELINE !== "1" && roadLayerEmpty) throw new Error("road bodies are missing from their live layer");
+  if (process.env.BASELINE !== "1" && pageVersion !== afterVersion) throw new Error("march rebuilt the settled page");
   const check = await page.evaluate(() => window.pft.redrawCheck());
   console.log("reduced-motion mid-march redraw", JSON.stringify(check));
   if (process.env.BASELINE !== "1" && Object.values(check).some((r) => r.bad)) throw new Error("mid-march incremental rendering differs from a full redraw");

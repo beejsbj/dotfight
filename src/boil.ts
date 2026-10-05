@@ -136,7 +136,7 @@ export const spotKey = (x: Pick<Soldier, "id" | "x" | "y">) => `${x.id}@${x.x},$
 /**
  * What to hold off the page and what the boil layer draws this frame.
  * `on` false: nothing boils (reduced motion, a slow phone), and the only thing
- * held is a soldier riding his ink (`moving`).
+ * held is a soldier riding his ink (`moving`) or walking a long-war road.
  */
 export function planBoil(s: GameState, ink: Ink, o: { on: boolean; side?: "living" | "dead"; moving?: number }): Plan {
   const side = o.side ?? BOILS;
@@ -168,6 +168,17 @@ export function planBoil(s: GameState, ink: Ink, o: { on: boolean; side?: "livin
         hold.marks.add(i);
         if (!ink.live.has(`m${i}`)) plan.marks.push({ i, boils: true });
       });
+    }
+  }
+  // Road men keep moving even when cosmetic boil is unaffordable or disabled.
+  // Hold only their current dot: old departure footprints stay on the page.
+  if (!o.on && s.v !== 1 && s.rules.long) {
+    const roads = new Set(s.convoys.filter((c) => c.state === "road").map((c) => c.id));
+    for (const spot of dotSpots(s)) {
+      const x = s.soldiers[spot.id];
+      if (!x.alive || x.convoy === undefined || !roads.has(x.convoy) || spot.key !== spotKey(x)) continue;
+      hold.dots.add(spot.key);
+      if (spot.key !== riding && !ink.live.has(`d${spot.id}`)) plan.dots.push({ spot, boils: false });
     }
   }
   hold.sig = `${[...hold.dots].join()}|${[...hold.bases].join()}|${hold.marks.size}`;
