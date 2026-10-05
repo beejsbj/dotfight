@@ -757,12 +757,12 @@ let botReleaseMs: number | undefined;
 let clockHeld = false; // dev: hold the clock still, for captures and the redraw check
 /** The page's march steps at the boil's 8 fps, so the page and its layers settle between steps. */
 const MARCH_STEP = 125;
-function stepClock(dt: number) {
+function stepClock(dt: number, visible = !document.hidden) {
   const c0 = core();
   if (!c0?.rules.long || c0.phase !== "play") return false;
   if (c0.turn !== clockTurn) { clockTurn = c0.turn; turnClock = c0.clock ?? 0; }
   turnClock = Math.max(turnClock, c0.clock ?? 0);
-  if (screen !== "game" || res || lapse || lapseDue || document.hidden || !$("#sheet").hidden) return false;
+  if (screen !== "game" || res || lapse || lapseDue || !visible || !$("#sheet").hidden) return false;
   // Another phone owns its turn clock; busy handovers cannot spend the next turn.
   // A local bot advances only while playing its scheduled release animation.
   if (remote(c0.current) || (busy && botReleaseMs === undefined)) return false;
@@ -772,16 +772,18 @@ function stepClock(dt: number) {
 }
 /** The moment a flick played on this phone is let go. */
 const momentNow = () => Math.max(turnClock, core()?.clock ?? 0);
+/** Settle eligible rule time at an input or pause boundary, before its gate changes. */
+function sampleClock(visible = !document.hidden) {
+  const now = performance.now();
+  if (!handClock) stepClock(Math.max(0, now - last) * speed, visible);
+  last = now;
+}
 /** A flick of ours, stamped with its moment (the long war). */
 const stamped = (f: Flick): Flick => {
   if (!core()?.rules.long) return f;
   // Input can release between sparse frames. Spend its eligible interval before
   // fire() starts resolution; explicit capture steps never spend wall time.
-  if (!handClock) {
-    const now = performance.now();
-    stepClock(Math.max(0, now - last) * speed);
-    last = now;
-  }
+  sampleClock();
   return { ...f, ms: momentNow() };
 };
 
@@ -1647,6 +1649,7 @@ function sheet(html: string, cls = "") {
   const card = el.querySelector(".card") as HTMLElement;
   card.className = `card ${cls}`;
   card.innerHTML = html;
+  sampleClock();
   el.hidden = false;
   el.onclick = null;
   return card;
@@ -2469,9 +2472,12 @@ async function openRoom(code: string) {
 }
 
 $("#status").onclick = () => { if ($("#status").classList.contains("tap")) { sfx.tap(); showShare(); } };
+let wasVisible = !document.hidden;
 document.addEventListener("visibilitychange", () => {
-  // No hidden interval belongs to the next visible march frame.
-  last = performance.now();
+  // Preserve the visible tail before hiding, and exclude the hidden interval
+  // before resuming. The event arrives after document.hidden has changed.
+  sampleClock(wasVisible);
+  wasVisible = !document.hidden;
   if (!document.hidden) link?.wake();
 });
 window.addEventListener("focus", () => link?.wake());
