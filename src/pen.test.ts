@@ -16,9 +16,11 @@ describe("the pen's own life", () => {
   it("shivers only near full pull, and only a hair", () => {
     for (let ms = 0; ms < 1000; ms += 7) {
       expect(shiver(ms, 0.85)).toBe(0);
-      expect(Math.abs(shiver(ms, 1))).toBeLessThanOrEqual(0.011);
+      expect(Math.abs(shiver(ms, 1))).toBeLessThanOrEqual(0.004);
     }
-    expect(Math.max(...Array.from({ length: 100 }, (_, i) => Math.abs(shiver(i * 7, 1))))).toBeGreaterThan(0.006);
+    expect(Math.max(...Array.from({ length: 100 }, (_, i) => Math.abs(shiver(i * 7, 1))))).toBeGreaterThan(0.002);
+    // and slow: from one 60 fps frame to the next it moves a fraction of its swing, never across it
+    for (let ms = 0; ms < 1000; ms += 5) expect(Math.abs(shiver(ms + 1000 / 60, 1) - shiver(ms, 1))).toBeLessThan(0.005);
   });
 
   it("lifted off, it rises and fades, then it's gone", () => {

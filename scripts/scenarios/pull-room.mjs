@@ -23,26 +23,37 @@ export default async function (T, out) {
   await page.waitForFunction(() => window.pft.cam.settled);
   const H = await page.evaluate(() => window.innerHeight);
   const pullFrom = async (y0, to) => {
+    const marksBefore = await page.evaluate(() => window.pft.s.marks.length);
     await T.touch("touchStart", [[200, y0]]);
     await page.waitForTimeout(80);
     for (let i = 1; i <= 12; i++) { await T.touch("touchMove", [[200, y0 + ((to - y0) * i) / 12]]); await page.waitForTimeout(30); }
     await page.waitForTimeout(300);
     const p = await page.evaluate(() => window.pft.aim?.power);
-    const guide = await page.evaluate(() => {
+    const feedback = await page.evaluate(() => {
       const ring = document.querySelector("#cancel-ring");
       return {
-        stop: parseFloat(ring.querySelector(".stop").style.top),
-        drawn: parseFloat(ring.querySelector(".drawn").style.height),
+        charge: window.pft.frame().pen?.charge,
+        mark: !ring.hidden,
+        returnLine: ring.querySelector(".back")?.classList.contains("on"),
+        oldRuler: !!ring.querySelector(".stop, .drawn, .rule"),
       };
     });
-    const span = Math.max(feel.minPullSpanPx, Math.min(feel.maxPullPx, H - feel.pullEdgePx - y0));
-    check(Math.abs(guide.stop - (feel.minPullPx + span)) < 0.01,
-      "pull guide stop matches this aim's full-power span");
-    check(Math.abs(guide.drawn - Math.max(0, Math.min(span, to - y0) - feel.minPullPx)) < 0.01,
-      "pull guide progress matches the thumb's travel");
+    check(p > 0 && Math.abs(feedback.charge - p) < 1e-9,
+      "pen gauge follows power for this aim's available pull span", `charge ${feedback.charge} power ${p}`);
+    check(feedback.mark && feedback.returnLine && !feedback.oldRuler,
+      "start mark and return line stay visible without the retired thumb ruler");
     for (let i = 1; i <= 12; i++) { await T.touch("touchMove", [[200, to + ((y0 - to) * i) / 12]]); await page.waitForTimeout(20); }
+    await page.waitForTimeout(100);
+    const cancelled = await page.evaluate(() => ({
+      charge: window.pft.frame().pen?.charge,
+      ring: document.querySelector("#cancel-ring").classList.contains("in"),
+    }));
+    check(cancelled.charge === 0 && cancelled.ring,
+      "return to start empties the gauge and enters the cancellation ring");
     await T.touch("touchEnd", []);
     await page.waitForTimeout(400);
+    const marksAfter = await page.evaluate(() => window.pft.s.marks.length);
+    check(marksAfter === marksBefore, "release inside the cancellation ring adds no shot", `${marksBefore} -> ${marksAfter} marks`);
     return p;
   };
   const low = H - 150, edge = H - feel.pullEdgePx;
