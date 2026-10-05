@@ -417,6 +417,7 @@ const learn = (k: string) => localStorage.setItem(`pft:taught:${k}`, "1");
 
 function reset() {
   gen++;
+  last = performance.now();
   turnClock = 0;
   clockTurn = -1;
   clockHeld = false;
@@ -2452,7 +2453,11 @@ async function openRoom(code: string) {
 }
 
 $("#status").onclick = () => { if ($("#status").classList.contains("tap")) { sfx.tap(); showShare(); } };
-document.addEventListener("visibilitychange", () => { if (!document.hidden) link?.wake(); });
+document.addEventListener("visibilitychange", () => {
+  // No hidden interval belongs to the next visible march frame.
+  last = performance.now();
+  if (!document.hidden) link?.wake();
+});
 window.addEventListener("focus", () => link?.wake());
 window.addEventListener("online", () => link?.wake());
 
@@ -2967,14 +2972,16 @@ let probeSlow = true; // dev: headless Chrome has no GPU and would always look s
 
 function frame(now: number) {
   requestAnimationFrame(frame);
-  frameTimes.push(now - last);
+  const elapsed = Math.max(0, now - last);
+  frameTimes.push(elapsed);
   if (frameTimes.length > 240) frameTimes.shift();
-  let dt = Math.min(50, now - last) * speed;
+  let dt = Math.min(50, elapsed) * speed;
+  let marchDt = elapsed * speed; // rule time follows visible elapsed time, even on sparse frames
   // dev: time advanced by hand, for frame-exact captures (game and boil clocks together)
-  if (handClock) { dt = handClock.due; handClock.due = 0; }
+  if (handClock) { marchDt = dt = handClock.due; handClock.due = 0; }
   last = now;
   T += dt;
-  const marching = stepClock(dt);
+  const marching = stepClock(marchDt);
   // due callbacks (from this game only)
   if (later.length) {
     const due = later.filter((l) => l.at <= T);
