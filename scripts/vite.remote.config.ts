@@ -11,7 +11,12 @@ function remote(): Plugin {
   let polls: ((c: string) => void)[] = [];
   let next = 1;
   const body = (req: import("node:http").IncomingMessage) => new Promise<string>((ok) => { let b = ""; req.on("data", (d) => (b += d)); req.on("end", () => ok(b)); });
-  const flush = () => { while (queue.length && polls.length) polls.shift()!(JSON.stringify(queue.shift())); };
+  const flush = () => {
+    while (queue.length && polls.length) {
+      const command = queue.shift()!;
+      if (waiting.has(command.id)) polls.shift()!(JSON.stringify(command));
+    }
+  };
   return {
     name: "remote-eval",
     transformIndexHtml: (html) => html.replace("</body>", `<script>
@@ -33,14 +38,28 @@ function remote(): Plugin {
       server.middlewares.use("/__remote", async (req, res) => {
         const url = new URL(req.url ?? "/", "http://x");
         if (url.pathname === "/cmd") {
-          const t = setTimeout(() => { polls = polls.filter((p) => p !== send); res.statusCode = 204; res.end(); }, 20000);
+          const drop = () => { clearTimeout(t); polls = polls.filter((p) => p !== send); };
+          const t = setTimeout(() => { drop(); res.statusCode = 204; res.end(); }, 20000);
           const send = (c: string) => { clearTimeout(t); res.setHeader("content-type", "application/json"); res.end(c); };
+          res.once("close", drop);
           polls.push(send); flush(); return;
         }
         if (url.pathname === "/result") { waiting.get(+url.searchParams.get("id")!)?.(await body(req)); waiting.delete(+url.searchParams.get("id")!); res.end("ok"); return; }
         if (url.pathname === "/eval") {
           const id = next++, code = await body(req);
-          const t = setTimeout(() => { waiting.delete(id); res.statusCode = 504; res.end('{"error":"no page answered"}'); }, 60000);
+          const drop = () => {
+            clearTimeout(t);
+            waiting.delete(id);
+            // A page opened later must not execute a command whose caller timed out.
+            const queued = queue.findIndex((c) => c.id === id);
+            if (queued !== -1) queue.splice(queued, 1);
+          };
+          const t = setTimeout(() => {
+            drop();
+            res.statusCode = 504;
+            res.end('{"error":"no page answered"}');
+          }, 60000);
+          res.once("close", drop);
           waiting.set(id, (v) => { clearTimeout(t); res.end(v); });
           queue.push({ id, code }); flush(); return;
         }
@@ -50,4 +69,4 @@ function remote(): Plugin {
   };
 }
 
-export default mergeConfig(base, { plugins: [remote()] });
+export default mergeConfig(base, { plugins: [remote()], server: { port: 5243, strictPort: true } });

@@ -9,10 +9,9 @@ import { idle, placeAt } from "../lib/phone.mjs";
 const blue = [[273, 150], [662, 98], [766, 993], [262, 1152], [679, 1284]];
 const red = [[402, 616], [155, 777], [781, 535], [223, 1580], [889, 1574]];
 
-const check = (T) => T.page.evaluate(async () => {
-  const sc = await import("/src/scene.ts");
-  const p = window.pft, s = p.s, rp = sc.boil.parts[0];
-  const S = sc.pageState.S, c = rp.c, g = c.getContext("2d");
+const check = (T) => T.page.evaluate(() => {
+  const p = window.pft, s = p.s, rp = p.boil.parts[0];
+  const S = rp.S, c = rp.c, g = c.getContext("2d");
   return s.bases.map((b) => {
     let n = 0;
     for (let k = 0; k < 24; k++) {
@@ -23,7 +22,7 @@ const check = (T) => T.page.evaluate(async () => {
       for (let i = 3; i < d.length; i += 4) if (d[i] > 40) { n++; break; }
     }
     const thing = rp.things.some((t) => t.key.startsWith(`b${b.id}@`));
-    return { id: b.id, owner: b.owner, page: sc.page.has(`b${b.id}`), thing, ink: n, vis: c.style.visibility, cw: c.width, ch: c.height };
+    return { id: b.id, owner: b.owner, page: p.page.has(`b${b.id}`), thing, ink: n, vis: c.style.visibility, cw: c.width, ch: c.height };
   });
 });
 
@@ -43,7 +42,7 @@ export default async function (T, out) {
       await idle(T);
       await page.waitForTimeout(500);
       const after = await page.evaluate(() => window.pft.s.bases.length);
-      if (after === before) console.log("not placed at", x, y, await page.evaluate(() => document.querySelector("#status").textContent));
+      if (after === before) { bad++; console.log("not placed at", x, y, await page.evaluate(() => document.querySelector("#status").textContent)); }
       const r = await check(T);
       const miss = r.filter((c) => !c.page && (!c.thing || c.ink < 8));
       if (miss.length) { bad++; console.log("MISSING after", x, y, JSON.stringify(miss)); await T.shot(`${out}/missing-${i}-${x}.png`); }
@@ -51,9 +50,11 @@ export default async function (T, out) {
   }
   await idle(T, 60000);
   await page.waitForTimeout(800);
+  const count = await page.evaluate(() => window.pft.s.bases.length);
+  if (count !== 10) { bad++; console.log(`expected ten camps, found ${count}`); }
   console.log("boil on", await page.evaluate(() => [window.pft.boilOn, window.pft.boil.tooDear]));
   console.log(JSON.stringify(await check(T)));
   await T.shot(`${out}/layout.png`);
   console.log(bad ? `FAIL ${bad}` : "ok");
+  if (bad) process.exitCode = 1;
 }
-

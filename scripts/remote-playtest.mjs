@@ -1,5 +1,7 @@
 // A playtest scenario in a Chrome already running elsewhere (a real GPU, e.g.
 // the Mac), reached over CDP: CDP=http://127.0.0.1:9333 node scripts/remote-playtest.mjs <scenario> <url> <out>
+import { guardBrowserJob } from "./lib/guarded-browser.mjs";
+await guardBrowserJob();
 import { mkdirSync } from "node:fs";
 import { chromium } from "playwright-core";
 import { phone } from "./lib/phone.mjs";
