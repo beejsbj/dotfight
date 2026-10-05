@@ -17,6 +17,18 @@ export interface Aim {
   charged: boolean;
   /** How steady the hand is, from the phone's gyro: scales the wobble (1 = no sensor). */
   steady?: number;
+  /** Screen px of pull for full power on this aim; less than FEEL.maxPullPx when the thumb went down too near the bottom of the screen to pull that far. */
+  span?: number;
+}
+
+/**
+ * How far a pull begun at screen height `y` must go for full power: the usual
+ * travel, or the room left below the thumb if that's less (never under
+ * `FEEL.minPullSpanPx`). Pure.
+ */
+export function pullSpan(y: number, screenH: number) {
+  const room = screenH - FEEL.pullEdgePx - y;
+  return Math.max(FEEL.minPullSpanPx, Math.min(FEEL.maxPullPx, room));
 }
 
 export function pull(a: Aim) {
@@ -24,7 +36,7 @@ export function pull(a: Aim) {
   const d = Math.hypot(vx, vy);
   return {
     angle: Math.atan2(vy, vx),
-    power: Math.min(1, Math.max(0, (d - FEEL.minPullPx) / (FEEL.maxPullPx - FEEL.minPullPx))),
+    power: Math.min(1, Math.max(0, (d - FEEL.minPullPx) / ((a.span ?? FEEL.maxPullPx) - FEEL.minPullPx))),
     live: d >= FEEL.minPullPx,
   };
 }
