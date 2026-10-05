@@ -12,7 +12,7 @@
 
 import { sigma } from "./flick";
 import {
-  canArrange, canSend, capacity, columnAt, corners, dist, flickers, garrison, hand, hitReach, inside, isRing, maxReach, other, powerFor, preview, reachOf, wildOfLength, sendMax, whoGoes, columnSpots, roadBetween,
+  canArrange, canSend, capacity, columnAt, corners, dist, marchView, flickers, garrison, hand, hitReach, inside, isRing, maxReach, other, powerFor, preview, reachOf, wildOfLength, sendMax, whoGoes, columnSpots, roadBetween,
   type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
 } from "./game";
 import { gauss, polyHits, rng, segDist } from "./geom";
@@ -495,6 +495,9 @@ const widened = (k: Skill): Skill => ({ ...k, tries: Math.round(k.tries * LONG_S
 
 /** What Dawood-bot does now. Always a legal action. */
 export function botAction(s: GameState, level: Level | Skill = 1, seed = Date.now()): Action {
+  const ms = s.rules.long ? (s.clock ?? 0) + BOT_THINK_MS : undefined;
+  // Generate aims and score every sample against the same release positions.
+  if (ms !== undefined) s = { ...marchView(s, ms), clock: ms };
   const skill = typeof level === "number" ? SKILLS[level] : level;
   const sk = s.rules.long ? widened(skill) : skill;
   const rand = rng(seed);
@@ -516,7 +519,7 @@ export function botAction(s: GameState, level: Level | Skill = 1, seed = Date.no
   if (!cands.length) return { t: "stop" };
   // 1. noiseless: what would each do if the hand were perfect?
   const first = cands.map((it) => {
-    const f: Flick = { soldier: it.soldier, kind: it.kind, angle: it.angle, length: reachOf(s.rules, it.power), bend: 0, wob: 0 };
+    const f: Flick = { soldier: it.soldier, kind: it.kind, angle: it.angle, length: reachOf(s.rules, it.power), bend: 0, wob: 0, ...(ms !== undefined && { ms }) };
     const o = preview(s, f);
     const g = gain(o);
     return { it, o, g: g.v + (keeps(s, it.kind, o) ? 0.4 : 0) };
@@ -531,7 +534,7 @@ export function botAction(s: GameState, level: Level | Skill = 1, seed = Date.no
     // 2. with a shaky hand, how often does it come off (and keep the pen)?
     let tot = 0, keep = 0, earned = 0;
     for (let j = 0; j < c.sk.samples; j++) {
-      const o = preview(s, shake(s, k.it, sk, rand));
+      const o = preview(s, { ...shake(s, k.it, sk, rand), ...(ms !== undefined && { ms }) });
       tot += gain(o).v;
       if (keeps(s, k.it.kind, o)) keep++;
       if (earns(s, k.it.kind, o)) earned++;
@@ -554,12 +557,12 @@ export function botAction(s: GameState, level: Level | Skill = 1, seed = Date.no
   // an earned lunge can be turned down: stopping is worth nothing either way
   if (s.chain && (!best || best.v < 0)) return { t: "stop" };
   const f = shake(s, best!.it, sk, rand);
-  // the long war: it lets go a moment after the turn's last flick (main.ts stamps the real moment when it plays)
-  return { t: "flick", ...f, ...(s.rules.long && { ms: (s.clock ?? 0) + BOT_THINK_MS }) };
+  // The page plays at this same release moment, including on a slow worker.
+  return { t: "flick", ...f, ...(ms !== undefined && { ms }) };
 }
 
 /** How long Dawood-bot takes over a flick in the long war, on the turn's clock: convoys walk on meanwhile. */
-export const BOT_THINK_MS = 1200;
+export const BOT_THINK_MS = 1550;
 
 // --- positioning ----------------------------------------------------------------
 

@@ -419,6 +419,14 @@ const learn = (k: string) => localStorage.setItem(`pft:taught:${k}`, "1");
 
 function reset() {
   gen++;
+  turnClock = 0;
+  clockTurn = -1;
+  clockHeld = false;
+  botThinking = false;
+  botReleaseMs = undefined;
+  shown = null;
+  guideKey = "";
+  guideVal = {};
   signing = false;
   later = later.filter((l) => l.g === ROOM);
   busy = false;
@@ -542,13 +550,20 @@ function next() {
     if (!c1?.rules.long) return botGoes(turn.botMove(s, level, seed));
     // a long-war move is a few hundred previews: think on a worker, and carry on when it answers
     const g0 = gen, n0 = c1.actions.length;
-    void botMoveLater(c1, level, seed).then((a) => after(0, () => { if (g0 === gen && c1 === s && n0 === c1.actions.length) botGoes(a); }));
+    botThinking = true;
+    const asked = { ...marchView(c1, momentNow()), clock: momentNow() };
+    void botMoveLater(asked, level, seed).then((a) => after(0, () => {
+      if (g0 !== gen || c1 !== s || n0 !== c1.actions.length) return;
+      botThinking = false;
+      botReleaseMs = a.t === "flick" ? a.ms : undefined;
+      botGoes(a);
+    }));
   });
 }
 
 // Someone else's flick, played out: the pen goes down on the soldier, pulls
 // back, and lets go. You watch from above, the way you'd lean over a friend's.
-// `ours`: the bot playing on this phone, so the flick takes this turn's clock as it's let go; a room peer's keeps its own moment.
+// `ours`: the bot plays at its forecast release moment; a room peer keeps its own moment.
 function showFlick(f: Flick, ours = false) {
   selected = f.soldier;
   pickUp(f.soldier);
@@ -563,7 +578,9 @@ function showFlick(f: Flick, ours = false) {
       const pw = botAim?.power ?? 0.5;
       const lean = penLean(pw);
       botAim = null;
-      fire(ours ? stamped(f) : f, pw, lean);
+      if (ours && f.ms !== undefined) turnClock = f.ms;
+      botReleaseMs = undefined;
+      fire(f, pw, lean);
     });
   });
 }
@@ -617,7 +634,7 @@ function perform(a: Action, then: () => void) {
   const c0 = core();
   lastMoveWall = wall;
   if (!c0) return then();
-  const before = c0.soldiers.map((x) => ({ x: x.x, y: x.y }));
+  const before = marchView(c0, momentNow()).soldiers.map((x) => ({ x: x.x, y: x.y }));
   const first = c0.marks.length;
   const o = act(c0, a);
   if (a.t === "stop") streak = { who: -1, turn: -1, kind: "", n: 0, last: undefined };
@@ -736,6 +753,8 @@ function afterBase() {
 // hand-over, a sheet is up, or the phone is away.
 let turnClock = 0;
 let clockTurn = -1;
+let botThinking = false;
+let botReleaseMs: number | undefined;
 let clockHeld = false; // dev: hold the clock still, for captures and the redraw check
 /** The page's march steps at the boil's 8 fps, so the page and its layers settle between steps. */
 const MARCH_STEP = 125;
@@ -746,7 +765,7 @@ function stepClock(dt: number) {
   turnClock = Math.max(turnClock, c0.clock ?? 0);
   if (screen !== "game" || res || lapse || lapseDue || document.hidden || !$("#sheet").hidden) return false;
   const walking = c0.convoys.some((c) => c.state === "road" && turnClock < c0.rules.long!.walkMs);
-  if (!clockHeld) turnClock += dt;
+  if (!clockHeld && !botThinking) turnClock = Math.min(turnClock + dt, botReleaseMs ?? Infinity);
   return walking;
 }
 /** The moment a flick played on this phone is let go. */
@@ -797,7 +816,9 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
   const who = s.current;
   lastMoveWall = wall;
   const first = s.marks.length; // the flick appends its stroke, then its crosses
-  const before = s.soldiers.map((x) => ({ x: x.x, y: x.y }));
+  // Handover starts from where the convoy stood as the line was released.
+  const released = turn.isLegacy(s) ? s : marchView(s, f.ms);
+  const before = released.soldiers.map((x) => ({ x: x.x, y: x.y }));
   const o = turn.flick(s, f);
   save();
   selected = undefined;
