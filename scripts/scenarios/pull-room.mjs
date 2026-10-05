@@ -23,6 +23,7 @@ export default async function (T, out) {
   await page.waitForFunction(() => window.pft.cam.settled);
   const H = await page.evaluate(() => window.innerHeight);
   const pullFrom = async (y0, to) => {
+    const marksBefore = await page.evaluate(() => window.pft.s.marks.length);
     await T.touch("touchStart", [[200, y0]]);
     await page.waitForTimeout(80);
     for (let i = 1; i <= 12; i++) { await T.touch("touchMove", [[200, y0 + ((to - y0) * i) / 12]]); await page.waitForTimeout(30); }
@@ -51,6 +52,8 @@ export default async function (T, out) {
       "return to start empties the gauge and enters the cancellation ring");
     await T.touch("touchEnd", []);
     await page.waitForTimeout(400);
+    const marksAfter = await page.evaluate(() => window.pft.s.marks.length);
+    check(marksAfter === marksBefore, "release inside the cancellation ring adds no shot", `${marksBefore} -> ${marksAfter} marks`);
     return p;
   };
   const low = H - 150, edge = H - feel.pullEdgePx;
