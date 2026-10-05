@@ -120,7 +120,7 @@ While you aim, the pencil guide follows the line the page will draw (wells, bank
 
 ## Drawing the bases
 
-Players take turns drawing six bases each. Each is dragged onto the page from a shape card and jotted with its own garrison, which is what "full" means for its wall (lab: camp 12, cushion 8, pentagon 8, prism 6, square 6; to test). Every wall still costs a line by its garrison, as in the core rules, whatever its shape.
+Players take turns drawing six bases each. Each is dragged onto the page from a shape card and jotted with its own garrison, which is what "full" means for its wall (camp 12, cushion 8, pentagon 8, prism 8, square 8; to test). Every wall still costs a line by its garrison, as in the core rules, whatever its shape.
 
 ## Sends in the long war
 
@@ -141,9 +141,9 @@ The camp and the cushion act on everyone's lines; the prism, the square and the 
 | Shape | Name | Men | What it does |
 |---|---|---|---|
 | Circle | camp | 12 | A **gravity well**: lines passing near it, anyone's, yours too, bend round it. **Its pull is its garrison**: a full camp bends hard, a thinned one less, an empty ring keeps a faint pull (the dent in the paper), a send arriving strengthens it again. No line turns more than about 70° in all. (to test) |
-| Triangle | prism | 6 | Your snipes passing out through it **split in two** (±0.2 rad), so put it in front of your other bases. Lunges don't split: a lunger is one body. Your own prism's walls don't slow your lines; theirs cost as any wall. |
+| Triangle | prism | 8 | Your snipes passing out through it **split in two** (±0.2 rad), so put it in front of your other bases. Lunges don't split: a lunger is one body. Your own prism's walls don't slow your lines; theirs cost as any wall. |
 | Hexagon | cushion | 8 | **Billiards**: banks everyone's lines, yours too, by angle. Only a glancing line bounces (more than 0.6 rad, about 34°, off square; three banks a line at most), and a bank costs the line nothing; a straight one goes in and pays the wall. |
-| Square | ruler | 6 | Your lines passing out through it are **ruled**: dead straight from its wall on, and the page doesn't touch them (no well, groove or jolt), only walls and men. A man standing in it flicks ruled from the start. _Burooj, 2026-10-03._ |
+| Square | ruler | 8 | Your lines passing out through it are **ruled**: dead straight from its wall on, and the page doesn't touch them (no well, groove or jolt), only walls and men. A man standing in it flicks ruled from the start. _Burooj, 2026-10-03._ |
 | Pentagon | star | 8 | Your lines passing out through it **turn on the nearest enemy man ahead** (within 30°) and run at him, snipes and lunges alike; the hand's curve carries on after, so it can still miss. _Burooj, 2026-10-03: new, not Dawood's._ |
 
 ## Shaped soldiers
@@ -189,10 +189,12 @@ Every value here is a lab guess or a direction nobody has played yet.
 |---|---|
 | Six bases a side | Burooj, 2026-10-02, after round 5: five fielded fewer men than Classic (47 against 50). Six runs about 48 turns. Four gave the first player 62%. |
 | Camp as a gravity well: strength | Lab: pull 0.004 a unit at full, out to 3.5 radii, an empty ring at 12%, at most 1.2 rad a line. Round 5: bends 37% of flicks; 0 to 0.008 and reach 2.5 to 5 barely move fairness or length. |
-| Prism | Round 5: spread 0.1 to 0.35 and paying your own walls are all within noise. An all-prism army (30 men) loses to every other mix (27–36%); 8 men is the first number to try. |
+| Prism | 8 men (Burooj, 2026-10-05). Round 5: spread 0.1 to 0.35 and paying your own walls are within noise; at 6 men an all-prism army lost to every mix. Round 6: 6 → 8 men lifts all-prism against the mix from 41% to 51% (+9.2 ± 4.2), no stalls. |
 | Cushion | Round 5: banks cost 2.9 turns; glance 0.4 to 0.8 within noise. |
-| Square (ruler) and pentagon (star) | New, 2026-10-03; not yet in the lab. Garrisons 6 and 8 are guesses. Watch for the one shape every army takes. |
-| Long war send pace | 150 units a hand-over. Round 5: 100 to 250 moves length by 1.5 turns at most. |
+| Square (ruler) | 8 men (Burooj, 2026-10-05). Round 6: at 6 an all-square army won 27% against the mix; at 8, 42% (+14.6 ± 4.2). Still the weakest shape; 10 is the next number to try. |
+| Pentagon (star) | Round 6: keep the 30° cone (15° and 30° both 49.6% against the mix; 45° 54.2%, inconclusive) and 8 men (6 gives 45.4%). |
+| Shape dominance | Round 6: no army dominates. All-camp and all-pentagon are level with the bot's mix; all-cushion beats the mix (60%) and all-pentagon (59%) but is level with all-camp (52.5%), and its wars run longest. Watch the cushion at a real table. |
+| Long war send pace | 150 units a turn, walked over 6 s. Round 5: 100 to 250 moves length by 1.5 turns at most. Round 6: a 3, 6 or 12 s walk loses 22%, 25% or 28% of walkers (the bot doesn't lead moving targets; people will). |
 | Ink: jolts and grooves | Kept light (Burooj, 2026-10-03): one 0.03 rad jolt a line, grooves within 7° and 12 units, own 0.7, theirs 1.4. Round 5: doubling the jolt adds 10 turns. Dawood's boost/drag version was the least fair thing round 2 tried (62% to the first player). |
 | Game length | Round 5: 6 bases about 48 turns (p90 61), 5 bases 41. |
 | Shape powers waking in a last stand | Idea. |

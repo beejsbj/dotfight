@@ -137,7 +137,7 @@ export interface Long {
   version: number;
   /**
    * Per shape: soldiers jotted in it (also what "full" means for its wall), and its size as a multiple of `RULES.baseRadius` (circumradius for polygons).
-   * The square (6 men, size 1.0) is the ruler: your lines passing out through it are ruled from its wall on, a man standing in it from the start (dead straight; see `traceLong`). Both numbers (to test).
+   * The square (8 men, size 1.0; Burooj, 2026-10-05, after round 6) is the ruler: your lines passing out through it are ruled from its wall on, a man standing in it from the start (dead straight; see `traceLong`). Both numbers (to test).
    * The pentagon (8 men, size 1.05) is the star: your lines passing out through it home on the nearest enemy man ahead (see `pentagon`). Both numbers (to test).
    */
   shapes: Record<Shape, { soldiers: number; size: number }>;
@@ -190,7 +190,7 @@ export const LONG: CoreRules = {
   ...CORE,
   long: {
     version: 1,
-    shapes: { camp: { soldiers: 12, size: 1 }, prism: { soldiers: 6, size: 1.35 }, cushion: { soldiers: 8, size: 1.1 }, square: { soldiers: 6, size: 1.0 }, pentagon: { soldiers: 8, size: 1.05 } },
+    shapes: { camp: { soldiers: 12, size: 1 }, prism: { soldiers: 8, size: 1.35 }, cushion: { soldiers: 8, size: 1.1 }, square: { soldiers: 8, size: 1.0 }, pentagon: { soldiers: 8, size: 1.05 } },
     well: { pull: 0.004, reach: 3.5, floor: 0.12, maxTurn: 1.2 },
     prism: { spread: 0.2, ownFree: true },
     pentagon: { cone: 0.52 },

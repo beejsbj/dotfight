@@ -1614,9 +1614,9 @@ function showHowLong() {
     <ol>
       <li>Six bases each, dragged up from the shape cards, any mix. Then arrange your men, and flick, snipe or lunge, as in a quick battle.</li>
       <li><b>Camp</b>, 12 men: lines passing near it bend round it, anyone's, harder the fuller it is.</li>
-      <li><b>Prism</b>, 6: your snipes passing out through it split in two. Its walls don't slow your own lines.</li>
+      <li><b>Prism</b>, 8: your snipes passing out through it split in two. Its walls don't slow your own lines.</li>
       <li><b>Cushion</b>, 8: a glancing line banks off it, anyone's; a straight one goes in.</li>
-      <li><b>Square</b>, 6: your lines passing out through it are ruled dead straight, and nothing on the page can bend them.</li>
+      <li><b>Square</b>, 8: your lines passing out through it are ruled dead straight, and nothing on the page can bend them.</li>
       <li><b>Pentagon</b>, 8: your lines passing out through it turn on the nearest enemy man ahead.</li>
       <li>Old ink jolts a line a little, and draws a shallow one along its groove. Your pencil guide shows where the page will take your line; your hand still wobbles.</li>
       <li><b>Sends walk while you aim</b>: a convoy walks a stretch of its road each turn, in real time, and is out for two or three. Lead it.</li>
@@ -1840,7 +1840,7 @@ function restoreKindBar() {
 // to draw it there, or back over the cards to put it back. `shape` is the one in hand.
 let shape: Shape = "camp";
 /** What each shape does: the card carries only its name and men, this is the status line while it is pressed. */
-const SHAPE_CARD: Record<Shape, string> = { camp: "12 men · bends lines round it", prism: "6 men · splits your shots", cushion: "8 men · banks glancing lines", square: "6 men · rules your lines straight", pentagon: "8 men · homes your lines on them" };
+const SHAPE_CARD: Record<Shape, string> = { camp: "12 men · bends lines round it", prism: "8 men · splits your shots", cushion: "8 men · banks glancing lines", square: "8 men · rules your lines straight", pentagon: "8 men · homes your lines on them" };
 const CARD_PX = 30; // the card's drawing
 let cardPen = -1; // whose pen the cards are drawn in
 let carrying: { id: number; off: number; shape: Shape; sx: number; sy: number; moved: boolean; el: HTMLButtonElement } | null = null;

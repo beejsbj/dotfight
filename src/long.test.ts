@@ -599,13 +599,13 @@ describe("a square rules its lines", () => {
 });
 
 describe("a square on the page", () => {
-  it("is jotted with 6 men inside its walls", () => {
+  it("is jotted with 8 men inside its walls", () => {
     const s = newGame(SIZES.long, 6, undefined, LONG);
     act(s, { t: "base", x: 500, y: 1300, shape: "square" });
     const b = s.bases[0], men = s.soldiers.filter((x) => x.home === 0);
-    expect(L.shapes.square.soldiers).toBe(6);
-    expect(men).toHaveLength(6);
-    expect(capacity(s, b)).toBe(6);
+    expect(L.shapes.square.soldiers).toBe(8);
+    expect(men).toHaveLength(8);
+    expect(capacity(s, b)).toBe(8);
     expect(corners(b)).toHaveLength(4);
     expect(b.r).toBe(RULES.baseRadius * L.shapes.square.size);
     expect(b.rot).toBeTypeOf("number");

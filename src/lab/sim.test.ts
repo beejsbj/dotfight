@@ -54,8 +54,8 @@ describe("rules lab measurements", () => {
     const { st, s } = playGame(sizeOf("long2"), 3, { rules: LONG, maxTurns: 1, kit, kitNames: ["cc", "hp"] });
     expect(s.bases.filter((b) => b.owner === 0).map((b) => b.shape)).toEqual(["camp", "camp"]);
     expect(s.bases.filter((b) => b.owner === 1).map((b) => b.shape)).toEqual(["cushion", "prism"]);
-    expect(st).toMatchObject({ long: true, kits: ["cc", "hp"], armies: [24, 14] });
-    expect(st.army).toBe(19);
+    expect(st).toMatchObject({ long: true, kits: ["cc", "hp"], armies: [24, 16] });
+    expect(st.army).toBe(20);
     const flip = playGame(sizeOf("long2"), 3, { rules: LONG, maxTurns: 1, kit: [kit[1], kit[0]], kitNames: ["hp", "cc"], swap: true }).st;
     expect(flip.swap).toBe(true);
     // each kit's wins are counted over the games where the seats differ, whichever seat it sat in
@@ -70,19 +70,22 @@ describe("rules lab measurements", () => {
     const { s, st } = playGame(sizeOf("long2"), 5, { rules: LONG, maxTurns: 1, kit: parseKits("ss:tt")!, kitNames: ["ss", "tt"] });
     expect(s.bases.filter((b) => b.owner === 0).map((b) => b.shape)).toEqual(["square", "square"]);
     expect(s.bases.filter((b) => b.owner === 1).map((b) => b.shape)).toEqual(["pentagon", "pentagon"]);
-    expect(st.armies).toEqual([12, 16]);
+    expect(st.armies).toEqual([16, 16]);
   });
 
   it("counts rule and home events, per game", () => {
-    const sq = playGame(sizeOf("long3"), 2, { rules: LONG, maxTurns: 12, kit: parseKits("sss:sss")!, kitNames: ["sss", "sss"] }).st;
-    const pe = playGame(sizeOf("long3"), 2, { rules: LONG, maxTurns: 12, kit: parseKits("ttt:ttt")!, kitNames: ["ttt", "ttt"] }).st;
+    // over a few seeded wars, so the count doesn't hang on how one war happens to play
+    const sum = (kit: string) => [1, 2, 3].map((seed) => playGame(sizeOf("long3"), seed, { rules: LONG, maxTurns: 12, kit: parseKits(kit)!, kitNames: kit.split(":") as [string, string] }).st)
+      .reduce((a, g) => ({ ...g, rules: a.rules + g.rules, homes: a.homes + g.homes }));
+    const sq = sum("sss:sss");
+    const pe = sum("ttt:ttt");
     expect(sq.rules).toBeGreaterThan(0);
     expect(sq.homes).toBe(0);
     expect(pe.homes).toBeGreaterThan(0);
     expect(pe.rules).toBe(0);
     expect(summarise([sq, pe]).rules).toBe(sq.rules / 2);
     expect(summarise([sq, pe]).homes).toBe(pe.homes / 2);
-  }, 30_000);
+  }, 90_000);
 
   it("gives the bot's long-war flicks a moment, and lets a line catch a walker mid-walk", () => {
     const L = LONG.long!;
