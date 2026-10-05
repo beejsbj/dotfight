@@ -5,15 +5,18 @@
 // they'd come off, and weighs where everyone ends up. It sends convoys when
 // the road is worth the risk, turns down an earned lunge that looks bad, and
 // arranges its soldiers before the first flick without emptying a base.
+// In the long war it also picks each base's shape, and aims off its target
+// (round a camp's well) and at cushions (a bank shot), since a straight aim
+// rarely finds a line the page bends.
 // Pure and seeded: the same state and seed always give the same action.
 
 import { sigma } from "./flick";
 import {
-  canArrange, canSend, dist, flickers, garrison, hand, hitReach, isRing, maxReach, other, powerFor, preview, reachOf, wildOfLength, sendMax, whoGoes, columnSpots, roadBetween,
+  canArrange, canSend, capacity, columnAt, corners, dist, flickers, garrison, hand, hitReach, inside, isRing, maxReach, other, powerFor, preview, reachOf, wildOfLength, sendMax, whoGoes, columnSpots, roadBetween,
   type Action, type Base, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt,
 } from "./game";
-import { gauss, rng } from "./geom";
-import { FEEL, RULES } from "./rules";
+import { gauss, polyHits, rng } from "./geom";
+import { FEEL, RULES, type Shape } from "./rules";
 
 export interface Skill {
   /** Candidate flicks imagined. */
@@ -151,11 +154,11 @@ function bestShot(c: Ctx, shooters: Pt[], targets: Dot[], steady = 1): number {
  */
 function worth(s: GameState, x: Pt & { owner: Player }, men?: (b: Base) => number): number {
   for (const b of s.bases) {
-    if (b.owner !== x.owner || dist(b, x) > b.r * 1.05) continue;
+    if (b.owner !== x.owner || !inside(b, x)) continue;
     const G = s.rules.garrison;
     if (!G) return 0.9;
     const n = men ? men(b) : garrison(s, b).length;
-    const f = Math.pow(Math.min(1, n / Math.max(1, s.size.soldiers)), G.curve);
+    const f = Math.pow(Math.min(1, n / Math.max(1, capacity(s, b))), G.curve);
     // the snipe's loss at this wall, against the flat 0.1 that made a man inside worth 0.9
     const loss = G.snipeLoss[0] + (G.snipeLoss[1] - G.snipeLoss[0]) * f;
     const shake = G.lungeShake[0] + (G.lungeShake[1] - G.lungeShake[0]) * f;
@@ -167,7 +170,7 @@ function worth(s: GameState, x: Pt & { owner: Player }, men?: (b: Base) => numbe
 /** Soldiers of `p` inside each of their bases, among these dots. */
 function manning(s: GameState, p: Player, ds: Pt[]) {
   const n = new Map<number, number>();
-  for (const b of s.bases) if (b.owner === p) n.set(b.id, ds.filter((d) => dist(b, d) <= b.r * 1.05).length);
+  for (const b of s.bases) if (b.owner === p) n.set(b.id, ds.filter((d) => inside(b, d)).length);
   return (b: Base) => n.get(b.id) ?? 0;
 }
 
@@ -248,6 +251,39 @@ function intents(c: Ctx, rand: () => number): Intent[] {
       out.push({ kind, soldier: me.id, angle: rand() * Math.PI * 2, power: rand() });
     }
   }
+  if (s.rules.long && foes.length) out.push(...bentIntents(c, rand, pickMine, pickFoe, must));
+  return out;
+}
+
+const FAN = [-0.4, -0.25, -0.12, 0.12, 0.25, 0.4];
+
+/**
+ * The long war's extra looks: aimed off the target, for a line a camp's well
+ * will bend back onto it, and at a target's mirror image in a cushion's wall,
+ * for a bank shot. The engine's preview says which of them come off.
+ */
+function bentIntents(c: Ctx, rand: () => number, pickMine: () => GameState["soldiers"][number], pickFoe: (r: () => number) => Pt, must: boolean): Intent[] {
+  const s = c.s, R = s.rules;
+  const cushions = s.bases.filter((b) => b.shape === "cushion");
+  const out: Intent[] = [];
+  for (let i = 0; i < Math.round(c.sk.tries * 0.6); i++) {
+    const me = pickMine();
+    const kind: Kind = must || rand() < 0.35 ? "lunge" : "snipe";
+    let foe = pickFoe(rand);
+    let off = FAN[Math.floor(rand() * FAN.length)];
+    if (cushions.length && rand() < 0.4) {
+      // the target seen in a cushion's wall
+      const b = cushions[Math.floor(rand() * cushions.length)], vs = corners(b)!, e = Math.floor(rand() * vs.length);
+      const p = vs[e], q = vs[(e + 1) % vs.length];
+      const wx = q.x - p.x, wy = q.y - p.y, l2 = wx * wx + wy * wy;
+      const t = ((foe.x - p.x) * wx + (foe.y - p.y) * wy) / l2;
+      foe = { x: 2 * (p.x + wx * t) - foe.x, y: 2 * (p.y + wy * t) - foe.y };
+      off = gauss(rand) * 0.02;
+    }
+    const d = dist(me, foe);
+    const want = rand() < 0.55 ? d + 40 + rand() * 60 : d + 150 + rand() * Math.max(0, maxReach(R) - d);
+    out.push({ kind, soldier: me.id, angle: Math.atan2(foe.y - me.y, foe.x - me.x) + off, power: powerFor(R, want) });
+  }
   return out;
 }
 
@@ -283,11 +319,14 @@ function scoreSend(c: Ctx, a: Send, base: { mine: Dot[]; theirs: Dot[] }, before
   const go = whoGoes(s, a.from, a.to, a.n);
   const ids = new Set(go.map((x) => x.id));
   const mine = base.mine.filter((d) => !ids.has(d.id));
-  const spots = columnSpots(roadBetween(from, to), go.length);
+  const road = roadBetween(from, to);
+  const long = s.rules.long;
+  const spots = long ? columnAt(road, long.sendPace, go.length) : columnSpots(road, go.length);
   const walkers: Dot[] = go.map((x, k) => ({ ...spots[k], id: x.id, w: 1.3, walk: true }));
   const there: Dot[] = go.map((x, k) => {
     const ang = k * 2.4;
-    return { x: to.x + Math.cos(ang) * to.r * 0.5, y: to.y + Math.sin(ang) * to.r * 0.5, id: x.id, w: 0.9 };
+    const r = to.r * (to.shape ? 0.35 : 0.5);
+    return { x: to.x + Math.cos(ang) * r, y: to.y + Math.sin(ang) * r, id: x.id, w: 0.9 };
   });
   // with garrisoned walls, both bases' walls change: the one left thinner, the one manned up
   const reweigh = (ds: Dot[]) => { const men = manning(s, c.me, ds.filter((d) => !d.walk)); for (const d of ds) if (!d.walk) d.w = worth(s, { ...d, owner: c.me }, men); return ds; };
@@ -297,7 +336,9 @@ function scoreSend(c: Ctx, a: Send, base: { mine: Dot[]; theirs: Dot[] }, before
   const refill = isRing(s, to) ? 0.4 * a.n : 0;
   const left = garrison(s, from).filter((x) => !ids.has(x.id)).length;
   const emptied = left === 0 ? -0.6 : 0;
-  return 0.5 * onRoad + 0.5 * later + refill + emptied - before;
+  // a long road is out for more of the enemy's turns
+  const out = long ? Math.min(0.8, 0.3 * Math.ceil(dist(road[0], road[1]) / long.sendPace)) : 0.5;
+  return out * onRoad + (1 - out) * later + refill + emptied - before;
 }
 
 /** What Dawood-bot does now. Always a legal action. */
@@ -395,7 +436,7 @@ export function botArrange(s: GameState, seed = Date.now(), stance: Stance = STA
   const pos = new Map(s.soldiers.filter((x) => x.alive && x.owner === me).map((x) => [x.id, { x: x.x, y: x.y }]));
   const foes = s.soldiers.filter((x) => x.alive && x.owner !== me).map((x) => ({ x: x.x, y: x.y }));
   // inside as the wall's garrison counts it (the engine's `inside`)
-  const insideHome = (id: number, p: Pt) => { const h = s.bases[s.soldiers[id].home!]; return dist(h, p) <= h.r * 1.05; };
+  const insideHome = (id: number, p: Pt) => inside(s.bases[s.soldiers[id].home!], p);
   const score = (id: number, p: Pt) => {
     const at = [...pos].map(([k, q]) => ({ ...(k === id ? p : q), id: k }));
     const men = manning(s, me, at);
@@ -418,8 +459,9 @@ export function botArrange(s: GameState, seed = Date.now(), stance: Stance = STA
     const tries = bestV === Infinity ? 40 : 10;
     for (let t = 0; t < tries; t++) {
       const a = rand() * Math.PI * 2;
+      const wall = edgeAt(home, a);
       // forced out: a spot on the paper just outside the wall
-      const r = bestV === Infinity && !mayStay ? home.r * 1.05 + 1 + rand() * Math.max(0, home.r * -0.05 + reach - 2) : Math.sqrt(rand()) * (home.r + reach * 0.9);
+      const r = bestV === Infinity && !mayStay ? wall * 1.05 + 1 + rand() * Math.max(0, wall * -0.05 + reach - 2) : Math.sqrt(rand()) * (wall + reach * 0.9);
       const p = { x: home.x + Math.cos(a) * r, y: home.y + Math.sin(a) * r };
       if (!ok(p)) continue;
       if ([...pos].some(([k, q]) => k !== id && dist(q, p) < RULES.soldierRadius * 2.6)) continue;
@@ -434,7 +476,21 @@ export function botArrange(s: GameState, seed = Date.now(), stance: Stance = STA
   return out;
 }
 
+/** How far from a base's centre its wall is, heading out at angle `a`. */
+function edgeAt(b: Base, a: number) {
+  const vs = corners(b);
+  if (!vs) return b.r;
+  const far = { x: b.x + Math.cos(a) * b.r * 2, y: b.y + Math.sin(a) * b.r * 2 };
+  return (polyHits(b, far, vs)[0]?.t ?? 0.5) * b.r * 2;
+}
+
 // --- setup ------------------------------------------------------------------
+
+/** The bot's shape for its next long-war base: mostly camps, some cushions, the odd prism. */
+export function botShape(rand: () => number): Shape {
+  const u = rand();
+  return u < 0.45 ? "camp" : u < 0.8 ? "cushion" : "prism";
+}
 
 /** Where the bot draws its next base: its own half, spread out. */
 export function botBase(s: GameState, can: (x: number, y: number) => boolean, seed = Date.now()) {

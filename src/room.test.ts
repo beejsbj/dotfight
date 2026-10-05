@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stubRedis } from "../api/_redis-stub";
 import { RoomError, rooms, type Rooms } from "../api/_rooms";
-import { botAction, botArrange, botBase } from "./bot";
+import { botAction, botArrange, botBase, botShape } from "./bot";
+import { rng } from "./geom";
 import { canPlaceBase, illegal, reachOf, type Action, type GameState } from "./game";
 import { file, fromRecord, readSave, toRecord, unfile } from "./record";
-import { CORE, SIZES } from "./rules";
-import { ENGINE, READS, apply, canRead, check, drifted, fresh, hash, replay, turn, type Payload, type Setup } from "./room-engine";
+import { CORE, LONG, SIZES } from "./rules";
+import { ENGINE, LONG_ENGINE, READS, apply, canRead, check, drifted, engineFor, fresh, hash, replay, turn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomApi, type Seat } from "./room-protocol";
 import { listRooms, readRoom, RoomLink, type Saved } from "./room";
 
@@ -200,8 +201,9 @@ describe("room link rate limit waits", () => {
 let k = 1;
 function botMove(s: GameState): Action {
   if (s.phase === "setup") {
-    const spot = botBase(s, (x, y) => !canPlaceBase(s, x, y), k++)!;
-    return { t: "base", x: spot.x, y: spot.y };
+    const shape = s.rules.long ? botShape(rng(k++)) : undefined;
+    const spot = botBase(s, (x, y) => !canPlaceBase(s, x, y, shape), k++)!;
+    return { t: "base", x: spot.x, y: spot.y, ...(shape && { shape }) };
   }
   if (s.phase === "position") return botArrange(s, k++).find((a) => !illegal(s, a)) ?? { t: "ready" };
   return botAction(s, 1, k++);
@@ -237,9 +239,13 @@ describe("room engine adapter", () => {
 });
 
 describe("room engines", () => {
-  it("new rooms use core-4, which older clients reject for the reload path", () => {
+  it("new rooms use core-4, or long-1 for the long war, which older clients reject for the reload path", () => {
     expect(ENGINE).toBe("core-4");
-    expect(READS).toEqual(["core-2", "core-3", "core-4"]);
+    expect(LONG_ENGINE).toBe("long-1");
+    expect(READS).toEqual(["core-2", "core-3", "core-4"]); // long-1 joins once the page can play it
+    expect(canRead(LONG_ENGINE)).toBe(false);
+    expect(engineFor(CORE)).toBe("core-4");
+    expect(engineFor(LONG)).toBe("long-1");
     expect(["core-2", "core-3"].includes(ENGINE)).toBe(false);
     expect(canRead("core-1")).toBe(false);
     expect(canRead("core-5")).toBe(false);
@@ -275,6 +281,56 @@ describe("room engines", () => {
     const filed = JSON.parse(JSON.stringify({ ...file(s, { kind: "pnp" }), rules }));
     expect(unfile(filed)).toEqual(s);
     expect(readSave(JSON.stringify({ s: { ...s, rules }, mode: { kind: "pnp" } }))!.s).toEqual(s);
+  });
+});
+
+describe("long-1 rooms", () => {
+  it("a long war replays from its log, step by step, without drift; and from its record, filed page and save", () => {
+    const long: Setup = JSON.parse(JSON.stringify({ seed: 515151, size: SIZES.long, rules: LONG }));
+    const s = fresh(long);
+    expect(s.rules.long).toEqual(LONG.long);
+    const log: { seat: Seat; a: Payload }[] = [];
+    let flicks = 0;
+    while (s.phase !== "over" && flicks < 12) {
+      const a = botMove(s);
+      const seat = turn(s)!;
+      apply(s, { a });
+      log.push({ seat, a: { a, h: hash(s) } });
+      if (a.t === "flick") flicks++;
+      if (log.length % 20) continue;
+      const step = replay(long, log);
+      expect(step.s).toEqual(s);
+      expect(step.drift).toBeUndefined();
+    }
+    expect(s.bases.every((b) => b.shape)).toBe(true);
+    const r = replay(JSON.parse(JSON.stringify(long)), log);
+    expect(r).toEqual({ s, drift: undefined });
+    expect(fromRecord(JSON.parse(JSON.stringify(toRecord(s))))).toEqual(s);
+    expect(unfile(JSON.parse(JSON.stringify(file(s, { kind: "pnp" }))))).toEqual(s);
+    expect(readSave(JSON.stringify({ s, mode: { kind: "pnp" } }))!.s).toEqual(s);
+  }, 60_000);
+
+  it("a long war's hash detects interior ink drift and groove ownership", () => {
+    const s = fresh({ seed: 9, size: SIZES.long, rules: LONG });
+    const mark = { t: "stroke" as const, kind: "snipe" as const, owner: 0 as Seat, pts: [{ x: 100, y: 100 }, { x: 150, y: 120 }, { x: 200, y: 100 }], seed: 1, turn: 1 };
+    s.marks.push(mark);
+    const original = hash(s);
+    mark.pts[1].y = 180;
+    expect(hash(s)).not.toBe(original);
+    mark.pts[1].y = 120;
+    mark.owner = 1;
+    expect(hash(s)).not.toBe(original);
+  });
+
+  it("a long war's hash notices ink and roads that a core hash wouldn't", () => {
+    const s = fresh({ seed: 9, size: SIZES.long, rules: LONG });
+    const h = hash(s);
+    s.marks.push({ t: "stroke", kind: "snipe", owner: 0, pts: [{ x: 1, y: 1 }, { x: 2, y: 2 }], seed: 1, turn: 1 });
+    expect(hash(s)).not.toBe(h);
+    const c = fresh(setup);
+    const hc = hash(c);
+    c.marks.push({ t: "stroke", kind: "snipe", owner: 0, pts: [{ x: 1, y: 1 }, { x: 2, y: 2 }], seed: 1, turn: 1 });
+    expect(hash(c)).toBe(hc);
   });
 });
 

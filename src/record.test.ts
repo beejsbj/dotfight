@@ -3,12 +3,17 @@ import { botAction, botArrange, botBase } from "./bot";
 import { act, canPlaceBase, illegal, newGame, type GameState } from "./game";
 import { inkTime, totalHold, wallTime } from "./inkclock";
 import * as legacy from "./legacy";
+import { hash } from "./room-engine";
 import { addToDrawer, apply, blank, file, fromRecord, readDrawer, readSave, settleSave, steps, toRecord, unfile, type Filed, type GameRecord } from "./record";
 import { CORE, SIZES, savedRules } from "./rules";
 // two wars (Quick, Classic) recorded on origin/main's engine before garrisoned walls, with how they ended
 import beforeRaw from "./__fixtures__/core-v1-wars.json?raw";
 
+// four wars (two Quick, two Classic) on core-4, garrisoned walls, with the page's hash after every action (scripts/fixture-core-wars.ts)
+import core4Raw from "./__fixtures__/core-4-wars.json?raw";
+
 const before = JSON.parse(beforeRaw) as { record: GameRecord; end: { winner: number; turn: number; marks: number; soldiers: number[][] } }[];
+const core4 = JSON.parse(core4Raw) as { record: GameRecord; hashes: string[]; end: { winner: number; turn: number; marks: number } }[];
 
 // A whole June-prototype war (bot v bot), seeded: what old saves and drawer pages hold.
 function oldWar(seed: number, maxTurns = 400): legacy.LegacyState {
@@ -76,6 +81,18 @@ describe("record (core rules)", () => {
         expect(x.y).toBeCloseTo(end.soldiers[i][1], 2);
         expect(x.alive ? 1 : 0).toBe(end.soldiers[i][2]);
       });
+    }
+  });
+
+  it("core-4 wars recorded before the long war replay step by step to the same page", () => {
+    for (const { record, hashes, end } of core4) {
+      expect(record.rules).not.toHaveProperty("long");
+      const s = newGame(record.size, record.seed, record.page, savedRules(record.rules));
+      record.actions.forEach((a, i) => {
+        act(s, a);
+        expect(hash(s), `${record.size.name} ${record.seed}, action ${i}`).toBe(hashes[i]);
+      });
+      expect({ winner: s.winner, turn: s.turn, marks: s.marks.length }).toEqual(end);
     }
   });
 
