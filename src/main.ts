@@ -773,7 +773,17 @@ function stepClock(dt: number) {
 /** The moment a flick played on this phone is let go. */
 const momentNow = () => Math.max(turnClock, core()?.clock ?? 0);
 /** A flick of ours, stamped with its moment (the long war). */
-const stamped = (f: Flick): Flick => (core()?.rules.long ? { ...f, ms: momentNow() } : f);
+const stamped = (f: Flick): Flick => {
+  if (!core()?.rules.long) return f;
+  // Input can release between sparse frames. Spend its eligible interval before
+  // fire() starts resolution; explicit capture steps never spend wall time.
+  if (!handClock) {
+    const now = performance.now();
+    stepClock(Math.max(0, now - last) * speed);
+    last = now;
+  }
+  return { ...f, ms: momentNow() };
+};
 
 // The long war's aim guide follows the ink a steady hand would draw: round a
 // camp's well, off a cushion, along a groove, and a prism's other half. Traced
