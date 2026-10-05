@@ -407,6 +407,8 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 
 /* narrow phones: the slip's hand gets smaller so nothing wraps */
 @media (max-width: 340px) {
+  .label .pair { flex-direction: column; gap: 0; }
+  .label .pair .field { flex: none; }
   .menu .ink { font-size: 24px; }
   .menu .sect { font-size: 24px; white-space: nowrap; }
   .menu .bot .ink { font-size: 23px; }

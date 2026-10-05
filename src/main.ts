@@ -1418,9 +1418,11 @@ function coverMenu() {
     } else if (a === "more") showDrawer();
     else if (b.dataset.room) { const x = readRoom(localStorage, b.dataset.room); if (x) enterRoom(x); }
     else if (b.dataset.lvl) {
+      const focused = document.activeElement === b;
       botLevel = (botLevel + 1) % LEVELS.length as Level; // one word, tapped round: sloppy, steady, sharp
       localStorage.setItem("pft:lvl", String(botLevel));
       draw();
+      if (focused) menu.querySelector<HTMLButtonElement>("[data-lvl]")!.focus({ preventScroll: true });
     } else if (b.dataset.size) {
       sizeName = b.dataset.size as Size["name"];
       localStorage.setItem("pft:size", sizeName);
