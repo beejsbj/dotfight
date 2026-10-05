@@ -540,7 +540,7 @@ function next() {
     if (a.t !== "flick") return;
     const { t: _t, ...f } = a;
     void _t;
-    showFlick(f, true);
+    showFlick(f);
   };
   after(500, () => {
     const seed = (Math.random() * 2 ** 32) >>> 0;
@@ -561,8 +561,8 @@ function next() {
 
 // Someone else's flick, played out: the pen goes down on the soldier, pulls
 // back, and lets go. You watch from above, the way you'd lean over a friend's.
-// `ours`: the bot plays at its forecast release moment; a room peer keeps its own moment.
-function showFlick(f: Flick, ours = false) {
+// The bot and room peer both play at their recorded release moment.
+function showFlick(f: Flick) {
   selected = f.soldier;
   pickUp(f.soldier);
   kind = f.kind;
@@ -576,7 +576,7 @@ function showFlick(f: Flick, ours = false) {
       const pw = botAim?.power ?? 0.5;
       const lean = penLean(pw);
       botAim = null;
-      if (ours && f.ms !== undefined) turnClock = f.ms;
+      if (f.ms !== undefined) turnClock = f.ms;
       botReleaseMs = undefined;
       fire(f, pw, lean);
     });
@@ -762,6 +762,9 @@ function stepClock(dt: number) {
   if (c0.turn !== clockTurn) { clockTurn = c0.turn; turnClock = c0.clock ?? 0; }
   turnClock = Math.max(turnClock, c0.clock ?? 0);
   if (screen !== "game" || res || lapse || lapseDue || document.hidden || !$("#sheet").hidden) return false;
+  // Another phone owns its turn clock; busy handovers cannot spend the next turn.
+  // A local bot advances only while playing its scheduled release animation.
+  if (remote(c0.current) || (busy && botReleaseMs === undefined)) return false;
   const walking = c0.convoys.some((c) => c.state === "road" && turnClock < c0.rules.long!.walkMs);
   if (!clockHeld && !botThinking) turnClock = Math.min(turnClock + dt, botReleaseMs ?? Infinity);
   return walking;

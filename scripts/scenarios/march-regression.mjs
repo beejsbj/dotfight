@@ -48,6 +48,7 @@ export default async function (T, out) {
     const s = window.pft.s;
     const me = s.soldiers.find((x) => x.alive && x.owner === s.current && x.convoy === undefined);
     window.pft.flick({ soldier: me.id, kind: "snipe", angle: 0, length: 100, bend: 0, wob: 0, ms: window.pft.turnClock });
+    window.pft.clockHeld = false;
     return { from, due: window.pft.lapse };
   }, fixture.ids);
   // The renderer snaps to 125 ms steps; release origin is the exact timestamp.
@@ -57,6 +58,13 @@ export default async function (T, out) {
     const w = lapse.walkers.find((w) => w.id === x.id);
     if (w && Math.hypot(w.from.x - x.x, w.from.y - x.y) > 4) throw new Error("handover rewound a marching man");
   }
+  await page.waitForFunction(() => window.pft.busy && !window.pft.res && !window.pft.lapse, undefined, { timeout: 30000 });
+  await page.waitForTimeout(60);
+  const handoverClock = await page.evaluate(() => window.pft.turnClock);
+  await page.waitForTimeout(200);
+  const afterHandover = await page.evaluate(() => window.pft.turnClock);
+  console.log("blocked handover clock", handoverClock, afterHandover);
+  if (handoverClock !== afterHandover) throw new Error("next player's march clock runs while handover blocks input");
   await idle(T);
   const reset = await page.evaluate((r) => {
     window.pft.resumeRecord(r); window.pft.clockHeld = true;
@@ -64,4 +72,13 @@ export default async function (T, out) {
   }, fixture.r);
   if (reset !== 0) throw new Error(`page clock survived reset: ${reset}`);
   console.log("page clock resets and handover starts at release positions");
+  // A spectator has no authoritative wall clock for another phone's turn.
+  await idle(T);
+  await page.evaluate(() => { window.pft.mode.kind = "room"; window.pft.clockHeld = false; });
+  await page.waitForTimeout(300);
+  const remoteClock = await page.evaluate(() => window.pft.turnClock);
+  await page.evaluate(() => { window.pft.mode.kind = "pnp"; });
+  if (remoteClock !== 0) throw new Error(`observer advanced remote clock to ${remoteClock}`);
+  await page.waitForFunction(() => window.pft.turnClock > 0, undefined, { timeout: 30000 });
+  console.log("observer clock holds; local holder clock resumes");
 }
