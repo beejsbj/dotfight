@@ -28,6 +28,18 @@ export default async function (T, out) {
     for (let i = 1; i <= 12; i++) { await T.touch("touchMove", [[200, y0 + ((to - y0) * i) / 12]]); await page.waitForTimeout(30); }
     await page.waitForTimeout(300);
     const p = await page.evaluate(() => window.pft.aim?.power);
+    const guide = await page.evaluate(() => {
+      const ring = document.querySelector("#cancel-ring");
+      return {
+        stop: parseFloat(ring.querySelector(".stop").style.top),
+        drawn: parseFloat(ring.querySelector(".drawn").style.height),
+        span: window.pft.aim.span,
+      };
+    });
+    check(Math.abs(guide.stop - (feel.minPullPx + guide.span)) < 0.01,
+      "pull guide stop matches this aim's full-power span");
+    check(Math.abs(guide.drawn - Math.max(0, Math.min(guide.span, to - y0) - feel.minPullPx)) < 0.01,
+      "pull guide progress matches the thumb's travel");
     for (let i = 1; i <= 12; i++) { await T.touch("touchMove", [[200, to + ((y0 - to) * i) / 12]]); await page.waitForTimeout(20); }
     await T.touch("touchEnd", []);
     await page.waitForTimeout(400);

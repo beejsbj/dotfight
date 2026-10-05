@@ -337,22 +337,28 @@ let thumbX = 0; // where the thumb is across the screen
 const ringEl = document.createElement("div");
 ringEl.id = "cancel-ring";
 ringEl.hidden = true;
-{
-  const r = FEEL.minPullPx, span = FEEL.maxPullPx - r;
+let ringSpan = 0;
+function sizeRing(full: number) {
+  if (full === ringSpan) return;
+  ringSpan = full;
+  const r = FEEL.minPullPx, span = full - r;
   ringEl.innerHTML = `<i></i><b class="rule" style="height:${span}px"></b><b class="drawn"></b>` +
     DETENTS.slice(1, -1).map((d) => `<b class="tick" style="top:${r + r + d * span}px"></b>`).join("") +
-    `<b class="stop" style="top:${r + FEEL.maxPullPx}px"></b>`;
+    `<b class="stop" style="top:${r + full}px"></b>`;
 }
+sizeRing(FEEL.maxPullPx);
 const drawnEl = () => ringEl.querySelector<HTMLElement>(".drawn")!;
 document.body.append(ringEl);
 function syncRing() {
   const shown = !!aim && g.t === "aim";
   if (shown && g.t === "aim") {
     const r = FEEL.minPullPx;
+    const full = aim!.span ?? FEEL.maxPullPx;
+    sizeRing(full);
     ringEl.style.transform = `translate(${thumbX - r}px, ${g.sy - r}px)`;
     ringEl.style.width = ringEl.style.height = `${r * 2}px`;
     (ringEl.firstElementChild as HTMLElement).style.transform = `translate(${g.sx - thumbX}px, 0)`; // the dot stays where the thumb began
-    drawnEl().style.height = `${Math.max(0, Math.min(FEEL.maxPullPx, byThumb.dist) - r)}px`;
+    drawnEl().style.height = `${Math.max(0, Math.min(full, byThumb.dist) - r)}px`;
   }
   if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
   const on = shown && !!aim && aim.charged && !pull(aim).live;
