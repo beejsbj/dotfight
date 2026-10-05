@@ -1363,10 +1363,12 @@ function coverMenu() {
   // a page started on another paper says so
   const elsewhere = saved && paperOf(saved.s.page) !== currentTheme() ? ` · ${themeOf(saved.s.page?.theme).name.toLowerCase()}` : "";
   const menu = $("#cover .menu");
+  menu.querySelector(".note")?.remove();
   const mark = $("#cover .tabs .m1 sup");
   mark.textContent = d.length ? String(d.length) : "";
   const where = (x: AnyState) => x.phase === "setup" ? "still drawing camps" : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : ""}`;
   const draw = () => {
+    const note = menu.querySelector(".note")?.textContent;
     // "tear it out?" is written over its row, which fades underneath: asking never moves the slip
     const carry = canResume ? `
       <div class="carry">
@@ -1377,7 +1379,7 @@ function coverMenu() {
           <span class="acts"><button data-a="tear" data-code="local" class="ico rip" aria-label="tear this page out for good">${tearIcon()}</button><button data-a="keep" class="ico" aria-label="keep it">${keepIcon()}</button></span>
         </div>` : ""}
       </div>` : "";
-    const slip = (rows: number) => `${carry}${friendsList(rows)}
+    const slip = (rows: number) => `${note ? `<p class="note">${esc(note)}</p>` : ""}${carry}${friendsList(rows)}
     <h2 class="sect">new game</h2>
     ${sizeRow()}
     <div class="bot">
@@ -1984,6 +1986,7 @@ function coverNote(t: string) {
   let n = menu.querySelector(".note");
   if (!n) { n = document.createElement("p"); n.className = "note"; menu.prepend(n); }
   n.textContent = t;
+  refitCover();
 }
 
 /** The cover lists at most this many games with friends; fewer on a short phone. */
