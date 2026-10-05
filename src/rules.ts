@@ -50,6 +50,8 @@ export const RULES = {
 export const FEEL = {
   maxPullPx: 240, // screen px of pull for full power (a thumb can travel this far on a 390x844 phone)
   minPullPx: 16, // below this, release cancels
+  pullEdgePx: 24, // a thumb can't pull right to the screen's bottom edge
+  minPullSpanPx: 110, // however low the thumb starts, full power never takes less pull than this
   // Angular error (radians, 1 sigma) hidden from the player on release.
   jitterBase: 0.012,
   jitterPower: 0.05, // added at full power (scaled by power^2)
@@ -71,8 +73,12 @@ export type RulesT = typeof RULES;
 export const CORE = {
   /** Bumped when a rule's *logic* changes, so old records can be told apart. 2: shorter pull reach. */
   version: 2,
-  /** Shared snipe/lunge reach; short lines get more of the thumb's travel. Version 1 keeps 300–1800 on its 0.9 curve. */
-  reach: { min: 200, max: 1200, curve: 1.5 },
+  /**
+   * Shared snipe/lunge reach; short lines get more of the thumb's travel. Full
+   * power crosses the page corner to corner (the diagonal is about 1970).
+   * Games begun on 200–1200 at power^1.5 keep it; version 1 keeps 300–1800 on its 0.9 curve.
+   */
+  reach: { min: 200, max: 2000, curve: 2 },
   /**
    * Snipe power loss (to test): the share of what's left of the line lost at
    * each soldier it crosses out, and at each wall *when the game has no

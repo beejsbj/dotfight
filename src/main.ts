@@ -7,7 +7,7 @@ import "./style.css";
 import { botArrange, botBase, LEVELS, type Level } from "./bot";
 import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
-import { aimError, pull, release, wobble, type Aim as Pull } from "./flick";
+import { aimError, pull, pullSpan, release, wobble, type Aim as Pull } from "./flick";
 import {
   act, canArrange, canSend, garrison, illegal, inLastStand, newGame, other, pathLen, sendMax,
   type Action, type Flick, type GameState, type Kind, type Outcome, type Player, type Pt, type Soldier,
@@ -337,22 +337,28 @@ let thumbX = 0; // where the thumb is across the screen
 const ringEl = document.createElement("div");
 ringEl.id = "cancel-ring";
 ringEl.hidden = true;
-{
-  const r = FEEL.minPullPx, span = FEEL.maxPullPx - r;
+let ringSpan = 0;
+function sizeRing(full: number) {
+  if (full === ringSpan) return;
+  ringSpan = full;
+  const r = FEEL.minPullPx, span = full - r;
   ringEl.innerHTML = `<i></i><b class="rule" style="height:${span}px"></b><b class="drawn"></b>` +
     DETENTS.slice(1, -1).map((d) => `<b class="tick" style="top:${r + r + d * span}px"></b>`).join("") +
-    `<b class="stop" style="top:${r + FEEL.maxPullPx}px"></b>`;
+    `<b class="stop" style="top:${r + full}px"></b>`;
 }
+sizeRing(FEEL.maxPullPx);
 const drawnEl = () => ringEl.querySelector<HTMLElement>(".drawn")!;
 document.body.append(ringEl);
 function syncRing() {
   const shown = !!aim && g.t === "aim";
   if (shown && g.t === "aim") {
     const r = FEEL.minPullPx;
+    const full = aim!.span ?? FEEL.maxPullPx;
+    sizeRing(full);
     ringEl.style.transform = `translate(${thumbX - r}px, ${g.sy - r}px)`;
     ringEl.style.width = ringEl.style.height = `${r * 2}px`;
     (ringEl.firstElementChild as HTMLElement).style.transform = `translate(${g.sx - thumbX}px, 0)`; // the dot stays where the thumb began
-    drawnEl().style.height = `${Math.max(0, Math.min(FEEL.maxPullPx, byThumb.dist) - r)}px`;
+    drawnEl().style.height = `${Math.max(0, Math.min(full, byThumb.dist) - r)}px`;
   }
   if (shown !== markOn) { markOn = shown; ringEl.hidden = !shown; }
   const on = shown && !!aim && aim.charged && !pull(aim).live;
@@ -2333,7 +2339,8 @@ over.addEventListener("pointermove", (e) => {
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < TAP) return;
       if (!leanedIn(selected)) { standUp(); g = { t: "none" }; return; }
       if (leanOf() < 0.6) return; // still easing in from the page view: the aim waits until he's under the fog
-      aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false };
+      // a pull begun low on the screen (a camp near the bottom of the page) gets full power in the room it has
+      aim = { soldierId: selected, kind, ax: 0, ay: 0, x: 0, y: 0, t0: T, charged: false, span: pullSpan(g.sy, H) };
       aimFrom = forwardAngle();
       speak("aim", selected);
       ratchet.reset();
