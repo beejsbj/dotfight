@@ -47,6 +47,8 @@ export const RULES = {
 export const FEEL = {
   maxPullPx: 240, // screen px of pull for full power (a thumb can travel this far on a 390x844 phone)
   minPullPx: 16, // below this, release cancels
+  pullEdgePx: 24, // a thumb can't pull right to the screen's bottom edge
+  minPullSpanPx: 110, // however low the thumb starts, full power never takes less pull than this
   // Angular error (radians, 1 sigma) hidden from the player on release.
   jitterBase: 0.012,
   jitterPower: 0.05, // added at full power (scaled by power^2)
