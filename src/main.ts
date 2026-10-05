@@ -3224,7 +3224,10 @@ function differ(a: ImageData | null, b: ImageData | null, only?: (x: number, y: 
   let bad = 0, x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
   const p = a.data, q = b.data;
   for (let i = 0; i < p.length; i += 4) {
-    if (Math.abs(p[i] - q[i]) <= 24 && Math.abs(p[i + 1] - q[i + 1]) <= 24 && Math.abs(p[i + 2] - q[i + 2]) <= 24 && Math.abs(p[i + 3] - q[i + 3]) <= 24) continue;
+    // Compare the color that reaches the page. Near-transparent antialiasing
+    // can change unpremultiplied RGB wildly while changing visible ink by < 1.
+    const pa = p[i + 3], qa = q[i + 3], tolerance = 24 * 255;
+    if (Math.abs(p[i] * pa - q[i] * qa) <= tolerance && Math.abs(p[i + 1] * pa - q[i + 1] * qa) <= tolerance && Math.abs(p[i + 2] * pa - q[i + 2] * qa) <= tolerance && Math.abs(pa - qa) <= 24) continue;
     const x = (i >> 2) % a.width, y = Math.floor((i >> 2) / a.width);
     if (only && !only(x, y)) continue;
     bad++;
