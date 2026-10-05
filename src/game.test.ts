@@ -543,7 +543,8 @@ describe("reach: how far a pull sends the line", () => {
 
   it("the lengths a lunge is wanted at (300..700) still take real thumb travel", () => {
     // a 300-unit lunge sits well clear of the cancel zone, and the band gets over a quarter of the pull
-    expect(powerFor(CORE, 300) * FEEL.maxPullPx).toBeGreaterThan(3 * FEEL.minPullPx);
+    const pullPx = FEEL.minPullPx + powerFor(CORE, 300) * (FEEL.maxPullPx - FEEL.minPullPx);
+    expect(pullPx).toBeGreaterThan(3 * FEEL.minPullPx);
     expect(powerFor(CORE, 700) - powerFor(CORE, 300)).toBeGreaterThan(0.25);
     // and no length in that band moves more than ~8 units for a pixel of a 224 px pull (version 1: ~10 at 700)
     for (let p = powerFor(CORE, 300); p < powerFor(CORE, 700); p += 0.01) expect(reachOf(CORE, p + 1 / 224) - reachOf(CORE, p)).toBeLessThan(8.5);
