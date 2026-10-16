@@ -13,6 +13,11 @@
 // "the long war's ink" below). Every long-war path is behind `rules.long`, so a
 // core game never takes one.
 //
+// Volleys (docs/volleys.md) are the core rules with `rules.volley` set: both
+// sides aim in secret and one `volley` action resolves both against the page
+// as it stood (see "volleys" below). Every volley path is behind
+// `rules.volley`, so a game played by turns never takes one.
+//
 // (pure, tested)
 
 import { circleHits, dist, flickPath, gauss, insidePoly, pathLen, polygon, polyHits, rng, rotateAbout, segDist, type Pt } from "./geom";
@@ -121,6 +126,9 @@ export interface Flick {
  *   `from` to base `to`, both yours (`to` may be an empty ring). They leave
  *   when you hand over the pen and arrive at the start of your next turn.
  * - `stop`: turn down an earned lunge; with none pending, end your turn.
+ * - `volley` (volleys only): both sides' plans at once, blue's (`a`) and
+ *   red's (`b`); null, or no flicks, draws nothing. Each plan is checked
+ *   against the page as the volley began, and so is every line.
  */
 export type Action =
   | { t: "base"; x: number; y: number; shape?: Shape }
@@ -128,7 +136,14 @@ export type Action =
   | { t: "ready" }
   | ({ t: "flick" } & Flick)
   | { t: "send"; from: number; to: number; n: number }
-  | { t: "stop" };
+  | { t: "stop" }
+  | { t: "volley"; a: Plan | null; b: Plan | null };
+
+/** One side's part in a volley: a turn's worth, chosen in secret. An optional send, then its lines (one; two in a last stand), each by a different man. */
+export interface Plan {
+  send?: { from: number; to: number; n: number };
+  flicks: Flick[];
+}
 
 export interface Convoy {
   id: number;
@@ -196,6 +211,36 @@ export interface Outcome {
   rodeFoe?: number;
   /** The pen changed hands. */
   handover: boolean;
+  /** A volley: every line, in the order drawn (blue's, then red's), and what each did. */
+  volley?: { lines: VolleyLine[] };
+}
+
+/** One line of a volley, as it went on the page. */
+export interface VolleyLine {
+  owner: Player;
+  f: Flick;
+  /** What it did, traced against the page as the volley began. */
+  o: Outcome;
+  /** Its stroke's index in `marks`, and every mark it made (the stroke, its crosses, a lunger's). */
+  stroke: number;
+  marks: number[];
+  /** He was crossed out by the other side's line this volley: his own line still went, from where he stood. */
+  fell?: boolean;
+  /** It earned an extra flick, taken after the volley. */
+  earned?: boolean;
+}
+
+/**
+ * Volleys: where the page is. `aim`: waiting for both plans (whoever aims
+ * first is `first`: the page asks them first; it changes nothing in how the
+ * volley resolves). `follow`: after a volley, a side taking the flicks it
+ * earned (`current`, `left`, `chain`, as in a turn), with the other side's run
+ * in `then` if both earned.
+ */
+export interface VolleyState {
+  first: Player;
+  stage: "aim" | "follow";
+  then?: { p: Player; left: number; chain?: { soldier: number; link: number } };
 }
 
 export interface GameState {
@@ -226,6 +271,10 @@ export interface GameState {
   marks: Mark[];
   actions: Action[];
   winner?: Player;
+  /** Volleys: both sides were crossed out in the same volley. */
+  drawn?: boolean;
+  /** Volleys: which stage the page is at (absent in a game played by turns). */
+  vol?: VolleyState;
   page?: { no: number; date: string; theme?: string }; // written in the header, and the paper it was on; optional so older saves still load
 }
 
@@ -938,12 +987,16 @@ export function act(s: GameState, a: Action): Outcome {
     case "arrange": { const x = s.soldiers[a.soldier]; x.x = a.x; x.y = a.y; return empty(); }
     case "ready": {
       s.ready[s.current] = true;
-      if (s.ready[0] && s.ready[1]) { s.phase = "play"; s.current = 0; s.turn = 1; s.left = allotment(s, 0); }
+      if (s.ready[0] && s.ready[1]) {
+        s.phase = "play"; s.current = 0; s.turn = 1; s.left = allotment(s, 0);
+        if (volleys(s)) s.vol = { first: 0, stage: "aim" };
+      }
       else s.current = other(s.current);
       return { ...empty(), again: false };
     }
     case "flick": { const { t: _t, ...f } = a; void _t; return flick(s, f, seed); }
     case "send": return send(s, a, seed);
+    case "volley": return volley(s, a, seed);
     case "stop": {
       const o = empty();
       if (s.chain) { s.chain = undefined; s.left -= 1; }
@@ -964,14 +1017,19 @@ export function illegal(s: GameState, a: Action): string | null {
     case "arrange": return canArrange(s, a.soldier, a.x, a.y);
     case "ready": return s.phase === "position" ? null : "not positioning";
     case "flick": {
+      if (s.vol?.stage === "aim") return "a volley: both sides aim, then both lines go at once";
       if (!canFlick(s, a.soldier, a.kind)) return s.chain ? "an earned lunge is his to take" : "not his to flick";
       if (a.kind !== "snipe" && a.kind !== "lunge") return "unknown flick";
       if (![a.angle, a.length, a.bend].every(Number.isFinite) || a.length <= 0) return "bad numbers";
       if (s.rules.long && a.ms !== undefined && !(Number.isFinite(a.ms) && a.ms >= (s.clock ?? 0))) return "time runs one way";
       return null;
     }
-    case "send": return canSend(s, a.from, a.to, a.n);
-    case "stop": return s.phase === "play" ? null : "not playing";
+    case "send": return s.vol ? "in a volley, a send goes with the plan" : canSend(s, a.from, a.to, a.n);
+    case "stop": return s.phase !== "play" ? "not playing" : s.vol?.stage === "aim" ? "a volley: plan a line, or none" : null;
+    case "volley": {
+      if (!volleys(s) || s.phase !== "play" || s.vol?.stage !== "aim") return "not a volley";
+      return planIllegal(s, 0, a.a) ?? planIllegal(s, 1, a.b);
+    }
   }
   return "unknown action";
 }
@@ -1107,10 +1165,10 @@ export function roadBetween(a: Walled, b: Walled): [Pt, Pt] {
   ];
 }
 
-/** The soldiers a send of `n` from `from` to `to` would take: the ones nearest the road. */
-export function whoGoes(s: GameState, from: number, to: number, n: number) {
+/** The soldiers a send of `n` from `from` to `to` would take: the ones nearest the road (in a volley, never a man drawing a line in it: `but`). */
+export function whoGoes(s: GameState, from: number, to: number, n: number, but?: ReadonlySet<number>) {
   const b = s.bases[to];
-  return sendable(s, s.bases[from]).sort((p, q) => dist(p, b) - dist(q, b) || p.id - q.id).slice(0, n);
+  return sendable(s, s.bases[from]).filter((x) => !but?.has(x.id)).sort((p, q) => dist(p, b) - dist(q, b) || p.id - q.id).slice(0, n);
 }
 
 /** A long-war column on its road: the head `at` units along it, the rest behind (none behind the start). */
@@ -1159,6 +1217,7 @@ function send(s: GameState, a: { from: number; to: number; n: number }, seed: nu
 // (there for exactly one enemy turn); the incoming side's convoys arrive.
 function endTurn(s: GameState, seed: number, o: Outcome) {
   const who = s.current, foe = other(who);
+  if (s.vol) return endRun(s, seed, o);
   if (s.rules.long) return endLongTurn(s, seed, o);
   for (const c of s.convoys) if (c.owner === who && c.state === "ordered") walkOut(s, c, seed, o);
   s.current = foe;
@@ -1273,6 +1332,197 @@ function arrive(s: GameState, c: Convoy, seed: number, o: Outcome) {
   });
   c.state = "arrived";
   o.arrived.push(c.id);
+}
+
+// --- volleys -----------------------------------------------------------------
+//
+// One, two, three, flick! (docs/volleys.md) After positioning, play is in
+// volleys. Each side plans one turn's worth in secret (`Plan`: an optional
+// send, then a line; two lines in a last stand, by two men), and one `volley`
+// action resolves both. Every line is traced against the page as it stood
+// when the volley began, so nobody's line knows about anyone else's: a man
+// crossed out by the enemy's line still gets his own off (mutual kills), a
+// lunger is found by enemy ink where he set off from, never where he lands,
+// and a lunger landing in a base the enemy shot empty this volley is shot by
+// its men all the same (they fire as they fall). Lines never meet lines. Then
+// the ink goes on together: every stroke, then each line's crosses.
+//
+// A line that earns another flick (a snipe that took two, a lunge that killed
+// and lived) earns its side a short run of ordinary flicks right after the
+// volley, lunge-on chains included; if both sides earned, the side that aimed
+// second runs first, then the other. Sends ordered in a volley stay home
+// through it, walk out when it's over (earned runs included), stand on the
+// road through the next volley, and arrive when that one is over: a target
+// for exactly one volley. A volley that crosses out both sides' last men is a
+// draw.
+
+type Chain = { soldier: number; link: number };
+
+/** Is this a game of volleys? A long war never is (its convoys walk on a turn's clock). */
+export const volleys = (s: GameState) => !!s.rules.volley && !s.rules.long;
+
+/** Lines a side draws in a volley: one, or two in its last stand. */
+export const linesFor = (s: GameState, p: Player) => allotment(s, p);
+
+/**
+ * The page as side `p` aims at it in a volley: theirs to pick up, nothing
+ * sent, no chain. A shallow view (soldiers, bases and convoys are shared),
+ * for the rules' own checks and the bot: never act on it.
+ */
+export function aimView(s: GameState, p: Player): GameState {
+  return { ...s, current: p, sent: false, chain: undefined, left: linesFor(s, p) };
+}
+
+/** Why this side's plan can't go in this volley, or null if it can. */
+export function planIllegal(s: GameState, p: Player, plan: Plan | null): string | null {
+  if (!plan) return null;
+  if (!Array.isArray(plan.flicks)) return "a plan lists its lines";
+  const v = aimView(s, p), n = linesFor(s, p);
+  if (plan.flicks.length > n) return n === 1 ? "one line a volley" : `${n} lines a volley`;
+  const ids = new Set<number>();
+  for (const f of plan.flicks) {
+    if (f.kind !== "snipe" && f.kind !== "lunge") return "unknown flick";
+    if (!canFlick(v, f.soldier, f.kind)) return "not his to flick";
+    if (![f.angle, f.length, f.bend].every(Number.isFinite) || f.length <= 0) return "bad numbers";
+    if (f.ms !== undefined) return "a volley has no clock";
+    if (ids.has(f.soldier) && s.rules.volley?.oneLineEach) return "one line a man";
+    ids.add(f.soldier);
+  }
+  if (plan.send) {
+    const { from, to, n: k } = plan.send;
+    const why = canSend(v, from, to, k);
+    if (why) return why;
+    if (whoGoes(v, from, to, k, ids).length < k) return "not that many there";
+  }
+  return null;
+}
+
+const lineSeed = (seed: number, k: number) => (seed + k * 7919) >>> 0;
+
+function volley(s: GameState, a: { a: Plan | null; b: Plan | null }, seed: number): Outcome {
+  const plans = [a.a, a.b] as const;
+  const o = empty();
+  // every line meets the page as it stood at "three": all traced before anything changes
+  const lines: VolleyLine[] = [];
+  for (const p of [0, 1] as Player[]) for (const f of plans[p]?.flicks ?? []) lines.push({ owner: p, f: { ...f }, o: preview(s, f), stroke: -1, marks: [] });
+  // sends are ordered: at home through this volley, out on the road for the next
+  for (const p of [0, 1] as Player[]) {
+    const plan = plans[p];
+    if (!plan?.send) continue;
+    const { from, to, n } = plan.send;
+    const go = whoGoes(aimView(s, p), from, to, n, new Set(plan.flicks.map((f) => f.soldier)));
+    const c: Convoy = { id: s.convoys.length, owner: p, from, to, ids: go.map((x) => x.id), state: "ordered", road: roadBetween(s.bases[from], s.bases[to]), turn: s.turn };
+    s.convoys.push(c);
+    for (const x of go) x.convoy = c.id;
+  }
+  // the ink: every stroke, then each line's crosses (a man two lines crossed out is crossed once, by the first)
+  const fell = new Set<number>();
+  for (const L of lines) for (const id of L.o.killed) fell.add(id);
+  lines.forEach((L, k) => {
+    L.stroke = s.marks.length;
+    L.marks.push(L.stroke);
+    s.marks.push({ t: "stroke", kind: L.f.kind, owner: L.owner, pts: L.o.path, seed: lineSeed(seed, k), turn: s.turn });
+  });
+  const crossed = new Set<number>();
+  lines.forEach((L, k) => {
+    for (const id of L.o.killed) {
+      if (crossed.has(id)) continue;
+      crossed.add(id);
+      const v = s.soldiers[id];
+      L.marks.push(s.marks.length);
+      s.marks.push({ t: "cross", kind: "kill", owner: L.owner, x: v.x, y: v.y, seed: lineSeed(seed, k) + id, turn: s.turn });
+    }
+  });
+  // the lungers: one crossed out as he went is crossed out where he stood; the rest run, as in a turn
+  lines.forEach((L, k) => {
+    if (L.f.kind !== "lunge") return;
+    const me = s.soldiers[L.f.soldier], sk = lineSeed(seed, k);
+    if (fell.has(me.id)) { L.fell = true; return; }
+    L.marks.push(s.marks.length);
+    s.marks.push({ t: "cross", kind: "moved", owner: L.owner, x: me.x, y: me.y, seed: sk + 1, turn: s.turn, id: me.id });
+    const end = L.o.path[L.o.path.length - 1];
+    if (L.o.lost) {
+      me.alive = false;
+      if (L.o.crashed !== undefined) { me.x = end.x; me.y = end.y; }
+      L.marks.push(s.marks.length);
+      s.marks.push({ t: "cross", kind: "lost", owner: L.owner, x: end.x, y: end.y, seed: sk + 2, turn: s.turn });
+    } else {
+      me.x = L.o.movedTo!.x;
+      me.y = L.o.movedTo!.y;
+    }
+  });
+  for (const id of crossed) s.soldiers[id].alive = false;
+  for (const c of s.convoys) if (c.state === "road" && c.ids.every((id) => !s.soldiers[id].alive)) c.state = "cut";
+  o.volley = { lines };
+  o.killed = [...crossed];
+  standCheck(s, seed, o);
+  // the war: both sides crossed out at once is a draw
+  const out0 = !alive(s, 0).length, out1 = !alive(s, 1).length;
+  if (out0 || out1) {
+    s.phase = "over";
+    if (out0 && out1) s.drawn = true;
+    else s.winner = out0 ? 1 : 0;
+    s.left = 0;
+    s.chain = undefined;
+    o.again = false;
+    return o;
+  }
+  // what earned another flick: taken right after, the side that aimed second first
+  const left: [number, number] = [0, 0];
+  const chain: [Chain | undefined, Chain | undefined] = [undefined, undefined];
+  for (const L of lines) {
+    const earned = L.f.kind === "snipe" ? L.o.killed.length >= s.rules.snipeEarnAt : L.o.killed.length > 0 && !L.o.lost && !L.fell;
+    if (!earned) continue;
+    L.earned = true;
+    o.earned = true;
+    left[L.owner]++;
+    if (L.f.kind === "lunge") chain[L.owner] ??= { soldier: L.f.soldier, link: 1 };
+  }
+  const first = s.vol!.first, second = other(first);
+  const runs = [second, first].filter((p) => left[p] > 0);
+  if (!runs.length) { endVolley(s, seed, o, second); return o; }
+  const then = runs[1];
+  s.vol = { first, stage: "follow", ...(then !== undefined && { then: { p: then, left: left[then], ...(chain[then] && { chain: chain[then] }) } }) };
+  startRun(s, seed, o, runs[0], left[runs[0]], chain[runs[0]]);
+  return o;
+}
+
+// A side's earned run after a volley: ordinary flicks, as many as it earned,
+// lunge-on included; no send (that went with the volley).
+function startRun(s: GameState, seed: number, o: Outcome, p: Player, left: number, chain?: Chain) {
+  s.current = p;
+  s.left = left;
+  s.sent = true;
+  s.chain = chain && s.soldiers[chain.soldier].alive ? chain : undefined;
+  if (chain && !s.chain) s.left -= 1; // the lunger who earned it was crossed out in the other side's run
+  o.handover = true;
+  o.again = false;
+  if (s.left <= 0 || !flickers(s).length) endRun(s, seed, o);
+}
+
+// A run is over: the other side's, if it earned one, or the volley is over.
+function endRun(s: GameState, seed: number, o: Outcome) {
+  const then = s.vol!.then;
+  if (then) {
+    s.vol = { first: s.vol!.first, stage: "follow" };
+    return startRun(s, seed, o, then.p, then.left, then.chain);
+  }
+  endVolley(s, seed, o, s.current);
+}
+
+// The volley is over: last volley's convoys arrive, this volley's walk out, and
+// whoever held the pen last aims first next (on one phone, nobody passes it twice).
+function endVolley(s: GameState, seed: number, o: Outcome, holder: Player) {
+  for (const c of s.convoys) if (c.state === "road") arrive(s, c, seed, o);
+  for (const c of s.convoys) if (c.state === "ordered") walkOut(s, c, seed, o);
+  s.turn++;
+  s.vol = { first: holder, stage: "aim" };
+  s.current = holder;
+  s.sent = false;
+  s.chain = undefined;
+  s.left = allotment(s, holder);
+  o.handover = true;
+  o.again = false;
 }
 
 // --- replay -------------------------------------------------------------------

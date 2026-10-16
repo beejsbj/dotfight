@@ -4,7 +4,9 @@
 // tiny, gives the time-lapse replay for free, and is what a room link sends.
 //
 // Pages from the June prototype (v1: seed, bases and flicks) still load and
-// replay through src/legacy.ts. Pure: no DOM.
+// replay through src/legacy.ts. A game of volleys (docs/volleys.md) is a v3
+// record: the same shape, but its actions can hold a `volley`, which older
+// copies of the game can't play, so they pass it over. Pure: no DOM.
 
 import { act, newGame, type Action, type GameState, type Player } from "./game";
 import * as legacy from "./legacy";
@@ -20,9 +22,12 @@ export const isLegacy = (s: AnyState): s is LegacyState => s.v === 1;
 /**
  * Everything needed to replay a core-rules game, and nothing else. Plain JSON.
  * `v` versions this format; `rules.version` versions the rules' logic.
+ * 2: played by turns (the core rules, the long war). 3: not by turns: its
+ * rules carry a tempo older copies don't know (`rules.volley`), so they skip it
+ * rather than replay it by the wrong rules.
  */
 export interface GameRecord {
-  v: 2;
+  v: 2 | 3;
   seed: number;
   size: Size;
   rules: CoreRules;
@@ -30,8 +35,11 @@ export interface GameRecord {
   page?: GameState["page"];
 }
 
+/** The record format a game files as: 3 for volleys, else 2. */
+export const formatOf = (s: GameState): GameRecord["v"] => (s.rules.volley ? 3 : 2);
+
 export function toRecord(s: GameState): GameRecord {
-  return { v: 2, seed: s.seed, size: { ...s.size }, rules: structuredClone(s.rules), actions: structuredClone(s.actions), ...(s.page && { page: s.page }) };
+  return { v: formatOf(s), seed: s.seed, size: { ...s.size }, rules: structuredClone(s.rules), actions: structuredClone(s.actions), ...(s.page && { page: s.page }) };
 }
 
 /** Replay a record from a blank page. */
@@ -65,6 +73,8 @@ export interface FiledV1 {
 export interface FiledV2 extends GameRecord {
   mode: Mode;
   winner?: Player;
+  /** Volleys: both sides crossed out at once. */
+  drawn?: boolean;
   turns: number;
   at: number;
 }
@@ -79,12 +89,12 @@ export function file(s: AnyState, mode: Mode, at = Date.now()): Filed {
       flicks: s.flicks.map((f) => ({ ...f })),
     };
   }
-  return { ...toRecord(s), mode, winner: s.winner, turns: s.turn, at };
+  return { ...toRecord(s), mode, winner: s.winner, ...(s.drawn && { drawn: true }), turns: s.turn, at };
 }
 
 /** Rebuild the whole page from its record. */
 export function unfile(r: Filed): AnyState {
-  if (r.v === 2) return fromRecord(r);
+  if (r.v !== 1) return fromRecord(r);
   const s = legacy.newGame(r.seed, r.page);
   for (const [x, y] of r.bases) legacy.placeBase(s, x, y);
   for (const f of r.flicks) legacy.act(s, f);
@@ -98,7 +108,7 @@ export type Step =
   | Action;
 
 export function steps(r: Filed): Step[] {
-  if (r.v === 2) return structuredClone(r.actions);
+  if (r.v !== 1) return structuredClone(r.actions);
   return [
     ...r.bases.map(([x, y]): Step => ({ t: "legacy-base", x, y })),
     ...r.flicks.map((f): Step => ({ t: "legacy-flick", f })),
@@ -107,7 +117,7 @@ export function steps(r: Filed): Step[] {
 
 /** The blank sheet a replay starts from. */
 export function blank(r: Filed): AnyState {
-  return r.v === 2 ? newGame(r.size, r.seed, r.page, savedRules(r.rules)) : legacy.newGame(r.seed, r.page);
+  return r.v !== 1 ? newGame(r.size, r.seed, r.page, savedRules(r.rules)) : legacy.newGame(r.seed, r.page);
 }
 
 /** Apply one step. */
@@ -159,7 +169,7 @@ export function readDrawer(raw: string | null): Filed[] {
     if (!Array.isArray(v)) return [];
     return v.filter((r) =>
       (r?.v === 1 && Array.isArray(r.bases) && Array.isArray(r.flicks)) ||
-      (r?.v === 2 && Array.isArray(r.actions) && r.size && r.rules));
+      ((r?.v === 2 || r?.v === 3) && Array.isArray(r.actions) && r.size && r.rules));
   } catch {
     return [];
   }

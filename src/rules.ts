@@ -9,6 +9,10 @@
 // - LONG: the long war's rules (RULES.md, "Long war rules"): CORE plus a
 //   `long` block. Every long-war behaviour hangs off `rules.long`, so a core
 //   game (where it's null) never meets any of it.
+// - VOLLEY: volleys (docs/volleys.md), a prototype tempo for the core rules:
+//   both sides aim in secret, then both lines go at once. Every volley
+//   behaviour hangs off `rules.volley`, so a core or long game (where it's
+//   null) never meets any of it.
 // - SIZES: the Quick battle sizes, and the long war's.
 
 export const RULES = {
@@ -119,6 +123,8 @@ export const CORE = {
   garrison: { snipeLoss: [0.03, 0.85], lungeShake: [0.02, 1.0], curve: 1 } as Garrison | null,
   /** The long war's rules (`LONG`); null in a core game, and in every record made before the long war. */
   long: null as Long | null,
+  /** Volleys (`VOLLEY`): null in every game played by turns, and in every record made before volleys. */
+  volley: null as Volley | null,
 };
 
 /** How a wall's toughness follows its garrison (see `CORE.garrison`). */
@@ -208,12 +214,44 @@ export const LONG: CoreRules = {
 };
 
 /**
- * A game's rule numbers from a saved record, room or save: today's CORE fills
- * any number it lacks, except `garrison` and `long`. A record without
- * `garrison` was played before garrisoned walls and keeps its flat walls; one
- * without `long` is a core game.
+ * Volleys (docs/volleys.md): a prototype, not canon; every choice (to test).
+ * After positioning, play is in volleys. Each side picks one turn's worth in
+ * secret (an optional send, then a snipe or a lunge; two lines in a last
+ * stand), and every line is traced against the page as it stood when the
+ * volley began ("three!"): a man crossed out in the same volley still gets
+ * his own line off, and both lines go on the page at once. A quick battle's
+ * rules only (Quick, Classic, Custom): the long war's convoys walk on a turn's
+ * clock, which two secret aims don't have.
  */
-export const savedRules = (r: Partial<CoreRules>): CoreRules => ({ ...CORE, ...r, garrison: r.garrison ?? null, long: r.long ?? null });
+export interface Volley {
+  /** Bumped when a volley rule's *logic* changes. */
+  version: number;
+  /**
+   * Earned flicks (a snipe that took two, a lunge that killed and lived) are
+   * taken right after the volley as a short run of ordinary flicks, lunge-on
+   * chains included; when both sides earned, one whole run and then the
+   * other's, the side that aimed second this volley first. (Banking them into
+   * the next volley as a second blind line was the other model.)
+   */
+  earned: "after";
+  /** Each man draws at most one line a volley (a last stand's two lines are two men's). */
+  oneLineEach: boolean;
+}
+
+/** Volleys' numbers: the core rules plus a `volley` block (to test). */
+export const VOLLEY: Volley = { version: 1, earned: "after", oneLineEach: true };
+
+/** The pencilled "one, two, three!" before a volley's lines go: when each word is written (wall ms from its start), and when the pens let go. Presentation only. */
+export const COUNT = { words: ["one,", "two,", "three!"], at: [0, 420, 840], go: 1260, reduced: 500 } as const;
+
+/**
+ * A game's rule numbers from a saved record, room or save: today's CORE fills
+ * any number it lacks, except `garrison`, `long` and `volley`. A record
+ * without `garrison` was played before garrisoned walls and keeps its flat
+ * walls; one without `long` is a core game; one without `volley` is played by
+ * turns.
+ */
+export const savedRules = (r: Partial<CoreRules>): CoreRules => ({ ...CORE, ...r, garrison: r.garrison ?? null, long: r.long ?? null, volley: r.volley ?? null });
 
 /** A war's size: bases a side and soldiers in each (in the long war, each base's shape says how many). */
 export interface Size {
