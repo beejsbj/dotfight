@@ -3283,7 +3283,7 @@ function currentFrame(): Frame {
     const p = Math.min(1, Math.max(0, (T - lapse.t0) / lapse.dur));
     f.walkers = lapse.walkers.map((w) => ({ ...w, p: Math.max(0.001, p) }));
   }
-  if (human && s.phase === "play" && selected !== undefined && !aim && !res && !taught("aim")) {
+  if (human && s.phase === "play" && selected !== undefined && !aim && !res && !taught("aim") && !lesson) {
     f.teach = { kind: "aim", at: s.soldiers[selected], p: fx.p("teach", T), rot: cam.cur.rot };
   }
   if (human && s.phase === "play" && selected === undefined && !aim && !res && !busy) {
