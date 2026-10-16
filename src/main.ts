@@ -45,6 +45,8 @@ import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
 import { Timeline, reachFraction, signable, walkerAt } from "./timeline";
 import * as turn from "./turn";
+import { LessonLayer } from "./lesson-layer";
+import { LESSON_MODE, STEPS as LESSON_STEPS, advance as lessonAdvance, current as lessonStep, emptyRing, findLunge, findRow, finished as lessonDone, firstUndone, foeMove as lessonFoe, isLesson, lessonGame, skipStep, type Last as LessonLast, type Run as LessonRun } from "./tutorial";
 
 setFeel((ev) => haptic(ev));
 
@@ -74,6 +76,9 @@ let lastNote = "";
 let gen = 0; // bumps on every new/resumed game so stale callbacks stand down
 let screen: "title" | "game" | "view" | "replay" = "title";
 let viewing: Filed | null = null; // a page out of the drawer
+/** The lesson (tutorial.ts): where it stands, and the last thing that happened on the page, for its checks. */
+let lesson: LessonRun | null = null;
+let lessonLast: LessonLast | null = null;
 /** The finale has begun to write the signature (a won page is signed by its finale, not by the winning flick). */
 let signing = false;
 
@@ -150,6 +155,7 @@ const els: Els = {
 };
 const over = $<HTMLCanvasElement>("#over");
 const og = over.getContext("2d")!;
+const lessonLayer = new LessonLayer($("#lesson-host"));
 haptics.install(over); // iOS 26.5+: labels for real taps to land on
 onCue((c) => { if (c === "lunge-death") haptic("thud"); else if (c === "last-stand") haptic("stand"); });
 const cam = new Camera();
@@ -321,6 +327,8 @@ function acts() {
       if (selected !== undefined && !c0.chain) html += `<button data-act="down" class="x">put down</button>`;
       if (c0.chain) html += `<button data-act="stop" class="go">stop here</button>`;
       if (!c0.sent && canSendAny(c0)) html += `<button data-act="send">send men <small>free</small></button>`;
+      // the lesson can be left at any time; a step that won't come can be skipped after a few tries
+      if (lesson) html += lesson.tries >= 3 && !lessonDone(lesson) ? `<button data-act="lesson-skip" class="x">skip this bit</button>` : `<button data-act="lesson-off" class="x">stop the lesson</button>`;
     }
   }
   if (el.innerHTML !== html) el.innerHTML = html;
@@ -396,6 +404,7 @@ function status(msg?: string) {
     else if (motion.gun) t = motion.gun.armed < 1 ? "point the phone, hold it still…" : "flick your wrist to fire";
     else if (selected !== undefined) t = motion.live("gun") ? "pull back, or tap him and raise the phone" : LIFE.unitCam && !taught("unitcam") && taught("aim") ? "slide to turn, pull down, or tap him again" : `slide to turn the page, pull down, let go`;
     else if (c0 && c0.left > 1) t = `${who}: ${c0.left} flicks this turn`;
+    else if (lesson) t = lessonStep(lesson).prompt;
     else t = lastNote ? `${lastNote}` : `${who}: pick up a soldier`;
   }
   syncRing();
@@ -435,6 +444,8 @@ function reset() {
   ghost = undefined;
   selected = undefined;
   lastNote = "";
+  lesson = null;
+  lessonLast = null;
   motion.lower();
   lapse = null;
   lapseDue = null;
@@ -493,6 +504,8 @@ function resume(v: Save) {
   mode = v.mode;
   screen = "game";
   viewing = null;
+  // a lesson picks up at its first step not yet learned
+  if (isLesson(mode) && core()) lesson = { step: firstUndone(taught), tries: 0, seen: -1 };
   closeCover();
   closeSheet();
   cam.overview(rotFor(s.current));
@@ -502,11 +515,54 @@ function resume(v: Save) {
   next();
 }
 
+// --- the lesson (tutorial.ts) ---------------------------------------------------
+
+/** Learn the game: a scripted battle against a gentle Dawood-bot, taught in pencil on the page. Replayable: it starts from the first step. */
+function startLesson() {
+  reset();
+  restoreKindBar();
+  s = lessonGame(pageStamp());
+  mode = LESSON_MODE;
+  kind = "snipe";
+  screen = "game";
+  viewing = null;
+  for (const st of LESSON_STEPS) localStorage.removeItem(`pft:taught:lesson:${st.id}`);
+  lesson = { step: 0, tries: 0, seen: -1 };
+  dawn.go(0, 800);
+  save();
+  closeCover();
+  closeSheet();
+  cam.overview(0);
+  hud();
+  after(300, next);
+}
+
+/** Judge the lesson on what just happened; as a step comes on, its note is pencilled in. */
+function lessonTick() {
+  if (!lesson || !core()) return;
+  const was = lesson.step;
+  for (const id of lessonAdvance(lesson, core()!, lessonLast)) learn(`lesson:${id}`);
+  if (lessonDone(lesson)) learn("tutorial");
+  // the new note is written on (at once under reduced motion), with the pencil's scratch
+  if (lesson.step !== was) { fx.add("lesson", T, reduced ? 0 : 250, reduced ? 1 : 1400, "linear"); sfx.scratch(0.5, 0.15, 1500, 0.25); dirty = true; }
+}
+
+/** The lesson stops teaching: the battle carries on as a plain one against Dawood-bot. */
+function endLesson() {
+  lesson = null;
+  mode = { kind: "bot", level: 0 };
+  lastNote = "the lesson's over: it's a plain battle now";
+  save();
+  hud();
+  dirty = true;
+}
+
 // whoever's turn it is: let a human act, or have the bot go
 function next() {
   hud();
   dirty = true;
   if (screen !== "game") return;
+  lessonTick();
   if (s.phase === "over") return finish();
   if (mode.kind === "room" && (link?.queued || remote(s.current))) return roomNext();
   const c0 = core();
@@ -546,7 +602,7 @@ function next() {
   after(500, () => {
     const seed = (Math.random() * 2 ** 32) >>> 0;
     const c1 = core();
-    if (!c1?.rules.long) return botGoes(turn.botMove(s, level, seed));
+    if (!c1?.rules.long) return botGoes(lesson && c1 ? lessonFoe(c1, lesson.step) : turn.botMove(s, level, seed));
     // a long-war move is a few hundred previews: think on a worker, and carry on when it answers
     const g0 = gen, n0 = c1.actions.length;
     botThinking = true;
@@ -635,6 +691,7 @@ function perform(a: Action, then: () => void) {
   if (!c0) return then();
   const before = marchView(c0, momentNow()).soldiers.map((x) => ({ x: x.x, y: x.y }));
   const first = c0.marks.length;
+  lessonLast = { who: c0.current, a };
   const o = act(c0, a);
   if (a.t === "stop") streak = { who: -1, turn: -1, kind: "", n: 0, last: undefined };
   save();
@@ -932,6 +989,7 @@ function fire(f: Flick, power: number, lean: number, opts: { pen?: boolean; cam?
     pen, cam: opts.cam ?? true, startLean: lean, startAngle: f.angle,
     done: () => {
       lastNote = noteFor(who, f, o);
+      lessonLast = { who, f, o };
       if (screen === "replay") return runLapse(replayNext);
       if (s.phase === "over") return next();
       if (o.again) { busy = false; return next(); }
@@ -1529,7 +1587,7 @@ function coverMenu() {
   menu.querySelector(".note")?.remove();
   const mark = $("#cover .tabs .m1 sup");
   mark.textContent = d.length ? String(d.length) : "";
-  const where = (x: AnyState) => x.phase === "setup" ? `still drawing ${baseWord(undefined, x)}s` : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : turn.shaped(x) ? " · long war" : ""}`;
+  const where = (x: AnyState) => x.phase === "setup" ? `still drawing ${baseWord(undefined, x)}s` : x.phase === "position" ? "arranging the men" : `turn ${x.turn}, ${turn.aliveOf(x, 0).length} v ${turn.aliveOf(x, 1).length}${turn.isLegacy(x) ? " · first rules" : turn.shaped(x) ? " · long war" : saved && isLesson(saved.mode) ? " · the lesson" : ""}`;
   const draw = () => {
     const note = menu.querySelector(".note")?.textContent;
     // "tear it out?" is written over its row, which fades underneath: asking never moves the slip
@@ -1552,6 +1610,9 @@ function coverMenu() {
     <div class="duo">
       <button data-a="pnp" class="ink blue">pass &amp; play<small>one phone</small></button>
       <button data-a="friend" class="ink blue">play a friend<small>send a link</small></button>
+    </div>
+    <div class="learn">
+      <button data-a="learn" class="ink blue">learn the game<small>${taught("tutorial") ? "the lesson, again: five minutes with Dawood-bot" : "new? a five-minute lesson with Dawood-bot"}</small></button>
     </div>`;
     // as many friends' games as fit; the rest wait in the drawer
     $("#cover .leaf").style.removeProperty("--fit");
@@ -1570,6 +1631,7 @@ function coverMenu() {
     if (a === "resume" && saved) resume(saved);
     else if (a === "pnp") start({ kind: "pnp" });
     else if (a === "bot") start({ kind: "bot", level: botLevel });
+    else if (a === "learn") startLesson();
     else if (a === "friend") newRoomOnCover();
     else if (a === "ask") { tearing = b.dataset.code!; draw(); }
     else if (a === "keep") { tearing = null; draw(); }
@@ -1865,7 +1927,7 @@ function showDrawer() {
     const names = themeOf(r.page?.theme).ink.names;
     const who = r.mode.kind === "bot" ? [names[0], "Dawood-bot"] : names;
     const cap = document.createElement("span");
-    cap.innerHTML = `No. ${r.page?.no ?? "?"} · ${r.page?.date ?? ""}<br><b style="color:${hudPen(r.winner ?? 0)}">${r.winner !== undefined ? who[r.winner] : "unfinished"}</b> · ${r.turns} turns${r.v === 2 && r.rules?.long ? " · long war" : ""}`;
+    cap.innerHTML = `No. ${r.page?.no ?? "?"} · ${r.page?.date ?? ""}<br><b style="color:${hudPen(r.winner ?? 0)}">${r.winner !== undefined ? who[r.winner] : "unfinished"}</b> · ${r.turns} turns${r.v === 2 && r.rules?.long ? " · long war" : isLesson(r.mode) ? " · the lesson" : ""}`;
     b.appendChild(cap);
     grid.appendChild(b);
   });
@@ -2941,6 +3003,8 @@ $("#acts").onclick = (e) => {
   const a = b.dataset.act;
   if (a === "ready") return perform({ t: "ready" }, () => handOver());
   if (a === "down") { learn("cancel"); standUp(); dirty = true; return; }
+  if (a === "lesson-off") return endLesson();
+  if (a === "lesson-skip" && lesson) { skipStep(lesson); fx.add("lesson", T, 0, 1200, "linear"); hud(); dirty = true; return; }
   if (a === "send") { sending = {}; selected = undefined; cam.overview(); }
   else if (a === "cancel") { sending = null; arrowTo = null; }
   else if (a === "n" && sending?.to !== undefined) {
@@ -3359,6 +3423,9 @@ function renderNow() {
   document.body.style.setProperty("--lamp", f.lamp.on.toFixed(3));
   document.body.style.setProperty("--dawn", f.lamp.dawn.toFixed(3));
   renderStage(els, f);
+  // the lesson's notes: worked out once per step and move, written on as the step comes on
+  const c0 = lesson && screen === "game" ? core() : undefined;
+  lessonLayer.render(f.view, c0 ? `${lesson!.step}|${c0.actions.length}` : null, () => lessonStep(lesson!).marks(c0!), fx.p("lesson", T), pageState.S, pageState.epoch);
   renderOverlay(og, f, W, H, dpr);
 }
 
@@ -3457,6 +3524,9 @@ if (import.meta.env.DEV) {
     cam, fx, inkTL, pageCanvas, ink: inkLib, INK, els, canvas: over, renderNow, worldTransform, page, pen: PEN,
     get slow() { return slow; }, set slow(v: boolean) { slow = v; cam.quick = v ? 1.8 : 1; probeSlow = v; },
     start, showTitle, replay: () => replay(file(s, mode)), apply: (st: Step) => { apply(s, st); dirty = true; },
+    /** The lesson (tutorial.ts): start it, where it stands, and what its step points at (for a playtest to aim by). */
+    startLesson, get lesson() { return lesson; }, get lessonLast() { return lessonLast; }, endLesson,
+    lessonHint: () => { const c = core(); return c && lesson ? { step: lessonStep(lesson).id, index: lesson.step, tries: lesson.tries, marks: lessonStep(lesson).marks(c), row: findRow(c, 0), lunge: findLunge(c, 0), ring: emptyRing(c, 1, c.bases[4]) } : null; },
     unfile, file: () => file(s, mode), flick: (f: Flick) => fire(f, 0.6, 0.3), preview: (f: Flick) => { const c = core(); return c ? preview(c, f) : null; },
     /** What Dawood-bot would do now (for driving a human seat in playtests). */
     botMove: (level: Level = 1) => turn.botMove(s, level, (Math.random() * 2 ** 32) >>> 0),

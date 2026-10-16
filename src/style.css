@@ -283,6 +283,8 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .menu .duo { display: flex; gap: 6px; margin: 2px 0 0; }
 .menu .duo .ink { flex: 1 1 0; min-width: 0; font-size: 25px; padding-left: 14px; white-space: nowrap; }
 .menu .duo .ink + .ink { padding-left: 0; }
+.menu .learn { margin: 4px 0 0; }
+.menu .learn .ink { font-size: 25px; padding-left: 14px; }
 .menu .head { font-family: var(--hand); font-size: 19px; color: var(--pencil); margin: 2px 0 0 18px; letter-spacing: .02em; }
 /* section headings: inked and underlined twice, like a kid ruling off a new topic */
 .menu .sect {
@@ -471,7 +473,7 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 /* the hand-off card is one big button (a haptic tap target on iPhone) */
 .handoff-tap { all: unset; display: block; width: 100%; cursor: pointer; }
 
-#field-host canvas, #streak-host canvas, #rays-host canvas { position: fixed; display: block; transform-origin: 0 0; mix-blend-mode: var(--live-blend); will-change: transform; }
+#field-host canvas, #lesson-host canvas, #streak-host canvas, #rays-host canvas { position: fixed; display: block; transform-origin: 0 0; mix-blend-mode: var(--live-blend); will-change: transform; }
 /* the start mark: where the pull began, in the side's ink with a paper halo, the dead zone round it; firms up when the thumb is back inside */
 #cancel-ring {
   position: fixed; left: 0; top: 0; z-index: 3; pointer-events: none; box-sizing: border-box;
