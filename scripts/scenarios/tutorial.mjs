@@ -108,6 +108,30 @@ export default async function (T, out) {
     await idle(T);
     await page.waitForTimeout(600);
     await log("lesson begins");
+    if (await page.evaluate(() => document.querySelector("#lesson-btn").hidden)) throw new Error("no 'stop lesson' in the corner");
+    await page.waitForTimeout(1600); // the first note writes on
+    // Leaned in over a man far from the note (B1, bottom left; the note is above R3):
+    // a copy of the note must be written in his view, while held and while aiming.
+    const far = await page.evaluate(() => window.pft.s.soldiers[0]);
+    const fa = await T.world(far.x, far.y);
+    await T.tap(fa.x, fa.y, 40);
+    await T.wait(() => window.pft.cam.settled && window.pft.selected === 0, undefined, 60000);
+    await page.waitForTimeout(300);
+    const nearOn = () => page.evaluate(() => { const c = document.querySelector("#lesson-host").children[1]; return c.style.visibility !== "hidden" && c.width > 0; });
+    if (!(await nearOn())) throw new Error("leaned in far from the note, and no copy of it in view");
+    await T.shot(`${out}/01a-lean-far.png`);
+    await T.touch("touchStart", [[195, 600]]);
+    for (let i = 1; i <= 10; i++) { await T.touch("touchMove", [[195 + i * 3, 600 + i * 9]]); await page.waitForTimeout(25); }
+    await page.waitForTimeout(400);
+    if (!(await nearOn())) throw new Error("the copy went away while aiming");
+    await T.shot(`${out}/01b-lean-far-aiming.png`);
+    // slide back to the start: a cancel, nothing fired
+    for (let i = 9; i >= 0; i--) { await T.touch("touchMove", [[195 + i * 3, 600 + i * 9]]); await page.waitForTimeout(25); }
+    await T.touch("touchEnd", []);
+    await page.waitForTimeout(300);
+    if (await page.evaluate(() => window.pft.s.actions.length !== window.pft.s.actions.filter((a) => a.t !== "flick").length)) throw new Error("the cancel fired a flick");
+    await page.evaluate(() => document.querySelector("#page-btn").click());
+    await idle(T);
     const t0 = Date.now();
     const seen = [];
     let lastStep = -1, stuck = 0, moves = 0;

@@ -266,6 +266,7 @@ function inkLeft(p: Player) {
 function hud() {
   const inGame = screen === "game" || screen === "view" || screen === "replay";
   document.body.classList.toggle("playing", inGame);
+  $("#lesson-btn").hidden = !(lesson && screen === "game");
   const c0 = core();
   for (const p of [0, 1] as Player[]) {
     const el = $(`.tag[data-p="${p}"]`);
@@ -327,8 +328,8 @@ function acts() {
       if (selected !== undefined && !c0.chain) html += `<button data-act="down" class="x">put down</button>`;
       if (c0.chain) html += `<button data-act="stop" class="go">stop here</button>`;
       if (!c0.sent && canSendAny(c0)) html += `<button data-act="send">send men <small>free</small></button>`;
-      // the lesson can be left at any time; a step that won't come can be skipped after a few tries
-      if (lesson) html += lesson.tries >= 3 && !lessonDone(lesson) ? `<button data-act="lesson-skip" class="x">skip this bit</button>` : `<button data-act="lesson-off" class="x">stop the lesson</button>`;
+      // a step that won't come can be skipped after a few tries, beside the turn's other buttons (stopping the lesson is up in the corner)
+      if (lesson && lesson.tries >= 3 && !lessonDone(lesson)) html += `<button data-act="lesson-skip" class="x">skip this bit</button>`;
     }
   }
   if (el.innerHTML !== html) el.innerHTML = html;
@@ -404,7 +405,6 @@ function status(msg?: string) {
     else if (motion.gun) t = motion.gun.armed < 1 ? "point the phone, hold it still…" : "flick your wrist to fire";
     else if (selected !== undefined) t = motion.live("gun") ? "pull back, or tap him and raise the phone" : LIFE.unitCam && !taught("unitcam") && taught("aim") ? "slide to turn, pull down, or tap him again" : `slide to turn the page, pull down, let go`;
     else if (c0 && c0.left > 1) t = `${who}: ${c0.left} flicks this turn`;
-    else if (lesson) t = lessonStep(lesson).prompt;
     else t = lastNote ? `${lastNote}` : `${who}: pick up a soldier`;
   }
   syncRing();
@@ -3003,7 +3003,6 @@ $("#acts").onclick = (e) => {
   const a = b.dataset.act;
   if (a === "ready") return perform({ t: "ready" }, () => handOver());
   if (a === "down") { learn("cancel"); standUp(); dirty = true; return; }
-  if (a === "lesson-off") return endLesson();
   if (a === "lesson-skip" && lesson) { skipStep(lesson); fx.add("lesson", T, 0, 1200, "linear"); hud(); dirty = true; return; }
   if (a === "send") { sending = {}; selected = undefined; cam.overview(); }
   else if (a === "cancel") { sending = null; arrowTo = null; }
@@ -3023,6 +3022,7 @@ $("#acts").onclick = (e) => {
   hud();
   dirty = true;
 };
+$("#lesson-btn").onclick = () => { sfx.tap(); endLesson(); };
 $("#page-btn").onclick = () => {
   sfx.tap();
   if (unit) { unit = null; }
@@ -3425,7 +3425,10 @@ function renderNow() {
   renderStage(els, f);
   // the lesson's notes: worked out once per step and move, written on as the step comes on
   const c0 = lesson && screen === "game" ? core() : undefined;
-  lessonLayer.render(f.view, c0 ? `${lesson!.step}|${c0.actions.length}` : null, () => lessonStep(lesson!).marks(c0!), fx.p("lesson", T), pageState.S, pageState.epoch);
+  // leaned in over a man of yours: a copy of the note beside him, in the view the camera settles on
+  const held = c0 && selected !== undefined && !res && !away(s.current) && leanedIn(selected)
+    ? { id: selected, at: s.soldiers[selected], view: cam.view(cam.tgt), W, H, top: cam.top, bottom: cam.bottom, hold: !!aim } : undefined;
+  lessonLayer.render(f.view, c0 ? `${lesson!.step}|${c0.actions.length}` : null, c0 ? lessonStep(lesson!).title : "", () => lessonStep(lesson!).marks(c0!), fx.p("lesson", T), pageState.S, pageState.epoch, held);
   renderOverlay(og, f, W, H, dpr);
 }
 

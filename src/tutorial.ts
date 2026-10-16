@@ -120,8 +120,8 @@ export interface Marks {
 
 export interface Step {
   id: string;
-  /** The one-line prompt in the HUD while this step is on. */
-  prompt: string;
+  /** The note's heading, pencilled on the page and ruled off ("lesson 4 of 6: the lunge"). */
+  title: string;
   /** What's pencilled on the page for it (from where everyone stands now). */
   marks: (s: GameState) => Marks;
   /** Done? Judged on the state, and on the last thing that happened. */
@@ -213,39 +213,43 @@ export function nearestMan(s: GameState, me: Player, to: Pt) {
 
 const ring = (p: Pt, r = RULES.soldierRadius + 12) => ({ at: p, r });
 /** Where a note sits: the clear paper under blue's camps, or beside what it's about. */
-const FOOT = { x: 520, y: 1590 };
-const MID = { x: 520, y: 935 };
-const TOP = { x: 520, y: 560 };
+/**
+ * Where the note sits: the heading's baseline in the clear band of paper
+ * between red's back camps and R3's men (y 470 to 690 on this page), across
+ * the middle, where every lesson's shot is near. A note is a heading and at
+ * most two short lines, a friend writing in the margin.
+ */
+const BAND = { x: 535, y: 532 };
 const none: Marks = { notes: [], rings: [], arrows: [] };
 
 export const STEPS: Step[] = [
   {
     id: "flick",
-    prompt: "lesson 1 of 6: pick up a man, pull back, let go",
-    marks: () => ({ ...none, notes: [{ at: FOOT, lines: ["tap one of your men to pick him up.", "pull back, let go: soft is sure, hard is wild."] }] }),
+    title: "lesson 1 of 6: the flick",
+    marks: () => ({ ...none, notes: [{ at: BAND, lines: ["tap one of yours, pull back, let go.", "soft is sure, hard is wild."] }] }),
     done: (_s, last) => isFlick(last, 0),
   },
   {
     id: "snipe",
-    prompt: "lesson 2 of 6: snipe one of theirs",
+    title: "lesson 2 of 6: the snipe",
     marks: (s) => {
       const b3 = s.bases[B3];
       const men = outsideMen(s, 1).sort((a, b) => dist(a, b3) - dist(b, b3)).slice(0, 2);
-      return { ...none, notes: [{ at: MID, lines: ["a snipe: he stays put, the ink crosses out", "whoever it crosses. get one of theirs."] }], rings: men.map((m) => ring(m)) };
+      return { ...none, notes: [{ at: BAND, lines: ["he stays put; the ink crosses", "out whoever it meets. get one."] }], rings: men.map((m) => ring(m)) };
     },
     done: (_s, last) => isFlick(last, 0, "snipe") && last.o.killed.length >= 1,
   },
   {
     id: "two",
-    prompt: "lesson 2 of 6: two with one line, and you flick again",
+    title: "lesson 2 of 6: two in a row",
     marks: (s) => {
       const row = findRow(s, 0);
-      if (!row) return { ...none, notes: [{ at: MID, lines: ["two with one line and you flick again.", "look for two of theirs in a row."] }] };
+      if (!row) return { ...none, notes: [{ at: BAND, lines: ["two with one line: flick again.", "look for two of theirs in a row."] }] };
       const me = s.soldiers[row.soldier];
       const ts = row.targets.map((id) => s.soldiers[id]);
       const far = ts.sort((a, b) => dist(b, me) - dist(a, me))[0];
       return {
-        notes: [{ at: MID, lines: ["two with one line and you flick again.", "these two stand in a row from him."] }],
+        notes: [{ at: BAND, lines: ["two with one line: flick again.", "these two are in a row from him."] }],
         rings: [ring(me, RULES.soldierRadius + 14), ...ts.map((t) => ring(t))],
         arrows: [{ from: { x: me.x + (far.x - me.x) * 0.18, y: me.y + (far.y - me.y) * 0.18 }, to: { x: me.x + (far.x - me.x) * 0.72, y: me.y + (far.y - me.y) * 0.72 } }],
       };
@@ -254,13 +258,13 @@ export const STEPS: Step[] = [
   },
   {
     id: "wall",
-    prompt: "lesson 3 of 6: a shot into a full camp dies at the wall",
+    title: "lesson 3 of 6: walls",
     marks: (s) => {
       const full = fullest(s, 1);
-      if (!full || garrison(s, full).length < 2) return { ...none, notes: [{ at: MID, lines: ["a full camp's wall eats most of a shot:", "the line falls short. (theirs are thin now.)"] }] };
+      if (!full || garrison(s, full).length < 2) return { ...none, notes: [{ at: BAND, lines: ["a full camp's wall eats a shot;", "a thinned one is nearly paper."] }] };
       const me = nearestMan(s, 0, full);
       return {
-        notes: [{ at: MID, lines: ["a full camp's wall eats most of a shot:", "what's left dies just inside. try one", "straight into their full camp."] }],
+        notes: [{ at: BAND, lines: ["a full camp's wall eats a shot.", "try one into their full camp."] }],
         rings: [{ at: full, r: full.r + 16 }],
         arrows: me ? [{ from: { x: me.x + (full.x - me.x) * 0.15, y: me.y + (full.y - me.y) * 0.15 }, to: { x: me.x + (full.x - me.x) * 0.8, y: me.y + (full.y - me.y) * 0.8 } }] : [],
       };
@@ -269,22 +273,22 @@ export const STEPS: Step[] = [
   },
   {
     id: "open",
-    prompt: "lesson 3 of 6: men outside a wall are free",
+    title: "lesson 3 of 6: the open",
     marks: (s) => ({
       ...none,
-      notes: [{ at: MID, lines: ["see? it fell short. men outside a wall are free,", "and a thinned camp's wall is nearly paper.", "cross out one standing in the open."] }],
+      notes: [{ at: BAND, lines: ["see? it fell short. men outside", "a wall are free. get one."] }],
       rings: outsideMen(s, 1).map((m) => ring(m)),
     }),
     done: (s, last) => (isFlick(last, 0, "snipe") && last.o.killed.length >= 1 && wallBeforeKill(last.o) < MANNED) || !outsideMen(s, 1).length,
   },
   {
     id: "lunge",
-    prompt: "lesson 4 of 6: lunge through one and land clear",
+    title: "lesson 4 of 6: the lunge",
     marks: (s) => {
       const l = findLunge(s, 0);
       const t = l && s.soldiers[l.target];
       return {
-        notes: [{ at: MID, lines: ["a lunge: tap lunge below. he runs his ink,", "crosses out whoever he passes, and stands", "where it stops. run through one, land clear."] }],
+        notes: [{ at: BAND, lines: ["tap lunge: he runs his ink and", "stands where it stops. land clear."] }],
         rings: t ? [ring(t)] : outsideMen(s, 1).map((m) => ring(m)),
         arrows: [],
       };
@@ -293,21 +297,21 @@ export const STEPS: Step[] = [
   },
   {
     id: "shot",
-    prompt: "lesson 4 of 6: land among a camp's men and they shoot you",
-    marks: () => ({ ...none, notes: [{ at: MID, lines: ["a kill earns him another lunge (or stop).", "but land among a camp's men and they shoot", "you on the spot. watch his man:"] }] }),
+    title: "lesson 4 of 6: landing",
+    marks: () => ({ ...none, notes: [{ at: BAND, lines: ["land among a camp's men and", "they shoot you. watch his man."] }] }),
     done: (_s, last) => isFlick(last, 1),
     foe: (s, rand) => crashLunge(s, rand),
   },
   {
     id: "ring",
-    prompt: "lesson 4 of 6: an empty ring is safe to land in",
+    title: "lesson 4 of 6: empty rings",
     marks: (s) => {
       const b3 = s.bases[B3];
       const r = emptyRing(s, 1, b3);
-      if (!r) return { ...none, notes: [{ at: MID, lines: ["an empty ring is safe to land in,", "and a send can man it again."] }] };
+      if (!r) return { ...none, notes: [{ at: BAND, lines: ["an empty ring is safe to land in,", "and a send can man it again."] }] };
       const me = nearestMan(s, 0, r);
       return {
-        notes: [{ at: MID, lines: ["an empty ring is safe to land in.", "lunge into theirs and stop inside it."] }],
+        notes: [{ at: BAND, lines: ["an empty ring is safe to land in.", "lunge into theirs, stop inside."] }],
         rings: [{ at: r, r: r.r + 16 }],
         arrows: me ? [{ from: { x: me.x + (r.x - me.x) * 0.2, y: me.y + (r.y - me.y) * 0.2 }, to: { x: r.x + (me.x - r.x) * 0.15, y: r.y + (me.y - r.y) * 0.15 } }] : [],
       };
@@ -320,27 +324,27 @@ export const STEPS: Step[] = [
   },
   {
     id: "send",
-    prompt: "lesson 5 of 6: send men to another camp (free, before your flick)",
-    marks: () => ({ ...none, notes: [{ at: FOOT, lines: ["a send is free, once a turn, before your flick:", "tap 'send men' below, drag camp to camp,", "pick how many. they set off as you hand over."] }] }),
+    title: "lesson 5 of 6: sends",
+    marks: () => ({ ...none, notes: [{ at: BAND, lines: ["free, before your flick: 'send men',", "drag camp to camp, pick how many."] }] }),
     done: (_s, last) => !!last && "a" in last && last.who === 0 && last.a.t === "send",
   },
   {
     id: "road",
-    prompt: "lesson 5 of 6: a convoy is in the open for one enemy turn",
-    marks: () => ({ ...none, notes: [{ at: FOOT, lines: ["now flick. they're on the road for one enemy", "turn, and a column in the open is a target.", "they arrive at the start of your next go."] }] }),
+    title: "lesson 5 of 6: the road",
+    marks: () => ({ ...none, notes: [{ at: BAND, lines: ["now flick. they walk his turn in", "the open: a target. then they're in."] }] }),
     done: (s) => s.convoys.some((c) => c.owner === 0 && (c.state === "arrived" || c.state === "cut")),
     foe: (s, rand) => roadShot(s, rand) ?? gentleSnipe(s, rand),
   },
   {
     id: "stand",
-    prompt: "lesson 6 of 6: they come at you. the last four fight harder",
+    title: "lesson 6 of 6: the last four",
     marks: (s) => {
       const theirs = s.soldiers.filter((x) => x.alive && x.owner === 1).length;
       const cut = s.convoys.some((c) => c.owner === 0 && c.state === "cut");
-      const road = cut ? "he caught some on the road." : "they made it.";
+      const road = cut ? "he caught some." : "they made it.";
       return {
         ...none,
-        notes: [{ at: TOP, lines: s.stand[1] ? ["their last stand: two flicks a turn, steadier.", "catch them in the open. finish them."] : s.stand[0] ? ["your last stand: two flicks a turn, steadier.", `${theirs} of theirs left.`] : [road, "now they come at you. catch them in the open;", `a side's last four fight harder. ${theirs} left.`] }],
+        notes: [{ at: BAND, lines: s.stand[1] ? ["their last four flick twice, steadier.", "catch them in the open. finish them."] : s.stand[0] ? ["your last four flick twice, steadier.", `${theirs} of theirs left.`] : [`${road} now they come out:`, `catch them in the open. ${theirs} left.`] }],
       };
     },
     done: (s) => s.phase === "over",

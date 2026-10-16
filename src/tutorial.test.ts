@@ -261,8 +261,11 @@ describe("the steps, in order", () => {
     for (const st of STEPS) {
       const m = st.marks(s);
       expect(m.notes.length).toBeGreaterThan(0);
-      for (const n of m.notes) for (const line of n.lines) expect(line.length).toBeLessThanOrEqual(52);
-      expect(st.prompt).toMatch(/^lesson [1-6] of 6/);
+      for (const n of m.notes) for (const line of n.lines) expect(line.length).toBeLessThanOrEqual(38);
+      expect(st.title).toMatch(/^lesson [1-6] of 6: /);
+      expect(st.title.length).toBeLessThanOrEqual(30);
+      // a heading and at most two short lines: the note fits the clear band above R3
+      for (const n of m.notes) expect(n.lines.length).toBeLessThanOrEqual(2);
     }
   });
 

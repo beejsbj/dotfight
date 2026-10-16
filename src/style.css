@@ -90,6 +90,12 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
   box-shadow: inset 0 0 0 1.5px rgba(var(--desk-rgb), .22);
 }
 #menu-btn span { font-size: 28px; line-height: 1; transform: translateY(-2px); }
+/* the lesson's way out: a small tab tucked under the menu button, in the corner buttons' hand */
+#lesson-btn {
+  position: fixed; z-index: 2; top: calc(env(safe-area-inset-top) + 60px); left: max(8px, env(safe-area-inset-left));
+  width: auto; height: 32px; padding: 0 12px 2px; border-radius: 16px; font-size: 17px; white-space: nowrap;
+}
+#lesson-btn[hidden] { display: none; }
 .tab:active { transform: scale(.94); }
 
 #bottom {
