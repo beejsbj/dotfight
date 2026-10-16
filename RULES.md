@@ -198,7 +198,7 @@ Every value here is a lab guess or a direction nobody has played yet.
 | Ink: jolts and grooves | Kept light (Burooj, 2026-10-03): one 0.03 rad jolt a line, grooves within 7° and 12 units, own 0.7, theirs 1.4. Round 5: doubling the jolt adds 10 turns. Dawood's boost/drag version was the least fair thing round 2 tried (62% to the first player). |
 | Game length | Round 5: 6 bases about 48 turns (p90 61), 5 bases 41. |
 | Shape powers waking in a last stand | Idea. |
-| Shared-link and real-time play | Long war rooms work (engine `long-1`); real time is planned. |
+| Shared-link and real-time play | Long war rooms work (engine `long-1`). Real time: a tabletop prototype (one phone flat between two players, an ink meter, wet ink; `docs/realtime.md`, BJS-458) is in the game as an experiment, not canon; online real time is still planned. |
 
 # Appendix: the rules from memory
 

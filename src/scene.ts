@@ -64,6 +64,10 @@ export interface Frame {
   dpr: number;
   selected?: number;
   aim?: Aim;
+  /** The real-time prototype (tabletop.ts): two pens aim and fly at once. Drawn like `aim`, `pen` and `mover`, on top of them. */
+  aims?: Aim[];
+  pens?: PenPose[];
+  movers?: { id: number; at: Pt; angle?: number; stretch?: number }[];
   /** The base about to be drawn; `pts`: a long war's triangle or hexagon (else a circle of `r`). */
   ghost?: { x: number; y: number; ok: boolean; owner: 0 | 1; r: number; pts?: Pt[]; men?: (Pt & { shape?: Shape; rot?: number })[] };
   /** Setup: the no-go rings round enemy bases, faintly hatched. */
@@ -246,7 +250,7 @@ export function renderStage(els: Els, f: Frame) {
     if (layer.draw(rayKey, [{ x: 0, y: 0 }], pageState.S, 42, (g) => drawRays(g, { x: 0, y: 0 }, 3, q.id + 5))) stageStats.field++;
     layer.ox = q.x - 42; layer.oy = q.y - 42;
   }
-  const mover = f.mover && (f.mover.stretch ?? 1) > 1.04 ? f.mover : undefined;
+  const mover = allMovers(f).find((m) => (m.stretch ?? 1) > 1.04);
   const speedKey = JSON.stringify([theme.id, pageState.epoch, pageState.S, mover]);
   if (streak.draw(speedKey, mover ? [mover.at] : [], pageState.S, 80, (g) => {
     drawSpeed(g, mover!.at, mover!.angle ?? 0, mover!.stretch ?? 1, 3, mover!.id);
@@ -262,14 +266,21 @@ export function renderStage(els: Els, f: Frame) {
   stageStats.frames++;
 }
 
+/** Everyone riding his ink this frame: the one mover, and (real time) the others. */
+const allMovers = (f: Frame) => [...(f.mover ? [f.mover] : []), ...(f.movers ?? [])];
+/** Every pen standing or flying this frame, and every aim. */
+const allPens = (f: Frame) => [...(f.pen ? [f.pen] : []), ...(f.pens ?? [])];
+const allAims = (f: Frame) => [...(f.aim ? [f.aim] : []), ...(f.aims ?? [])];
+
 // The boil plan only changes when the page or the ink does: most frames reuse it.
 let planMemo: { s: GameState | null; stamp: string; plan: Plan | null } = { s: null, stamp: "", plan: null };
 function boilPlan(f: Frame, ink: Ink): Plan {
   const { s } = f;
   const on = !!f.boil?.on && !boil.tooDear;
-  let stamp = `${s.v === 1 ? s.flicks.length : s.actions.length}|${s.marks.length}|${s.bases.length}|${s.soldiers.length}|${s.turn}|${f.mover?.id}|${on}|`;
+  const moving = allMovers(f).map((m) => m.id);
+  let stamp = `${s.v === 1 ? s.flicks.length : s.actions.length}|${s.marks.length}|${s.bases.length}|${s.soldiers.length}|${s.turn}|${moving.join()}|${on}|`;
   for (const k of ink.live) stamp += k + (ink.p(k) > 0 ? "+" : "-");
-  if (planMemo.s !== s || planMemo.stamp !== stamp || !planMemo.plan) planMemo = { s, stamp, plan: planBoil(s, ink, { on, moving: f.mover?.id }) };
+  if (planMemo.s !== s || planMemo.stamp !== stamp || !planMemo.plan) planMemo = { s, stamp, plan: planBoil(s, ink, { on, moving }) };
   return planMemo.plan!;
 }
 
@@ -338,12 +349,12 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     const jot = `d${x.id}`;
     if (ink.live.has(jot) && !walking.has(x.id) && f.drag?.id !== x.id) { drawDot(g, x, 1, ink.p(jot)); box.add(x.x, x.y, 12); }
   }
-  if (f.mover) {
-    const { at, angle = 0, stretch = 1 } = f.mover;
+  for (const mover of allMovers(f)) {
+    const { at, angle = 0, stretch = 1 } = mover;
     g.save();
     // stretched along his way, thinner across it (keeping his size)
     g.translate(at.x, at.y); g.rotate(angle); g.scale(stretch, 1 / stretch); g.rotate(-angle); g.translate(-at.x, -at.y);
-    drawDot(g, s.soldiers[f.mover.id], 1, 1, at);
+    drawDot(g, s.soldiers[mover.id], 1, 1, at);
     g.restore();
     box.add(at.x, at.y, 12 * stretch);
   }
@@ -369,9 +380,9 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     box.add(0, RULES.pageH - 110); box.add(RULES.pageW, RULES.pageH);
   }
   drawGuides(g, f, box);
-  if (f.pen) {
-    drawPenShadow(g, f.pen, f.lamp);
-    const c = shadowEnds(f.pen, f.lamp);
+  for (const pen of allPens(f)) {
+    drawPenShadow(g, pen, f.lamp);
+    const c = shadowEnds(pen, f.lamp);
     box.add(c[0].x, c[0].y, PEN.R * 4); box.add(c[1].x, c[1].y, PEN.R * 6);
   }
   if (box.empty) {
@@ -487,10 +498,10 @@ function drawGuides(g: Ctx, f: Frame, box: Box) {
     g.globalAlpha = 1;
   }
   if (f.teach) { drawTeach(g, f.teach); box.add(f.teach.at.x, f.teach.at.y, 420); }
-  if (f.aim) {
-    drawAim(g, s, f.aim, px);
-    box.add(s.soldiers[f.aim.soldierId].x, s.soldiers[f.aim.soldierId].y, aimShow(f.aim) + (f.aim.sight !== undefined ? 90 : 24));
-    for (const q of [...(f.aim.path ?? []), ...(f.aim.branches ?? []).flat()]) box.add(q.x, q.y, f.aim.sight !== undefined ? 90 : 24);
+  for (const aim of allAims(f)) {
+    drawAim(g, s, aim, px);
+    box.add(s.soldiers[aim.soldierId].x, s.soldiers[aim.soldierId].y, aimShow(aim) + (aim.sight !== undefined ? 90 : 24));
+    for (const q of [...(aim.path ?? []), ...(aim.branches ?? []).flat()]) box.add(q.x, q.y, aim.sight !== undefined ? 90 : 24);
   }
 }
 
@@ -1236,20 +1247,22 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
 let inked: { x: number; y: number; w: number; h: number } | null = { x: 0, y: 0, w: 1e5, h: 1e5 };
 export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: number) {
   const sheen = sheenStrokes(f);
-  if (!f.pen && !sheen.length && !inked) return;
+  const pens = allPens(f);
+  if (!pens.length && !sheen.length && !inked) return;
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (inked) g.clearRect(inked.x, inked.y, inked.w, inked.h);
   inked = null;
   const box = new Box();
   if (sheen.length) drawSheen(g, f, sheen, box);
-  if (f.pen) {
-    const pb = penBox(f.pen, f.view);
+  for (const pen of pens) {
+    const pb = penBox(pen, f.view);
     box.add(pb.x0, pb.y0); box.add(pb.x1, pb.y1);
-    drawPen(g, f.pen, f.view);
+    drawPen(g, pen, f.view);
     // the guide runs past the pen's box: its dashes join the box, or they'd never be cleared
-    if (f.aim && f.aim.power > 0) guideThroughBarrel(g, f, box);
+    const aim = allAims(f).find((a) => { const x = f.s.soldiers[a.soldierId]; return x && x.x === pen.x && x.y === pen.y; });
+    if (aim && aim.power > 0) guideThroughBarrel(g, f, aim, box);
     // the pen stands in the same light as everything else
-    const lit = lightAt(f.lamp, f.pen.x, f.pen.y);
+    const lit = lightAt(f.lamp, pen.x, pen.y);
     g.save();
     g.beginPath();
     g.rect(pb.x0, pb.y0, pb.x1 - pb.x0, pb.y1 - pb.y0);
@@ -1278,8 +1291,7 @@ function penBox(p: PenPose, v: View) {
   };
 }
 
-function guideThroughBarrel(g: Ctx, f: Frame, box: Box) {
-  const a = f.aim!;
+function guideThroughBarrel(g: Ctx, f: Frame, a: Aim, box: Box) {
   const me = f.s.soldiers[a.soldierId];
   const show = aimShow(a);
   const dx = Math.cos(a.angle), dy = Math.sin(a.angle);

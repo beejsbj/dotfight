@@ -8,7 +8,7 @@ import {
   act, alive, canFlick, canFlickAt, canPlaceBase, canSend, costOf, hand, handAt, illegal, lastFlickAt, meterAt, newGame, refillRate, wetUntil,
   type Action, type Flick, type GameState,
 } from "./game";
-import { file, fromRecord, readDrawer, readSave, steps, apply, blank, toRecord, unfile, type Filed } from "./record";
+import { file, fromRecord, readDrawer, readSave, steps, apply, blank, toRecord, unfile, type Filed, type FiledV2 } from "./record";
 import { CORE, LONG, REALTIME, SIZES, savedRules, type CoreRules, type Size } from "./rules";
 
 const UP = -Math.PI / 2;
@@ -104,7 +104,7 @@ describe("real time: no turns", () => {
   it("a flick needs its moment, and time runs one way", () => {
     const s = game(PAGE);
     const blue = of(s, 0)[0];
-    expect(illegal(s, { ...flick(blue.id, "lunge", 500), ms: undefined })).toBe("no moment");
+    expect(illegal(s, { ...(flick(blue.id, "lunge", 500) as Extract<Action, { t: "flick" }>), ms: undefined })).toBe("no moment");
     act(s, flick(blue.id, "lunge", 500));
     expect(illegal(s, flick(of(s, 0)[1].id, "lunge", 499))).toBe("time runs one way");
     expect(illegal(s, flick(of(s, 0)[1].id, "lunge", 500))).toBeNull();
@@ -255,7 +255,7 @@ describe("the record", () => {
   it("a timed record is v3; the drawer keeps v2 and v3 pages and drops a v3 without its rules; old saves still read", () => {
     const rt = war(6, 12), core = newGame(SIZES.quick, 2);
     expect(toRecord(core).v).toBe(2);
-    const filed = [file(rt, { kind: "table", bot: 1 }), file(core, { kind: "pnp" })];
+    const filed = [file(rt, { kind: "table", bot: 1 }) as FiledV2, file(core, { kind: "pnp" }) as FiledV2];
     const raw = JSON.stringify([...filed, { ...filed[0], rules: { ...filed[0].rules, realtime: null } }, { v: 4, actions: [] }]);
     const read = readDrawer(raw);
     expect(read.map((r) => r.v)).toEqual([3, 2]);
@@ -264,7 +264,8 @@ describe("the record", () => {
     expect(save?.mode).toEqual({ kind: "table" });
     expect(save?.s.v === 2 && save.s.rules.realtime).toEqual(R);
     expect(readSave(JSON.stringify({ s: core, mode: { kind: "table", bot: 7 } }))?.mode).toEqual({ kind: "table" });
-    expect(readSave(JSON.stringify({ s: core, mode: { kind: "pnp" } }))?.s.v === 2 && readSave(JSON.stringify({ s: core, mode: { kind: "pnp" } }))!.s.rules.realtime).toBeNull();
+    const plain = readSave(JSON.stringify({ s: core, mode: { kind: "pnp" } }))!.s as GameState;
+    expect(plain.rules.realtime).toBeNull();
   });
 
   it("the same timed actions never make a different page: a flick out of its moment is refused and changes nothing", () => {

@@ -31,6 +31,7 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 - `src/page.ts`, `src/scene.ts`: the append-only sheet, and one frame's composition
 - `src/boil.ts`: the line boil: living soldiers and manned camps swap between three drawings at 8 fps, bolder from bird's-eye (`BOIL.bold`); the dead hold still. Small page-space canvases, dirty rectangles, sprites
 - `src/pen.ts`, `src/ink.ts`, `src/textures.ts`: the ballpoint, seeded ink and pencil primitives, desk and paper
+- `src/tabletop.ts`, `src/wet.ts`: the real-time prototype (BJS-458, `docs/realtime.md`): one phone flat between two players, both pens flicking at once behind `rules.realtime` (`REALTIME` in `src/rules.ts`); the ink meter, wet ink (a small page-space gloss layer, pure parts tested)
 - `src/timeline.ts`, `src/hand.ts`: draw-on timing, which soldier a tap means (pure, tested)
 - `src/sound.ts`: synthesised pen, paper and lamp sounds
 - `src/haptics.ts`: the pen felt under the thumb: `navigator.vibrate` on Android, the tick of a hidden checkbox switch on iPhone (from script up to iOS 26.4, only under real taps from 26.5). Pure parts tested

@@ -27,7 +27,7 @@ import * as motion from "./motion-input";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, file, readDrawer, readSave, settleSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
-import { CORE, CUSTOM, FEEL, LONG, RULES, SHAPES, SIZES, type Shape, type Size } from "./rules";
+import { CORE, CUSTOM, FEEL, LONG, REALTIME, RULES, SHAPES, SIZES, type Shape, type Size } from "./rules";
 import { boldAt, lifeOf } from "./boil";
 import { beforeMarch, comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
@@ -44,6 +44,7 @@ import { forgetRoom, listRooms, readRoom, RoomLink, type Saved as RoomSaved } fr
 import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted as roomDrifted, engineFor, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
 import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
 import { Timeline, reachFraction, signable, walkerAt } from "./timeline";
+import { tabletop } from "./tabletop";
 import * as turn from "./turn";
 
 setFeel((ev) => haptic(ev));
@@ -155,7 +156,7 @@ onCue((c) => { if (c === "lunge-death") haptic("thud"); else if (c === "last-sta
 const cam = new Camera();
 let W = 0, H = 0, dpr = 1, sdpr = 1, dirty = true;
 
-const isBot = (p: Player) => mode.kind === "bot" && p === 1;
+const isBot = (p: Player) => (mode.kind === "bot" || (mode.kind === "table" && mode.bot !== undefined)) && p === 1;
 // in a room, the other seat's moves come down the link (watchers: both seats')
 const remote = (p: Player) => mode.kind === "room" && link?.seat !== p;
 const away = (p: Player) => isBot(p) || remote(p);
@@ -276,6 +277,7 @@ function hud() {
     el.style.setProperty("--ink-left", inkLeft(p).toFixed(3));
   }
   document.documentElement.style.setProperty("--ink", hudPen(s.current));
+  tabletop.hud(mode, s, screen);
   const chain = !!c0?.chain;
   if (screen === "game") {
     // drawing a long war's bases: the cards are the three shapes
@@ -464,13 +466,13 @@ function reset() {
   dirty = true;
 }
 
-/** The rules a new game of this size is played by: a long war's, or the core rules. */
-const rulesFor = (size: Size) => (size.name === "long" ? LONG : CORE);
+/** The rules a new game of this size is played by: a long war's, the real-time prototype's (a table game), or the core rules. */
+const rulesFor = (size: Size, m?: Mode) => (m?.kind === "table" ? REALTIME : size.name === "long" ? LONG : CORE);
 
 function start(m: Mode, size: Size = pickedSize()) {
   reset();
   restoreKindBar();
-  s = newGame(size, undefined, pageStamp(), rulesFor(size));
+  s = newGame(size, undefined, pageStamp(), rulesFor(size, m));
   mode = m;
   kind = "snipe";
   screen = "game";
@@ -509,6 +511,7 @@ function next() {
   if (screen !== "game") return;
   if (s.phase === "over") return finish();
   if (mode.kind === "room" && (link?.queued || remote(s.current))) return roomNext();
+  if (mode.kind === "table" && s.phase === "play" && core()) return tabletop.enter(core()!); // real time: the table takes the page
   const c0 = core();
   if (!isBot(s.current)) {
     link?.waiting(false);
@@ -524,7 +527,7 @@ function next() {
   }
   busy = true;
   hud();
-  const level = (mode as { level: Level }).level;
+  const level = mode.kind === "table" ? mode.bot! : (mode as { level: Level }).level;
   if (s.phase === "setup") {
     after(650, () => {
       const sh = turn.shaped(s) ? botShape(Math.random) : undefined;
@@ -1552,6 +1555,10 @@ function coverMenu() {
     <div class="duo">
       <button data-a="pnp" class="ink blue">pass &amp; play<small>one phone</small></button>
       <button data-a="friend" class="ink blue">play a friend<small>send a link</small></button>
+    </div>
+    <div class="duo">
+      <button data-a="table" class="ink blue">real time<small>an experiment</small></button>
+      <button data-a="tablebot" class="ink red">v Dawood-bot<small>in real time</small></button>
     </div>`;
     // as many friends' games as fit; the rest wait in the drawer
     $("#cover .leaf").style.removeProperty("--fit");
@@ -1570,6 +1577,7 @@ function coverMenu() {
     if (a === "resume" && saved) resume(saved);
     else if (a === "pnp") start({ kind: "pnp" });
     else if (a === "bot") start({ kind: "bot", level: botLevel });
+    else if (a === "table" || a === "tablebot") start({ kind: "table", ...(a === "tablebot" && { bot: botLevel }) }, sizeName === "long" ? sizeFor("quick") : pickedSize());
     else if (a === "friend") newRoomOnCover();
     else if (a === "ask") { tearing = b.dataset.code!; draw(); }
     else if (a === "keep") { tearing = null; draw(); }
@@ -1817,7 +1825,7 @@ function showOver() {
   sheet(`
     <p class="sub">morning. page ${s.page?.no ?? ""} is done${turn.shaped(s) ? ": a long war" : ""}.</p>
     <h2 style="color:${hudPen(w)}">${name(w)} held the page.</h2>
-    <p class="stats">${s.turn} turns · ${metres.toFixed(1)} ${theme.ink.tool === "pencil" ? "metres of lead" : "metres of ink"} · ${([0, 1] as Player[]).map((p) => `<span style="color:${hudPen(p)}">${name(p)} crossed out ${crossed(p)}</span>`).join(" · ")}</p>
+    <p class="stats">${s.turn} ${core()?.rules.realtime ? "flicks, no turns" : "turns"} · ${metres.toFixed(1)} ${theme.ink.tool === "pencil" ? "metres of lead" : "metres of ink"} · ${([0, 1] as Player[]).map((p) => `<span style="color:${hudPen(p)}">${name(p)} crossed out ${crossed(p)}</span>`).join(" · ")}</p>
     <button class="act" data-a="replay">watch the war again</button>
     <button class="act" data-a="keep">keep the page (image)</button>
     <button class="act" data-a="look">look at it</button>
@@ -1863,9 +1871,9 @@ function showDrawer() {
     b.dataset.i = String(i);
     b.appendChild(thumb(r, 130));
     const names = themeOf(r.page?.theme).ink.names;
-    const who = r.mode.kind === "bot" ? [names[0], "Dawood-bot"] : names;
+    const who = r.mode.kind === "bot" || (r.mode.kind === "table" && r.mode.bot !== undefined) ? [names[0], "Dawood-bot"] : names;
     const cap = document.createElement("span");
-    cap.innerHTML = `No. ${r.page?.no ?? "?"} · ${r.page?.date ?? ""}<br><b style="color:${hudPen(r.winner ?? 0)}">${r.winner !== undefined ? who[r.winner] : "unfinished"}</b> · ${r.turns} turns${r.v === 2 && r.rules?.long ? " · long war" : ""}`;
+    cap.innerHTML = `No. ${r.page?.no ?? "?"} · ${r.page?.date ?? ""}<br><b style="color:${hudPen(r.winner ?? 0)}">${r.winner !== undefined ? who[r.winner] : "unfinished"}</b> · ${r.turns} ${r.v !== 1 && r.rules?.realtime ? "flicks · real time" : "turns"}${r.v !== 1 && r.rules?.long ? " · long war" : ""}`;
     b.appendChild(cap);
     grid.appendChild(b);
   });
@@ -2518,8 +2526,8 @@ function keepPage() {
 
 function signatureFor(st: AnyState, m: Mode) {
   if (st.phase !== "over" || st.winner === undefined) return undefined;
-  const who = m.kind === "bot" && st.winner === 1 ? "Dawood-bot" : INK.names[st.winner];
-  return { text: `${who} held the page. ${st.turn} turns.`, owner: st.winner };
+  const who = (m.kind === "bot" || (m.kind === "table" && m.bot !== undefined)) && st.winner === 1 ? "Dawood-bot" : INK.names[st.winner];
+  return { text: `${who} held the page. ${st.turn} ${!turn.isLegacy(st) && st.rules.realtime ? "flicks" : "turns"}.`, owner: st.winner };
 }
 
 // --- input ------------------------------------------------------------------
@@ -2599,6 +2607,7 @@ function pinchInfo() {
 const humanTurn = () => screen === "game" && !away(s.current) && !busy && $("#sheet").hidden;
 
 over.addEventListener("pointerdown", (e) => {
+  if (tabletop.active) return; // real time: the table has the page (tabletop.ts)
   sfx.unlock();
   const cut = !!unit && !unit.rising;
   skipUnitCam();
@@ -2688,7 +2697,7 @@ function moveGhost(sx: number, sy: number) {
 }
 
 over.addEventListener("pointermove", (e) => {
-  if (!ptrs.has(e.pointerId)) return;
+  if (tabletop.active || !ptrs.has(e.pointerId)) return;
   ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (g.t === "pinch" && ptrs.size === 2) {
     const { d, m } = pinchInfo();
@@ -2813,7 +2822,7 @@ function stepGun() {
 }
 
 function up(e: PointerEvent) {
-  if (!ptrs.has(e.pointerId)) return;
+  if (tabletop.active || !ptrs.has(e.pointerId)) return;
   const p = ptrs.get(e.pointerId)!;
   ptrs.delete(e.pointerId);
   if (g.t === "pinch") { if (ptrs.size === 0) g = { t: "none" }; return; }
@@ -2913,6 +2922,7 @@ over.addEventListener("pointercancel", up);
 over.addEventListener("contextmenu", (e) => e.preventDefault());
 over.addEventListener("wheel", (e) => {
   e.preventDefault();
+  if (tabletop.active) return;
   if (selected !== undefined && !busy) { aim = null; sfx.creak(0); standUp(); }
   if (cam.cur.tilt > 0.02) { cam.tgt = { ...cam.tgt, tilt: 0, fy: cam.fitFy }; cam.cur = { ...cam.cur, tilt: 0, fy: cam.fitFy }; }
   cam.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.002));
@@ -2994,6 +3004,7 @@ let probeSlow = true; // dev: headless Chrome has no GPU and would always look s
 
 function frame(now: number) {
   requestAnimationFrame(frame);
+  if (tabletop.active) { tabletop.frame(now); last = now; return; } // real time: the table runs its own clock and frame
   const elapsed = Math.max(0, now - last);
   frameTimes.push(elapsed);
   if (frameTimes.length > 240) frameTimes.shift();
@@ -3161,7 +3172,7 @@ function currentFrame(): Frame {
     f.keepOut = s.bases.map((b) => ({ x: b.x, y: b.y, r: b.r + mine + (b.owner === s.current ? RULES.minBaseGap : RULES.minEnemyBaseGap) }));
   }
   if (human && s.phase === "setup" && !ghost && !busy && !taught("place")) {
-    const ownY = mode.kind === "pnp" && s.current === 1 ? 0.3 : 0.7;
+    const ownY = (mode.kind === "pnp" || mode.kind === "table") && s.current === 1 ? 0.3 : 0.7;
     const n = turn.perBase(s, shape);
     // the long war's bases come up from the cards, and don't all hold the same
     f.teach = turn.shaped(s)
@@ -3173,7 +3184,7 @@ function currentFrame(): Frame {
     f.zones = c0.bases.filter((b) => b.owner === c0.current).map((b) => ({ x: b.x, y: b.y, r: b.r + c0.rules.positionReach, ...(corners(b) && { pts: offsetPolygon(corners(b)!, c0.rules.positionReach) }) }));
     if (dragging) f.drag = dragging;
     if (!taught("arrange") && !dragging) {
-      const ownY = mode.kind === "pnp" && c0.current === 1 ? 0.3 : 0.7;
+      const ownY = (mode.kind === "pnp" || mode.kind === "table") && c0.current === 1 ? 0.3 : 0.7;
       f.teach = { kind: "arrange", at: { x: RULES.pageW / 2 + 20, y: RULES.pageH * ownY }, p: fx.p("teach", T), rot: cam.cur.rot };
     }
   }
@@ -3372,6 +3383,11 @@ function showBoot() {
   requestAnimationFrame(frame);
   showTitle();
 }
+// the real-time prototype's table (tabletop.ts) borrows the desk: its layers, camera, lamp, save and the way back
+tabletop.install({
+  els, over, og, cam, dims: () => ({ W, H, dpr, sdpr }), lamp: () => lampFor(cam.cur, dawn.at(T), lampOn.at(T)),
+  save, exit: () => { busy = false; next(); }, menu: showTitle, reduced, slow: () => slow, boilOn, heard, speed: () => speed,
+});
 const roomPath = location.pathname.match(/^\/r\/([a-z0-9]{6})\/?$/)?.[1];
 showBoot();
 if (roomPath) void openRoom(roomPath);
@@ -3381,7 +3397,7 @@ if (import.meta.env.DEV) {
   (window as unknown as { pft: object }).pft = {
     get s() { return s; }, get T() { return T; }, get screen() { return screen; }, get busy() { return busy; },
     get selected() { return selected; }, get turnClock() { return turnClock; }, get shown() { return shownState(); }, set clockHeld(v: boolean) { clockHeld = v; }, get res() { return res; }, get lapse() { return lapse; }, haptics, get link() { return link; }, get mode() { return mode; }, get roomDrift() { return roomDrift; },
-    get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; },
+    get unit() { return unit; }, unitCam: (id: number) => startUnitCam(id), redrop: () => { penDrop = T; }, table: tabletop,
     /** A camp turns on an intruder (the lunge rule's execution, by hand): `pft.volley(baseId, soldierId)`. */
     volley: (base: number, id: number) => { const x = s.soldiers[id]; return startVolley(base, { id, x: x.x, y: x.y }); }, set hidePen(v: boolean) { hidePen = v; dirty = true; },
     set speed(v: number) { speed = v; }, get speed() { return speed; },
