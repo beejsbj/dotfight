@@ -11,7 +11,8 @@ import * as legacy from "./legacy";
 import type { LegacyFlick, LegacyState } from "./legacy";
 import { SIZES, savedRules, type CoreRules, type Size } from "./rules";
 
-export type Mode = { kind: "pnp" } | { kind: "bot"; level: 0 | 1 | 2 } | { kind: "room"; code: string };
+/** `lesson`: the tutorial's scripted battle (src/tutorial.ts), a bot game the drawer and replays show as a lesson. */
+export type Mode = { kind: "pnp" } | { kind: "bot"; level: 0 | 1 | 2; lesson?: boolean } | { kind: "room"; code: string };
 
 /** Any game the desk can hold: the core rules (v2), or a prototype page (v1). */
 export type AnyState = GameState | LegacyState;
@@ -121,8 +122,8 @@ export function apply(s: AnyState, st: Step) {
   act(s, st);
 }
 
-const MODE = (v: { kind?: string; level?: number } | undefined): Mode =>
-  v?.kind === "bot" ? { kind: "bot", level: ([0, 1, 2].includes(v.level!) ? v.level : 1) as 0 | 1 | 2 } : { kind: "pnp" };
+const MODE = (v: { kind?: string; level?: number; lesson?: boolean } | undefined): Mode =>
+  v?.kind === "bot" ? { kind: "bot", level: ([0, 1, 2].includes(v.level!) ? v.level : 1) as 0 | 1 | 2, ...(v.lesson === true && { lesson: true }) } : { kind: "pnp" };
 
 /** Read `pft:save`. Anything unreadable or from a future format is ignored. */
 export function readSave(raw: string | null): Save | null {
