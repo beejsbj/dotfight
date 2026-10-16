@@ -18,10 +18,13 @@
 //   home         it passed out through a pentagon and turned on a man
 //   jolt         it crossed old ink and kinked (no arg)
 //
+// The real-time prototype (tabletop.ts):
+//   dry          a soldier's wet ink has dried: he can flick again (arg: the soldier)
+//
 // main.ts routes lunge-death → haptic("thud") and last-stand → haptic("stand") (#7);
 // the shape cues are felt only on your own line (haptics.ts has one tick each).
 
-export type Cue = "lunge-death" | "last-stand" | "earned" | "send" | "walk-out" | "walk-on" | "arrive" | "bank" | "split" | "rule" | "home" | "jolt";
+export type Cue = "lunge-death" | "last-stand" | "earned" | "send" | "walk-out" | "walk-on" | "arrive" | "bank" | "split" | "rule" | "home" | "jolt" | "dry";
 
 type Listener = (c: Cue, arg?: number) => void;
 const listeners = new Set<Listener>();

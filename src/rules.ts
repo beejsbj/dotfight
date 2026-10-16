@@ -9,6 +9,9 @@
 // - LONG: the long war's rules (RULES.md, "Long war rules"): CORE plus a
 //   `long` block. Every long-war behaviour hangs off `rules.long`, so a core
 //   game (where it's null) never meets any of it.
+// - REALTIME: the real-time prototype (BJS-458, docs/realtime.md): CORE plus a
+//   `realtime` block, gated the same way off `rules.realtime`. Not canon:
+//   Dawood hasn't seen it.
 // - SIZES: the Quick battle sizes, and the long war's.
 
 export const RULES = {
@@ -119,6 +122,8 @@ export const CORE = {
   garrison: { snipeLoss: [0.03, 0.85], lungeShake: [0.02, 1.0], curve: 1 } as Garrison | null,
   /** The long war's rules (`LONG`); null in a core game, and in every record made before the long war. */
   long: null as Long | null,
+  /** The real-time prototype's rules (`REALTIME`); null in a core game, and in every record made before it. */
+  realtime: null as Realtime | null,
 };
 
 /** How a wall's toughness follows its garrison (see `CORE.garrison`). */
@@ -208,12 +213,53 @@ export const LONG: CoreRules = {
 };
 
 /**
- * A game's rule numbers from a saved record, room or save: today's CORE fills
- * any number it lacks, except `garrison` and `long`. A record without
- * `garrison` was played before garrisoned walls and keeps its flat walls; one
- * without `long` is a core game.
+ * The real-time prototype's numbers (BJS-458, docs/realtime.md). All (to test):
+ * nobody has felt them at a table, and none of this is Dawood's yet. There are
+ * no turns after setup: both pens flick whenever they can, on one engine
+ * clock (ms) the page advances and every flick is stamped with (`Flick.ms`).
  */
-export const savedRules = (r: Partial<CoreRules>): CoreRules => ({ ...CORE, ...r, garrison: r.garrison ?? null, long: r.long ?? null });
+export interface Realtime {
+  /** Bumped when a real-time rule's *logic* changes. */
+  version: number;
+  /**
+   * The ink meter: each pen holds up to `full` ink and refills `perSec` a
+   * second, from `start` at the first flick. A snipe costs `snipe`, a lunge
+   * `lunge`; a flick the pen can't afford waits. A flick that earns another
+   * under the core rules (a snipe that takes two, a lunge that kills) refunds
+   * its cost instead. In a last stand the pen refills `lastStandFlicks` times as fast.
+   */
+  meter: { full: number; perSec: number; start: number; snipe: number; lunge: number };
+  /**
+   * Wet ink: a soldier who just flicked is wet for `dryMs` and can't flick
+   * again until he dries. A lunger who killed and lived dries at once ("lunge on").
+   */
+  dryMs: number;
+  /**
+   * Haste adds wobble: a flick let go within `ms` of the same pen's last one
+   * gets up to `tremor` radians (1 sd) of extra hand error, most when it comes
+   * right after, fading to none at `ms`. Real time must not become precision clicking.
+   */
+  haste: { ms: number; tremor: number };
+}
+
+/** The real-time prototype: the core rules, plus the ink meter and wet ink (sends and the earned-flick chain are read as above; see docs/realtime.md). */
+export const REALTIME: CoreRules = {
+  ...CORE,
+  realtime: {
+    version: 1,
+    meter: { full: 3, perSec: 0.4, start: 2, snipe: 1.25, lunge: 0.85 },
+    dryMs: 4000,
+    haste: { ms: 1500, tremor: 0.06 },
+  },
+};
+
+/**
+ * A game's rule numbers from a saved record, room or save: today's CORE fills
+ * any number it lacks, except `garrison`, `long` and `realtime`. A record without
+ * `garrison` was played before garrisoned walls and keeps its flat walls; one
+ * without `long` is a core game, and one without `realtime` has turns.
+ */
+export const savedRules = (r: Partial<CoreRules>): CoreRules => ({ ...CORE, ...r, garrison: r.garrison ?? null, long: r.long ?? null, realtime: r.realtime ?? null });
 
 /** A war's size: bases a side and soldiers in each (in the long war, each base's shape says how many). */
 export interface Size {

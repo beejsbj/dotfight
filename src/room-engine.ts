@@ -23,12 +23,17 @@ export const ENGINE = "core-4";
 // instead of playing it by the core rules.
 export const LONG_ENGINE = "long-1";
 
+// realtime-1: the real-time prototype (`rules.realtime`). Online real time is out
+// of scope (BJS-458), so no client reads it: a room on it would need both
+// phones on one clock, which turns can't give.
+export const REALTIME_ENGINE = "realtime-1";
+
 /** core-2: original reach; core-3: shorter pull reach; core-4: garrisoned walls; long-1: the long war. */
 export const READS: readonly string[] = ["core-2", "core-3", ENGINE, LONG_ENGINE];
 export const canRead = (engine: string) => READS.includes(engine);
 
 /** The engine a new room with these rules is played on. */
-export const engineFor = (rules: CoreRules) => (rules.long ? LONG_ENGINE : ENGINE);
+export const engineFor = (rules: CoreRules) => (rules.realtime ? REALTIME_ENGINE : rules.long ? LONG_ENGINE : ENGINE);
 
 /** What a blank page needs: the v2 record minus its actions. */
 export interface Setup {

@@ -13,6 +13,12 @@
 // "the long war's ink" below). Every long-war path is behind `rules.long`, so a
 // core game never takes one.
 //
+// The real-time prototype (BJS-458, docs/realtime.md) is the same reducer with
+// `rules.realtime` set: after positioning there are no turns, and a flick from
+// either side is legal at engine time `ms` if that pen's ink meter can pay for
+// it and the soldier's ink is dry (see "real time" below). Every real-time path
+// is behind `rules.realtime`, so a core game never takes one either.
+//
 // (pure, tested)
 
 import { circleHits, dist, flickPath, gauss, insidePoly, pathLen, polygon, polyHits, rng, rotateAbout, segDist, type Pt } from "./geom";
@@ -100,6 +106,9 @@ export interface Flick {
    * The long war: the moment it was released, ms on this turn's clock. Convoys
    * walk their road in real time, so this says where every walker stood when
    * the line was drawn. Never earlier than the turn's last flick.
+   * Real time: the moment it was released on the game's one clock (ms from the
+   * first flick), which the meter and wet ink are judged by. Required there,
+   * and never earlier than the last flick's.
    */
   ms?: number;
 }
@@ -216,8 +225,14 @@ export interface GameState {
   sent: boolean;
   /** Positioning: which sides are done. */
   ready: [boolean, boolean];
-  /** The long war: this turn's clock at its last flick (ms); convoys on the road stand where it put them. */
+  /** The long war: this turn's clock at its last flick (ms); convoys on the road stand where it put them. Real time: the game clock at its last flick. */
   clock?: number;
+  /**
+   * Real time only: each pen's ink meter as it stood at `since` (ms on the game
+   * clock; it refills from there), and when each soldier's ink dries (by id;
+   * absent or past: dry). Never present in a core game.
+   */
+  rt?: { ink: [number, number]; since: [number, number]; wet: Record<number, number> };
   /** The turn each side's last stand began (0: not yet). */
   stand: [number, number];
   bases: Base[];
@@ -405,10 +420,11 @@ export function wallCost(s: GameState, b: Base, kind: Kind, gone?: Set<number>, 
   return lo + (hi - lo) * wallStrength(s, b, gone, but);
 }
 
-/** Can this soldier flick now (and flick this kind)? */
+/** Can this soldier flick now (and flick this kind)? In real time, "now" is the clock's last moment (`canFlickAt` judges a given one). */
 export function canFlick(s: GameState, id: number, kind?: Kind) {
   const x = s.soldiers[id];
   if (!(s.phase === "play" && !!x && x.alive && x.owner === s.current && x.convoy === undefined)) return false;
+  if (s.rules.realtime) return wetUntil(s, id) <= (s.clock ?? 0);
   if (s.chain && (s.chain.soldier !== id || (kind !== undefined && kind !== "lunge"))) return false;
   return true;
 }
@@ -938,8 +954,10 @@ export function act(s: GameState, a: Action): Outcome {
     case "arrange": { const x = s.soldiers[a.soldier]; x.x = a.x; x.y = a.y; return empty(); }
     case "ready": {
       s.ready[s.current] = true;
-      if (s.ready[0] && s.ready[1]) { s.phase = "play"; s.current = 0; s.turn = 1; s.left = allotment(s, 0); }
-      else s.current = other(s.current);
+      if (s.ready[0] && s.ready[1]) {
+        s.phase = "play"; s.current = 0; s.turn = 1; s.left = allotment(s, 0);
+        if (s.rules.realtime) startClock(s);
+      } else s.current = other(s.current);
       return { ...empty(), again: false };
     }
     case "flick": { const { t: _t, ...f } = a; void _t; return flick(s, f, seed); }
@@ -964,14 +982,15 @@ export function illegal(s: GameState, a: Action): string | null {
     case "arrange": return canArrange(s, a.soldier, a.x, a.y);
     case "ready": return s.phase === "position" ? null : "not positioning";
     case "flick": {
-      if (!canFlick(s, a.soldier, a.kind)) return s.chain ? "an earned lunge is his to take" : "not his to flick";
       if (a.kind !== "snipe" && a.kind !== "lunge") return "unknown flick";
       if (![a.angle, a.length, a.bend].every(Number.isFinite) || a.length <= 0) return "bad numbers";
+      if (s.rules.realtime) return canFlickAt(s, a.soldier, a.ms, a.kind);
+      if (!canFlick(s, a.soldier, a.kind)) return s.chain ? "an earned lunge is his to take" : "not his to flick";
       if (s.rules.long && a.ms !== undefined && !(Number.isFinite(a.ms) && a.ms >= (s.clock ?? 0))) return "time runs one way";
       return null;
     }
     case "send": return canSend(s, a.from, a.to, a.n);
-    case "stop": return s.phase === "play" ? null : "not playing";
+    case "stop": return s.rules.realtime ? "no turns to stop in real time" : s.phase === "play" ? null : "not playing";
   }
   return "unknown action";
 }
@@ -982,6 +1001,8 @@ function flick(s: GameState, f: Flick, seed: number): Outcome {
     s.clock = Math.max(s.clock ?? 0, f.ms ?? 0);
     marchTo(s, s.clock);
   }
+  // real time: the pen pays for it from its meter, as of the moment it was let go
+  if (s.rules.realtime) spend(s, s.soldiers[f.soldier].owner, f.kind, f.ms!);
   const o = preview(s, f);
   const me = s.soldiers[f.soldier];
   const who = me.owner;
@@ -1026,6 +1047,7 @@ function flick(s: GameState, f: Flick, seed: number): Outcome {
     }
   }
   standCheck(s, seed, o);
+  if (s.rules.realtime) return afterRealtimeFlick(s, f, who, o);
   if (winCheck(s, who, o)) return o;
   s.left -= 1;
   // what earns another flick: a snipe that takes two, or a lunge that kills (the same man lunges on)
@@ -1068,6 +1090,7 @@ function standCheck(s: GameState, seed: number, o: Outcome) {
 
 export function canSend(s: GameState, from: number, to: number, n: number): string | null {
   if (s.phase !== "play") return "not now";
+  if (s.rules.realtime) return "no sends in real time";
   if (s.sent) return "one send a turn";
   const a = s.bases[from], b = s.bases[to];
   if (!a || !b || a === b) return "pick two bases";
@@ -1273,6 +1296,100 @@ function arrive(s: GameState, c: Convoy, seed: number, o: Outcome) {
   });
   c.state = "arrived";
   o.arrived.push(c.id);
+}
+
+// --- real time (BJS-458, docs/realtime.md) ------------------------------------------
+//
+// With `rules.realtime` there are no turns once both sides are arranged: the
+// page keeps one clock (ms from the first flick, `s.clock` at the last one),
+// and a flick from either pen is legal at its moment `ms` if that pen's ink
+// meter can pay for it and the soldier is dry. The meter refills with the
+// clock; a flick the core rules would reward with another flick refunds its
+// cost instead; a lunger who killed and lived is dry at once ("lunge on").
+// Sends and `stop` don't exist here. The clock never runs inside the engine:
+// the page advances it and stamps each flick, so a record replays exactly.
+
+/** Positioning is done: the clock starts, and both pens start with the same ink. */
+function startClock(s: GameState) {
+  const R = s.rules.realtime!;
+  s.clock = 0;
+  s.rt = { ink: [R.meter.start, R.meter.start], since: [0, 0], wet: {} };
+}
+
+/** What a flick of this kind costs the pen (real time; 0 with turns). */
+export const costOf = (s: GameState, kind: Kind) => (s.rules.realtime ? (kind === "snipe" ? s.rules.realtime.meter.snipe : s.rules.realtime.meter.lunge) : 0);
+
+/** A pen's refill rate, ink a second: faster in a last stand (`lastStandFlicks` times). */
+export const refillRate = (s: GameState, p: Player) => (s.rules.realtime ? s.rules.realtime.meter.perSec * (inLastStand(s, p) ? s.rules.lastStandFlicks : 1) : 0);
+
+/** How much ink this pen has at clock `t` (real time; 0 with turns). */
+export function meterAt(s: GameState, p: Player, t: number) {
+  const R = s.rules.realtime;
+  if (!R || !s.rt) return 0;
+  return Math.min(R.meter.full, s.rt.ink[p] + refillRate(s, p) * Math.max(0, t - s.rt.since[p]) / 1000);
+}
+
+/** When this soldier's ink dries (clock ms); 0 if it's dry. */
+export const wetUntil = (s: GameState, id: number) => s.rt?.wet[id] ?? 0;
+
+/** The pen's last flick (clock ms), or -Infinity before its first: haste is judged from it. */
+export const lastFlickAt = (s: GameState, p: Player) => s.actions.reduce((at, a) => (a.t === "flick" && s.soldiers[a.soldier]?.owner === p && a.ms !== undefined ? Math.max(at, a.ms) : at), -Infinity);
+
+/** Why this soldier can't flick (this kind) at clock `t`, or null if he can. Real time only (with turns: `canFlick`). */
+export function canFlickAt(s: GameState, id: number, t: number | undefined, kind?: Kind): string | null {
+  const R = s.rules.realtime;
+  if (!R) return canFlick(s, id, kind) ? null : "not his to flick";
+  const x = s.soldiers[id];
+  if (s.phase !== "play") return "not now";
+  if (!x || !x.alive || x.convoy !== undefined) return "not his to flick";
+  if (t === undefined || !Number.isFinite(t)) return "no moment";
+  if (t < (s.clock ?? 0)) return "time runs one way";
+  if (wetUntil(s, id) > t) return "his ink is still wet";
+  if (kind !== undefined && meterAt(s, x.owner, t) + 1e-9 < costOf(s, kind)) return "out of ink";
+  return null;
+}
+
+/**
+ * This soldier's hand at clock `t`: `hand`, plus the haste tremor if the same
+ * pen flicked within `haste.ms` (added in quadrature, so it never steadies anyone).
+ */
+export function handAt(s: GameState, id: number, kind: Kind, t: number) {
+  const h = hand(s, id, kind), R = s.rules.realtime;
+  if (!R) return h;
+  const gap = t - lastFlickAt(s, s.soldiers[id].owner);
+  const haste = gap < R.haste.ms ? R.haste.tremor * (1 - Math.max(0, gap) / R.haste.ms) : 0;
+  return { ...h, tremor: Math.hypot(h.tremor, haste) };
+}
+
+/** Bring a pen's meter up to clock `t` (so a change of rate counts from here). */
+function settleMeter(s: GameState, p: Player, t: number) {
+  s.rt!.ink[p] = meterAt(s, p, t);
+  s.rt!.since[p] = t;
+}
+
+/**
+ * The pen pays for a flick at clock `t`; the clock moves on to it. Both meters
+ * are brought up to `t` first, so a last stand this flick begins (a faster
+ * refill) counts from this moment and not before it.
+ */
+function spend(s: GameState, p: Player, kind: Kind, t: number) {
+  for (const q of [0, 1] as Player[]) settleMeter(s, q, t);
+  s.rt!.ink[p] -= costOf(s, kind);
+  s.clock = t;
+}
+
+/** After a real-time flick's marks are down: wet ink, refunds, the win; never a hand-over. */
+function afterRealtimeFlick(s: GameState, f: Flick, who: Player, o: Outcome): Outcome {
+  const R = s.rules.realtime!, t = f.ms!, me = s.soldiers[f.soldier];
+  s.turn += 1; // in real time: flicks so far (the page ages by it)
+  if (winCheck(s, who, o)) return o;
+  const lungeOn = f.kind === "lunge" && o.killed.length > 0 && !o.lost;
+  const earned = f.kind === "snipe" ? o.killed.length >= s.rules.snipeEarnAt : lungeOn;
+  if (earned) { s.rt!.ink[who] = Math.min(R.meter.full, s.rt!.ink[who] + costOf(s, f.kind)); o.earned = true; }
+  if (me.alive) { if (lungeOn) delete s.rt!.wet[me.id]; else s.rt!.wet[me.id] = t + R.dryMs; }
+  o.again = true;
+  o.handover = false;
+  return o;
 }
 
 // --- replay -------------------------------------------------------------------

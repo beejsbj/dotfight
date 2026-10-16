@@ -11,7 +11,8 @@ import * as legacy from "./legacy";
 import type { LegacyFlick, LegacyState } from "./legacy";
 import { SIZES, savedRules, type CoreRules, type Size } from "./rules";
 
-export type Mode = { kind: "pnp" } | { kind: "bot"; level: 0 | 1 | 2 } | { kind: "room"; code: string };
+/** How a page is being played. `table`: the real-time prototype, one phone flat between two players (docs/realtime.md); with `bot`, Dawood-bot holds the red pen. */
+export type Mode = { kind: "pnp" } | { kind: "bot"; level: 0 | 1 | 2 } | { kind: "room"; code: string } | { kind: "table"; bot?: 0 | 1 | 2 };
 
 /** Any game the desk can hold: the core rules (v2), or a prototype page (v1). */
 export type AnyState = GameState | LegacyState;
@@ -20,9 +21,13 @@ export const isLegacy = (s: AnyState): s is LegacyState => s.v === 1;
 /**
  * Everything needed to replay a core-rules game, and nothing else. Plain JSON.
  * `v` versions this format; `rules.version` versions the rules' logic.
+ * 2: seed + size + rules + actions. 3: the same, timed: `rules.realtime` is
+ * set and every flick carries its moment `ms` (the real-time prototype). A
+ * record with turns is still written as 2, so older copies of the game keep
+ * reading it; they ignore a 3 rather than replay it by the wrong rules.
  */
 export interface GameRecord {
-  v: 2;
+  v: 2 | 3;
   seed: number;
   size: Size;
   rules: CoreRules;
@@ -31,7 +36,7 @@ export interface GameRecord {
 }
 
 export function toRecord(s: GameState): GameRecord {
-  return { v: 2, seed: s.seed, size: { ...s.size }, rules: structuredClone(s.rules), actions: structuredClone(s.actions), ...(s.page && { page: s.page }) };
+  return { v: s.rules.realtime ? 3 : 2, seed: s.seed, size: { ...s.size }, rules: structuredClone(s.rules), actions: structuredClone(s.actions), ...(s.page && { page: s.page }) };
 }
 
 /** Replay a record from a blank page. */
@@ -84,7 +89,7 @@ export function file(s: AnyState, mode: Mode, at = Date.now()): Filed {
 
 /** Rebuild the whole page from its record. */
 export function unfile(r: Filed): AnyState {
-  if (r.v === 2) return fromRecord(r);
+  if (r.v !== 1) return fromRecord(r);
   const s = legacy.newGame(r.seed, r.page);
   for (const [x, y] of r.bases) legacy.placeBase(s, x, y);
   for (const f of r.flicks) legacy.act(s, f);
@@ -98,7 +103,7 @@ export type Step =
   | Action;
 
 export function steps(r: Filed): Step[] {
-  if (r.v === 2) return structuredClone(r.actions);
+  if (r.v !== 1) return structuredClone(r.actions);
   return [
     ...r.bases.map(([x, y]): Step => ({ t: "legacy-base", x, y })),
     ...r.flicks.map((f): Step => ({ t: "legacy-flick", f })),
@@ -107,7 +112,7 @@ export function steps(r: Filed): Step[] {
 
 /** The blank sheet a replay starts from. */
 export function blank(r: Filed): AnyState {
-  return r.v === 2 ? newGame(r.size, r.seed, r.page, savedRules(r.rules)) : legacy.newGame(r.seed, r.page);
+  return r.v !== 1 ? newGame(r.size, r.seed, r.page, savedRules(r.rules)) : legacy.newGame(r.seed, r.page);
 }
 
 /** Apply one step. */
@@ -121,8 +126,10 @@ export function apply(s: AnyState, st: Step) {
   act(s, st);
 }
 
-const MODE = (v: { kind?: string; level?: number } | undefined): Mode =>
-  v?.kind === "bot" ? { kind: "bot", level: ([0, 1, 2].includes(v.level!) ? v.level : 1) as 0 | 1 | 2 } : { kind: "pnp" };
+const MODE = (v: { kind?: string; level?: number; bot?: number } | undefined): Mode =>
+  v?.kind === "bot" ? { kind: "bot", level: ([0, 1, 2].includes(v.level!) ? v.level : 1) as 0 | 1 | 2 }
+  : v?.kind === "table" ? { kind: "table", ...([0, 1, 2].includes(v.bot!) && { bot: v.bot as 0 | 1 | 2 }) }
+  : { kind: "pnp" };
 
 /** Read `pft:save`. Anything unreadable or from a future format is ignored. */
 export function readSave(raw: string | null): Save | null {
@@ -159,7 +166,7 @@ export function readDrawer(raw: string | null): Filed[] {
     if (!Array.isArray(v)) return [];
     return v.filter((r) =>
       (r?.v === 1 && Array.isArray(r.bases) && Array.isArray(r.flicks)) ||
-      (r?.v === 2 && Array.isArray(r.actions) && r.size && r.rules));
+      ((r?.v === 2 || (r?.v === 3 && r.rules?.realtime)) && Array.isArray(r.actions) && r.size && r.rules));
   } catch {
     return [];
   }
