@@ -138,14 +138,15 @@ export const spotKey = (x: Pick<Soldier, "id" | "x" | "y">) => `${x.id}@${x.x},$
  * `on` false: nothing boils (reduced motion, a slow phone), and the only thing
  * held is a soldier riding his ink (`moving`) or walking a long-war road.
  */
-export function planBoil(s: GameState, ink: Ink, o: { on: boolean; side?: "living" | "dead"; moving?: number }): Plan {
+export function planBoil(s: GameState, ink: Ink, o: { on: boolean; side?: "living" | "dead"; moving?: number | readonly number[] }): Plan {
   const side = o.side ?? BOILS;
   const hold: Hold = { dots: new Set(), bases: new Set(), marks: new Set(), ghost: o.on && side === "living", sig: "" };
   const plan: Plan = { hold, dots: [], bases: [], marks: [], sig: "" };
-  const mover = o.moving !== undefined ? s.soldiers[o.moving] : undefined;
-  const life = o.on || mover ? lifeOf(s, ink) : undefined;
-  const riding = mover && life?.soldiers.has(mover.id) ? spotKey(mover) : undefined;
-  if (riding) hold.dots.add(riding);
+  // a volley can have two riding their ink at once
+  const movers = (o.moving === undefined ? [] : typeof o.moving === "number" ? [o.moving] : o.moving).map((id) => s.soldiers[id]).filter((x) => !!x);
+  const life = o.on || movers.length ? lifeOf(s, ink) : undefined;
+  const riding = new Set(movers.filter((m) => life?.soldiers.has(m.id)).map(spotKey));
+  for (const r of riding) hold.dots.add(r);
   if (o.on) {
     const boils = (living: boolean) => (side === "living" ? living : !living);
     // the living boil and can only die; the dead boil and the living may yet
@@ -154,7 +155,7 @@ export function planBoil(s: GameState, ink: Ink, o: { on: boolean; side?: "livin
       const living = life!.spots.has(spot.key);
       if (side === "living" && !living) continue;
       hold.dots.add(spot.key);
-      if (spot.key === riding || ink.live.has(`d${spot.id}`) && living) continue;
+      if (riding.has(spot.key) || ink.live.has(`d${spot.id}`) && living) continue;
       plan.dots.push({ spot, boils: boils(living) });
     }
     for (const b of s.bases) {
@@ -178,7 +179,7 @@ export function planBoil(s: GameState, ink: Ink, o: { on: boolean; side?: "livin
       const x = s.soldiers[spot.id];
       if (!x.alive || x.convoy === undefined || !roads.has(x.convoy) || spot.key !== spotKey(x)) continue;
       hold.dots.add(spot.key);
-      if (spot.key !== riding && !ink.live.has(`d${spot.id}`)) plan.dots.push({ spot, boils: false });
+      if (!riding.has(spot.key) && !ink.live.has(`d${spot.id}`)) plan.dots.push({ spot, boils: false });
     }
   }
   hold.sig = `${[...hold.dots].join()}|${[...hold.bases].join()}|${hold.marks.size}`;

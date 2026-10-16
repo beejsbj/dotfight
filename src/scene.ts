@@ -26,7 +26,7 @@ import { lightAt, paintHaze, paintLight, type Lamp } from "./light";
 import { MAN, STAR, drawBase, drawDot, drawMark, drawSignature, starPoints, wentTo, PageLayer, SETTLED, yellowing, ageOf, type Ink, type Signature } from "./page";
 import { drawPen, drawPenShadow, PEN, type PenPose } from "./pen";
 import { cssMatrix, layerMatrix, project, stageCss, toLocal, unproject, type View } from "./projection";
-import { RULES } from "./rules";
+import { COUNT, RULES } from "./rules";
 import { DESK, deskTexture } from "./textures";
 import { theme } from "./theme";
 
@@ -70,6 +70,9 @@ export interface Frame {
   keepOut?: { x: number; y: number; r: number }[];
   mover?: { id: number; at: Pt; angle?: number; stretch?: number };
   pen?: PenPose;
+  /** A volley (volley.ts): the other lines' lungers riding their ink, and their pens, alongside `mover` and `pen`. */
+  movers?: { id: number; at: Pt; angle?: number; stretch?: number }[];
+  pens?: PenPose[];
   hint?: { p: number; bases: { id: number; x: number; y: number; r: number; pts?: Pt[] }[] };
   /** Convoys walking (the time-lapse between turns): each soldier from where he stood to where he'll stand. */
   walkers?: { id: number; from: Pt; to: Pt; p: number }[];
@@ -90,7 +93,7 @@ export interface Frame {
   /** Aiming a lunge: enemy bases with men at home, where he'd be shot if he landed. */
   danger?: { x: number; y: number; r: number; pts?: Pt[] }[];
   /** Pencilled help on the page; "note" writes `text` (a room waiting on the other side). */
-  teach?: { kind: "aim" | "place" | "arrange" | "note"; at: Pt; p: number; rot: number; note?: string; text?: string };
+  teach?: { kind: "aim" | "place" | "arrange" | "note" | "count"; at: Pt; p: number; rot: number; note?: string; text?: string };
   sig?: Signature;
   /** A volley (life.ts): the defenders' jabs, drawn on and glinting away, and the intruder's cross if the rules haven't drawn one. */
   jabs?: { pts: Pt[]; p: number; alpha: number; owner: 0 | 1; seed: number }[];
@@ -267,9 +270,10 @@ let planMemo: { s: GameState | null; stamp: string; plan: Plan | null } = { s: n
 function boilPlan(f: Frame, ink: Ink): Plan {
   const { s } = f;
   const on = !!f.boil?.on && !boil.tooDear;
-  let stamp = `${s.v === 1 ? s.flicks.length : s.actions.length}|${s.marks.length}|${s.bases.length}|${s.soldiers.length}|${s.turn}|${f.mover?.id}|${on}|`;
+  const moving = [f.mover?.id, ...(f.movers ?? []).map((m) => m.id)].filter((id): id is number => id !== undefined);
+  let stamp = `${s.v === 1 ? s.flicks.length : s.actions.length}|${s.marks.length}|${s.bases.length}|${s.soldiers.length}|${s.turn}|${moving.join(",")}|${on}|`;
   for (const k of ink.live) stamp += k + (ink.p(k) > 0 ? "+" : "-");
-  if (planMemo.s !== s || planMemo.stamp !== stamp || !planMemo.plan) planMemo = { s, stamp, plan: planBoil(s, ink, { on, moving: f.mover?.id }) };
+  if (planMemo.s !== s || planMemo.stamp !== stamp || !planMemo.plan) planMemo = { s, stamp, plan: planBoil(s, ink, { on, moving: moving.length > 1 ? moving : moving[0] }) };
   return planMemo.plan!;
 }
 
@@ -338,12 +342,12 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     const jot = `d${x.id}`;
     if (ink.live.has(jot) && !walking.has(x.id) && f.drag?.id !== x.id) { drawDot(g, x, 1, ink.p(jot)); box.add(x.x, x.y, 12); }
   }
-  if (f.mover) {
-    const { at, angle = 0, stretch = 1 } = f.mover;
+  for (const mv of f.mover ? [f.mover, ...(f.movers ?? [])] : f.movers ?? []) {
+    const { at, angle = 0, stretch = 1 } = mv;
     g.save();
     // stretched along his way, thinner across it (keeping his size)
     g.translate(at.x, at.y); g.rotate(angle); g.scale(stretch, 1 / stretch); g.rotate(-angle); g.translate(-at.x, -at.y);
-    drawDot(g, s.soldiers[f.mover.id], 1, 1, at);
+    drawDot(g, s.soldiers[mv.id], 1, 1, at);
     g.restore();
     box.add(at.x, at.y, 12 * stretch);
   }
@@ -369,9 +373,9 @@ function renderLive(g: Ctx, el: HTMLCanvasElement, f: Frame, ink: Ink, dpr: numb
     box.add(0, RULES.pageH - 110); box.add(RULES.pageW, RULES.pageH);
   }
   drawGuides(g, f, box);
-  if (f.pen) {
-    drawPenShadow(g, f.pen, f.lamp);
-    const c = shadowEnds(f.pen, f.lamp);
+  for (const pen of f.pen ? [f.pen, ...(f.pens ?? [])] : f.pens ?? []) {
+    drawPenShadow(g, pen, f.lamp);
+    const c = shadowEnds(pen, f.lamp);
     box.add(c[0].x, c[0].y, PEN.R * 4); box.add(c[1].x, c[1].y, PEN.R * 6);
   }
   if (box.empty) {
@@ -1214,6 +1218,18 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
   const pencil = lead(theme).note;
   if (t.kind === "note") {
     handText(g, t.text ?? "", 0, 0, 46, pencil, { upTo: p * 1.2, weight: 400, rot: -0.02, align: "center" });
+  } else if (t.kind === "count") {
+    // a volley's "one, two, three!": each word written on its beat (COUNT), a little bigger each time
+    const n = COUNT.words.length, size = [58, 64, 76];
+    g.font = `700 64px Caveat, "Patrick Hand", cursive`;
+    const ws = COUNT.words.map((w, i) => g.measureText(w).width * (size[i] / 64));
+    const gap = 22, total = ws.reduce((a, b) => a + b, 0) + gap * (n - 1);
+    let x = -total / 2;
+    COUNT.words.forEach((w, i) => {
+      const k = (p * COUNT.go - COUNT.at[i]) / 260; // each word takes about a quarter second to write
+      handText(g, w, x, i === n - 1 ? 6 : 0, size[i], pencil, { upTo: Math.max(0, Math.min(1, k)), weight: 700, rot: -0.04 + i * 0.03 });
+      x += ws[i] + gap;
+    });
   } else if (t.kind === "place") {
     handText(g, t.text ?? "touch the page to draw a camp", 0, 0, 46, pencil, { upTo: p * 1.6, weight: 400, rot: -0.03, align: "center" });
     if (t.note !== "") handText(g, t.note ?? "(ten men in each)", 0, 46, 36, pencil, { upTo: p * 1.6 - 0.6, weight: 400, rot: -0.03, align: "center" });
@@ -1236,7 +1252,7 @@ function drawTeach(g: Ctx, t: NonNullable<Frame["teach"]>) {
 let inked: { x: number; y: number; w: number; h: number } | null = { x: 0, y: 0, w: 1e5, h: 1e5 };
 export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: number) {
   const sheen = sheenStrokes(f);
-  if (!f.pen && !sheen.length && !inked) return;
+  if (!f.pen && !f.pens?.length && !sheen.length && !inked) return;
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (inked) g.clearRect(inked.x, inked.y, inked.w, inked.h);
   inked = null;
@@ -1250,6 +1266,24 @@ export function renderOverlay(g: Ctx, f: Frame, W: number, H: number, dpr: numbe
     if (f.aim && f.aim.power > 0) guideThroughBarrel(g, f, box);
     // the pen stands in the same light as everything else
     const lit = lightAt(f.lamp, f.pen.x, f.pen.y);
+    g.save();
+    g.beginPath();
+    g.rect(pb.x0, pb.y0, pb.x1 - pb.x0, pb.y1 - pb.y0);
+    g.clip();
+    g.globalCompositeOperation = "source-atop";
+    const { shade, warm } = theme.light;
+    g.fillStyle = `rgba(${shade[0]}, ${shade[1]}, ${shade[2]}, ${Math.min(0.85, (1 - lit) * 0.9)})`;
+    g.fillRect(0, 0, W, H);
+    g.fillStyle = `rgba(${warm[0]}, ${warm[1]}, ${warm[2]}, ${warm[3] * f.lamp.on * (1 - f.lamp.dawn)})`;
+    g.fillRect(0, 0, W, H);
+    g.restore();
+  }
+  // a volley's other pens: drawn the same, each in its own light
+  for (const pen of f.pens ?? []) {
+    const pb = penBox(pen, f.view);
+    box.add(pb.x0, pb.y0); box.add(pb.x1, pb.y1);
+    drawPen(g, pen, f.view);
+    const lit = lightAt(f.lamp, pen.x, pen.y);
     g.save();
     g.beginPath();
     g.rect(pb.x0, pb.y0, pb.x1 - pb.x0, pb.y1 - pb.y0);
