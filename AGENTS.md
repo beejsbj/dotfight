@@ -23,6 +23,7 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 - `src/flick.ts`: pull-back gesture → flick, with wobble and release error
 - `src/bot.ts`: Dawood-bot. `src/botclient.ts`, `botworker.ts`, `botask.ts`: a long-war move is asked of a Web Worker (same action as the page would work out; falls back to the page without one). `scripts/bot-bench.ts`: move timing, shape-play counts, head-to-head against the old bot, core pin
 - `src/record.ts`: a page as seed + camps + flicks; replay, the drawer, old saves (pure, tested)
+- `src/volley.ts`: volleys (an experiment behind Settings, `docs/volleys.md`): each side's secret plan while it's aimed, and Dawood-bot's plan from the start of the volley. The rules are in `src/game.ts` behind `rules.volley` (pure, tested)
 - `src/inkgrid.ts`: the long war's old ink as a grid of runs, for jolts and grooves (pure, tested)
 - `src/projection.ts`: world ↔ screen through the tilted-desk camera; CSS perspective and touch input share it (pure, tested)
 - `src/inkclock.ts`: ink time, which snags on every soldier crossed (pure, tested)
