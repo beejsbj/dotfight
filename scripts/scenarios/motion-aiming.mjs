@@ -165,8 +165,8 @@ export default async function (T, out) {
     await page.click(".card [data-a=back]");
     await page.waitForTimeout(300);
 
-    // a quick battle with Dawood-bot, on the core rules
-    await page.click("[data-size=quick]");
+    // a classic battle with Dawood-bot, on the core rules
+    await page.click("[data-size=classic]");
     await page.waitForTimeout(200);
     await page.getByText("play Dawood-bot").click();
     await page.waitForTimeout(900);

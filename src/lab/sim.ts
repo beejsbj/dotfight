@@ -399,9 +399,14 @@ const num = (k: string, v: string) => {
   return x;
 };
 
-/** A size: `quick`, `classic`, `long` (5 bases), `longN` (N bases a side), or `AxB` (A bases of B soldiers). */
+/**
+ * A size: `quick`, `classic` (Dawood's 5 of 10, as the lab's rounds measured it), `cover`
+ * (the cover's classic today, 4 of 8), `long`, `longN` (N bases a side), or `AxB` (A bases of B soldiers).
+ */
 export function sizeOf(name: string): Size {
-  if (name === "quick" || name === "classic" || name === "long") return { ...SIZES[name] };
+  if (name === "quick" || name === "long") return { ...SIZES[name] };
+  if (name === "classic") return { ...SIZES.dawood };
+  if (name === "cover") return { ...SIZES.classic };
   const l = /^long(\d+)$/.exec(name);
   if (l) return { ...SIZES.long, bases: +l[1] };
   const m = /^(\d+)x(\d+)$/.exec(name);

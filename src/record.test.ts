@@ -3,7 +3,7 @@ import { botAction, botArrange, botBase, botShape } from "./bot";
 import { act, canPlaceBase, illegal, newGame, rng, type GameState } from "./game";
 import { inkTime, totalHold, wallTime } from "./inkclock";
 import * as legacy from "./legacy";
-import { hash } from "./room-engine";
+import { hash, replay as roomReplay, setupOf } from "./room-engine";
 import { addToDrawer, apply, blank, file, fromRecord, readDrawer, readSave, settleSave, steps, toRecord, unfile, type Filed, type GameRecord } from "./record";
 import { CORE, LONG, SIZES, savedRules } from "./rules";
 // two wars (Quick, Classic) recorded on origin/main's engine before garrisoned walls, with how they ended
@@ -228,5 +228,66 @@ describe("record (the long war)", () => {
     for (const st of steps(f)) apply(r, st);
     expect(r).toEqual(s);
     expect(r.marks.filter((m) => m.t === "star")).toEqual(stars);
+  });
+});
+
+// The cover offers only Classic (4 x 8) and the long war now (2026-10-17). A page's size is in
+// its record, so pages made on the retired sizes (Quick, Dawood's 5 x 10 "classic", any Custom)
+// must still load, replay and carry on exactly as they were made.
+describe("pages on the cover's retired sizes", () => {
+  const retired = [
+    { ...SIZES.quick },
+    { ...SIZES.dawood },
+    { name: "custom" as const, bases: 2, soldiers: 5 },
+    { name: "custom" as const, bases: 6, soldiers: 12 },
+  ];
+  const warOn = (size: (typeof retired)[number], seed: number, maxTurns: number) => {
+    const s = newGame(size, seed, { no: 9, date: "16 Oct 2026" });
+    let k = seed;
+    while (s.phase === "setup") { const p = botBase(s, (x, y) => !canPlaceBase(s, x, y), k++)!; act(s, { t: "base", ...p }); }
+    while (s.phase === "position") for (const a of botArrange(s, k++)) { if (!illegal(s, a)) act(s, a); if (a.t === "ready") break; }
+    while (s.phase === "play" && s.turn < maxTurns) act(s, botAction(s, 1, k++));
+    return s;
+  };
+
+  it("a save on each still loads, keeps its size, and plays on", () => {
+    retired.forEach((size, i) => {
+      const s = warOn(size, 31 + i, 6);
+      const saved = readSave(JSON.stringify({ s, mode: { kind: "bot", level: 2 } }))!;
+      expect(saved.s).toEqual(s);
+      expect(saved.mode).toEqual({ kind: "bot", level: 2 });
+      const back = saved.s as GameState;
+      expect(back.size).toEqual(size);
+      expect(back.soldiers).toHaveLength(size.bases * size.soldiers * 2);
+      // and the war carries on from the save as it would have from the page
+      const a = botAction(back, 1, 99);
+      act(back, a);
+      act(s, a);
+      expect(back).toEqual(s);
+    });
+  });
+
+  it("a drawer page on each replays to the same page, step by step and whole", () => {
+    retired.forEach((size, i) => {
+      const s = warOn(size, 41 + i, 400);
+      const filed = readDrawer(JSON.stringify([file(s, { kind: "bot", level: 1 })]))[0];
+      expect(filed.v === 2 && filed.size).toEqual(size);
+      expect(unfile(filed)).toEqual(s);
+      const r = blank(filed);
+      for (const st of steps(filed)) apply(r, st);
+      expect(r).toEqual(s);
+    });
+  });
+
+  it("a room on each replays its log on the room engine", () => {
+    retired.forEach((size, i) => {
+      const s = warOn(size, 51 + i, 8);
+      const setup = setupOf(newGame(size, s.seed, s.page));
+      const log = s.actions.map((a, j) => ({ seat: fromRecord(toRecord(s), j).current, a: { a } }));
+      const out = roomReplay(setup, log);
+      expect(out.bad).toBeUndefined();
+      expect(out.drift).toBeUndefined();
+      expect(hash(out.s)).toBe(hash(s));
+    });
   });
 });

@@ -79,18 +79,16 @@ Cross out every enemy soldier.
 
 ## Quick battle
 
-Dawood's game: circles only, with the core rules. You choose the size:
+Dawood's game: circles only, with the core rules. On the cover it's **Classic**: 4 bases of 8 (to test). The other game on the cover is the [long war](#long-war-rules).
 
-- **Quick**: 3 bases of 8 (to test)
-- **Classic**: Dawood's 5 bases of 10
-- **Custom**: pick the bases and the soldiers per base
+_Burooj, 2026-10-17: two games on the cover._ Until then the cover offered Quick (3 bases of 8), Dawood's own 5 bases of 10 (then called Classic) and Custom (any bases and soldiers per base). Pages played on them keep their size and still load, replay and play on; the rules lab still measures Quick and 5 × 10 (below).
 
 ## How you play
 
 A separate choice from the size of the war:
 
 - pass one phone
-- against Dawood-bot
+- against Dawood-bot: there's no difficulty to pick. Each game he's in a mood, sloppy, steady or sharp, rolled from the page's seed and leaning on your last results against him (lose two running and he's likelier to go easy, win two and he's likelier to be sharp). His mood is pencilled in the margin.
 - by a shared link (planned)
 - real time on two devices (planned)
 
@@ -180,6 +178,7 @@ Every value here is a lab guess or a direction nobody has played yet.
 | Positioning reach | 20 units. On flat walls inside-only changed nothing in the lab; 40 turned the game towards lunges. With garrisoned walls staying in has a real reason (round 4: all inside beats spread out 57% of the time in Quick and 69% in Classic, against 54% on flat walls). "Keep at least one inside" is not a rule (the bot keeps at least half inside by choice, and in practice about two in three). |
 | Send limit of 5 | Round 3: 6 sends a game in Quick, 14 in Classic, and about two walkers in three are crossed out on the road. |
 | Quick battle send timing | Out when the pen changes hands, a column across the middle of the road for exactly one enemy turn, home at the start of your next. |
+| Classic preset: 4 bases of 8 | The cover's core game since 2026-10-17. Not measured in the lab yet (`npm run lab -- --sizes cover`); it sits between Quick and 5 × 10 below. |
 | Quick preset: 3 bases of 8 | Round 3: about 16 turns (41 flicks), 52% to the first player. Round 4 (garrisoned walls): about 22 turns, 48%. |
 | Game length | Round 3: Quick about 16 turns (41 flicks), Classic 28 (73). Round 4 with garrisoned walls: Quick 22, Classic 36. Round 2's Lunge & snipe ran 53. |
 

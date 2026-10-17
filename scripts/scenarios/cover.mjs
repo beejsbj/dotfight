@@ -1,6 +1,6 @@
 // The cover with a local game and three games with friends (your go, their go,
 // finished), seeded straight into localStorage. THEME=<id> picks the paper,
-// TAG names the files, MANY=1 adds four more games, SIZE=custom opens the steppers.
+// TAG names the files, MANY=1 adds four more games, SIZE=classic or long picks the game.
 // Prints whether the leaf fits without scrolling. Screenshots: cover-<TAG>.png
 // (and -sure, -drawer when present).
 export default async function (T, out) {

@@ -45,9 +45,10 @@ const FLAT = { garrison: null };
 const PAGE: [number, number][] = [[300, 1300], [300, 600], [700, 1300], [700, 300]];
 
 describe("setup and positioning", () => {
-  it("offers Quick (3 x 8) and Classic (5 x 10)", () => {
+  it("the cover's Classic is 4 x 8; Quick (3 x 8) and Dawood's 5 x 10 are kept for the pages played on them", () => {
+    expect(SIZES.classic).toMatchObject({ name: "classic", bases: 4, soldiers: 8 });
     expect(SIZES.quick).toMatchObject({ bases: 3, soldiers: 8 });
-    expect(SIZES.classic).toMatchObject({ bases: 5, soldiers: 10 });
+    expect(SIZES.dawood).toMatchObject({ name: "classic", bases: 5, soldiers: 10 });
   });
 
   it("alternates bases, jots each full, then positions: blue arranges first, red sees it, then blue flicks", () => {

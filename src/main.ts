@@ -4,7 +4,7 @@ import "@fontsource/patrick-hand/400.css";
 import "@fontsource/special-elite/400.css";
 import "./style.css";
 
-import { botArrange, botBase, botShape, LEVELS, type Level } from "./bot";
+import { botArrange, botBase, botShape, type Level } from "./bot";
 import { botMoveLater } from "./botclient";
 import { Camera, type Pose } from "./camera";
 import { cue, onCue } from "./cues";
@@ -25,9 +25,9 @@ import { LIFT_MS, SETTLE_MS, leaning, lift, PEN, settle, shiver, type PenPose } 
 import { gunPull, tip, type Pose as Held } from "./motion";
 import * as motion from "./motion-input";
 import { screenDirToWorld } from "./projection";
-import { addToDrawer, apply, blank, file, readDrawer, readSave, settleSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
+import { addToDrawer, apply, blank, coverSize, file, readDrawer, readSave, settleSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
-import { CORE, CUSTOM, FEEL, LONG, RULES, SHAPES, SIZES, type Shape, type Size } from "./rules";
+import { CORE, FEEL, LONG, RULES, SHAPES, SIZES, type Shape, type Size } from "./rules";
 import { boldAt, lifeOf } from "./boil";
 import { beforeMarch, comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
 import * as voice from "./voice";
@@ -38,7 +38,8 @@ import { boil, boilSeen, boilTick, field, standRays, streak as streakLayer, forg
 
 import * as sfx from "./sound";
 import { applyTheme, chooseTheme, chosenTheme, currentTheme, homeTheme, hudPen, onTheme, roomTheme, setRoomTheme, theme, themeOf, THEMES, withTheme } from "./theme";
-import { keepIcon, levelIcon, paperIcon, tearIcon } from "./icons";
+import { keepIcon, paperIcon, tearIcon } from "./icons";
+import { MOOD_WORD, moodLine, results, rollMood } from "./mood";
 import { orderGames, type GameLine } from "./games";
 import { forgetRoom, listRooms, readRoom, RoomLink, type Saved as RoomSaved } from "./room";
 import { apply as roomApply, canRead as roomCanRead, check as roomCheck, drifted as roomDrifted, engineFor, hash as roomHash, replay as roomReplay, setupOf, turn as roomTurn, type Payload, type Setup } from "./room-engine";
@@ -156,6 +157,8 @@ const els: Els = {
 const over = $<HTMLCanvasElement>("#over");
 const og = over.getContext("2d")!;
 const lessonLayer = new LessonLayer($("#lesson-host"));
+/** Dawood's mood (mood.ts), pencilled up the left margin of a page against him. */
+const moodLayer = new LessonLayer($("#lesson-host"));
 haptics.install(over); // iOS 26.5+: labels for real taps to land on
 onCue((c) => { if (c === "lunge-death") haptic("thud"); else if (c === "last-stand") haptic("stand"); });
 const cam = new Camera();
@@ -478,10 +481,12 @@ function reset() {
 /** The rules a new game of this size is played by: a long war's, or the core rules. */
 const rulesFor = (size: Size) => (size.name === "long" ? LONG : CORE);
 
-function start(m: Mode, size: Size = pickedSize()) {
+function start(m: Mode, size: Size = pickedSize(), seed?: number) {
   reset();
   restoreKindBar();
-  s = newGame(size, undefined, pageStamp(), rulesFor(size));
+  s = newGame(size, seed, pageStamp(), rulesFor(size));
+  // against Dawood-bot, his mood is pencilled up the margin as the page opens
+  if (m.kind === "bot") fx.add("mood", T, 900, 1300, "linear");
   mode = m;
   kind = "snipe";
   screen = "game";
@@ -1507,24 +1512,18 @@ function finish() {
 
 // --- title: the exercise book's cover --------------------------------------
 
-let botLevel = (+(localStorage.getItem("pft:lvl") ?? 1) as Level);
-
-// Quick battle's size: Quick, Classic, or Custom (bases and soldiers per base).
-let sizeName: Size["name"] = (["quick", "classic", "custom", "long"] as const).find((k) => k === localStorage.getItem("pft:size")) ?? "quick";
-const custom = (() => {
-  const v = (localStorage.getItem("pft:custom") ?? "").split("x").map(Number);
-  const ok = (n: number, r: { min: number; max: number }) => Number.isInteger(n) && n >= r.min && n <= r.max;
-  return { bases: ok(v[0], CUSTOM.bases) ? v[0] : 4, soldiers: ok(v[1], CUSTOM.soldiers) ? v[1] : 8 };
-})();
-const pickedSize = () => sizeFor(sizeName, custom);
+// The cover's two games: classic (4 camps of 8) and the long war. A pick remembered from
+// before (quick, custom, the old classic) is a classic now.
+let sizeName = coverSize(localStorage.getItem("pft:size"));
+const pickedSize = () => sizeFor(sizeName);
 
 function sizeRow() {
-  const one = (k: Size["name"], label: string, sub: string) => `<button data-size="${k}" class="${sizeName === k ? "on" : ""}"><b>${label}</b><small>${sub}</small></button>`;
-  const step = (k: "bases" | "soldiers", label: string) =>
-    `<span class="step"><button data-step="${k}" data-d="-1" aria-label="fewer ${label}">−</button><b>${custom[k]}</b><button data-step="${k}" data-d="1" aria-label="more ${label}">+</button><small>${label}</small></span>`;
-  return `<p class="sizes">${one("quick", "quick", `${SIZES.quick.bases} × ${SIZES.quick.soldiers}`)}${one("classic", "classic", `${SIZES.classic.bases} × ${SIZES.classic.soldiers}`)}${one("custom", "custom", `${custom.bases} × ${custom.soldiers}`)}${one("long", "long war", `${SIZES.long.bases} shapes`)}</p>
-    ${sizeName === "custom" ? `<p class="custom">${step("bases", "camps")}${step("soldiers", "men each")}</p>` : ""}`;
+  const one = (k: "classic" | "long", label: string, sub: string) => `<button data-size="${k}" class="${sizeName === k ? "on" : ""}"><b>${label}</b><small>${sub}</small></button>`;
+  return `<p class="sizes two">${one("classic", "classic", `${SIZES.classic.bases} camps of ${SIZES.classic.soldiers}`)}${one("long", "long war", `${SIZES.long.bases} shaped bases`)}</p>`;
 }
+
+/** Dawood's mood for a new game against him on this seed (mood.ts): rolled, leaning on your last results in the drawer. */
+const moodFor = (seed: number): Level => rollMood(seed, results(drawer()));
 
 // The desk under the cover: the page you're on if it's on today's paper, or a clean sheet of it.
 function titleDesk(saved = load()) {
@@ -1604,8 +1603,7 @@ function coverMenu() {
     <h2 class="sect">new game</h2>
     ${sizeRow()}
     <div class="bot">
-      <button data-a="bot" class="ink red">play Dawood-bot</button>
-      <button data-lvl="next" class="level" aria-label="Dawood-bot flicks ${LEVELS[botLevel]}: tap to change">${LEVELS[botLevel]}${levelIcon(botLevel)}</button>
+      <button data-a="bot" class="ink red">play Dawood-bot<small>whatever mood he's in</small></button>
     </div>
     <div class="duo">
       <button data-a="pnp" class="ink blue">pass &amp; play<small>one phone</small></button>
@@ -1631,7 +1629,7 @@ function coverMenu() {
     const a = b.dataset.a;
     if (a === "resume" && saved) resume(saved);
     else if (a === "pnp") start({ kind: "pnp" });
-    else if (a === "bot") start({ kind: "bot", level: botLevel });
+    else if (a === "bot") { const seed = (Math.random() * 2 ** 32) >>> 0; start({ kind: "bot", level: moodFor(seed) }, pickedSize(), seed); }
     else if (a === "learn") startLesson();
     else if (a === "friend") newRoomOnCover();
     else if (a === "ask") { tearing = b.dataset.code!; draw(); }
@@ -1645,21 +1643,9 @@ function coverMenu() {
       draw();
     } else if (a === "more") showDrawer();
     else if (b.dataset.room) { const x = readRoom(localStorage, b.dataset.room); if (x) enterRoom(x); }
-    else if (b.dataset.lvl) {
-      const focused = document.activeElement === b;
-      botLevel = (botLevel + 1) % LEVELS.length as Level; // one word, tapped round: sloppy, steady, sharp
-      localStorage.setItem("pft:lvl", String(botLevel));
-      draw();
-      if (focused) menu.querySelector<HTMLButtonElement>("[data-lvl]")!.focus({ preventScroll: true });
-    } else if (b.dataset.size) {
-      sizeName = b.dataset.size as Size["name"];
+    else if (b.dataset.size) {
+      sizeName = coverSize(b.dataset.size);
       localStorage.setItem("pft:size", sizeName);
-      draw();
-    } else if (b.dataset.step) {
-      const k = b.dataset.step as "bases" | "soldiers";
-      const r = CUSTOM[k];
-      custom[k] = Math.max(r.min, Math.min(r.max, custom[k] + +b.dataset.d!));
-      localStorage.setItem("pft:custom", `${custom.bases}x${custom.soldiers}`);
       draw();
     }
   };
@@ -1928,7 +1914,7 @@ function showDrawer() {
     const names = themeOf(r.page?.theme).ink.names;
     const who = r.mode.kind === "bot" ? [names[0], "Dawood-bot"] : names;
     const cap = document.createElement("span");
-    cap.innerHTML = `No. ${r.page?.no ?? "?"} · ${r.page?.date ?? ""}<br><b style="color:${hudPen(r.winner ?? 0)}">${r.winner !== undefined ? who[r.winner] : "unfinished"}</b> · ${r.turns} turns${r.v === 2 && r.rules?.long ? " · long war" : isLesson(r.mode) ? " · the lesson" : ""}`;
+    cap.innerHTML = `No. ${r.page?.no ?? "?"} · ${r.page?.date ?? ""}<br><b style="color:${hudPen(r.winner ?? 0)}">${r.winner !== undefined ? who[r.winner] : "unfinished"}</b> · ${r.turns} turns${r.v === 2 && r.rules?.long ? " · long war" : isLesson(r.mode) ? " · the lesson" : ""}${r.mode.kind === "bot" && !isLesson(r.mode) ? ` · ${MOOD_WORD[r.mode.level]} Dawood` : ""}`;
     b.appendChild(cap);
     grid.appendChild(b);
   });
@@ -3416,6 +3402,8 @@ function seeLife(f: Frame) {
 }
 let dreadWas = new Set<number>();
 
+/** Where his mood is written: the first baseline up the left margin, beside the page's upper half (his side). */
+const MOOD_AT = { x: 52, y: 620 };
 function renderNow() {
   const f = currentFrame();
   seeLife(f);
@@ -3430,6 +3418,9 @@ function renderNow() {
   const held = c0 && selected !== undefined && !res && !away(s.current) && leanedIn(selected)
     ? { id: selected, at: s.soldiers[selected], view: cam.view(cam.tgt), W, H, top: cam.top, bottom: cam.bottom, hold: !!aim } : undefined;
   lessonLayer.render(f.view, c0 ? `${lesson!.step}|${c0.actions.length}` : null, c0 ? lessonStep(lesson!).title : "", () => lessonStep(lesson!).marks(c0!), fx.p("lesson", T), pageState.S, pageState.epoch, held);
+  // against Dawood-bot (not in the lesson): his mood up the left margin, where no camp can be drawn
+  const moody = screen === "game" && mode.kind === "bot" && !isLesson(mode) ? moodLine(mode.level, s.seed) : null;
+  moodLayer.render(f.view, moody, moody ?? "", () => ({ notes: [{ at: MOOD_AT, lines: [], rot: -Math.PI / 2, scale: 0.62, plain: true }], rings: [], arrows: [] }), fx.p("mood", T), pageState.S, pageState.epoch);
   renderOverlay(og, f, W, H, dpr);
 }
 
@@ -3545,7 +3536,8 @@ if (import.meta.env.DEV) {
      * not: `maxTurns` stops it early). Returns the record.
      */
     fileWar: (seed = 7, maxTurns = 400, size: Size["name"] = "quick") => {
-      const sz = sizeFor(size, custom);
+      // dev wars still play the retired Quick by name (playtests pin outcomes to its seeds)
+      const sz = size === "quick" ? { ...SIZES.quick } : sizeFor(size);
       const st = newGame(sz, seed, pageStamp(), rulesFor(sz));
       let k = seed;
       while (st.phase === "setup") {

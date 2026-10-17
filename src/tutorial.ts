@@ -113,7 +113,8 @@ export type Last = { who: Player; f: Flick; o: Outcome } | { who: Player; a: Act
 
 /** Pencil on the page: notes (lines of text, centred at `at`), loose rings, and arrows. */
 export interface Marks {
-  notes: { at: Pt; lines: string[] }[];
+  /** `rot`: turned on the page (radians; -π/2 reads up the margin). `scale`: smaller or bigger than a lesson's note. `plain`: the heading isn't ruled off. */
+  notes: { at: Pt; lines: string[]; rot?: number; scale?: number; plain?: boolean }[];
   rings: { at: Pt; r: number }[];
   arrows: { from: Pt; to: Pt }[];
 }
