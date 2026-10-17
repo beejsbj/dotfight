@@ -67,5 +67,34 @@ export function roomHandler(redis: Evaluator) {
   };
 }
 
-export const GET = (req: Request) => run(() => get().GET(req));
-export const POST = (req: Request) => run(() => get().POST(req));
+// The store apps (BJS-461) call from their own origins: iOS's capacitor://localhost
+// and Android's https://localhost. Only those two get CORS headers; the web is
+// same-origin and its responses are unchanged.
+export const APP_ORIGINS: readonly string[] = ["capacitor://localhost", "https://localhost"];
+
+/** Let an app origin read this response. */
+export function withCors(req: Request, res: Response): Response {
+  const origin = req.headers.get("origin");
+  if (!origin || !APP_ORIGINS.includes(origin)) return res;
+  res.headers.set("access-control-allow-origin", origin);
+  // the client reads Retry-After on a 429
+  res.headers.set("access-control-expose-headers", "retry-after");
+  res.headers.append("vary", "origin");
+  return res;
+}
+
+/** The preflight before an app's POST (its JSON body makes it a non-simple request). */
+export function preflight(req: Request): Response {
+  const res = new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+  const origin = req.headers.get("origin");
+  if (!origin || !APP_ORIGINS.includes(origin)) return res;
+  res.headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
+  // content-type for POST; cache-control and pragma in case a WebView sends them for `cache: "no-store"`
+  res.headers.set("access-control-allow-headers", "content-type, cache-control, pragma");
+  res.headers.set("access-control-max-age", "86400");
+  return withCors(req, res);
+}
+
+export const GET = async (req: Request) => withCors(req, await run(() => get().GET(req)));
+export const POST = async (req: Request) => withCors(req, await run(() => get().POST(req)));
+export const OPTIONS = (req: Request) => preflight(req);
