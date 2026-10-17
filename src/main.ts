@@ -1698,6 +1698,7 @@ function sheet(html: string, cls = "") {
   const card = el.querySelector(".card") as HTMLElement;
   card.className = `card ${cls}`;
   card.innerHTML = html;
+  card.onclick = null; // the last sheet's handler (settings re-opens itself on any button) must not answer this one's buttons
   sampleClock();
   el.hidden = false;
   el.onclick = null;
