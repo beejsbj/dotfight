@@ -480,5 +480,7 @@ export function advance(run: Run, s: GameState, last: Last | null): string[] {
 export const current = (run: Run) => STEPS[Math.min(run.step, STEPS.length - 1)];
 /** Every step done: the battle is over and the last note has been judged. */
 export const finished = (run: Run) => run.step >= STEPS.length;
+/** After three misses a step may be skipped, unless it's the last (there is nothing after it to skip to). */
+export const canSkip = (run: Run) => run.tries >= 3 && run.step < STEPS.length - 1;
 /** Give up on the step (it's not learned): the next one comes on. */
 export function skipStep(run: Run) { if (run.step < STEPS.length - 1) { run.step++; run.tries = 0; } }

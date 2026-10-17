@@ -46,7 +46,7 @@ import { httpApi, RoomHttpError, type RoomView } from "./room-protocol";
 import { Timeline, reachFraction, signable, walkerAt } from "./timeline";
 import * as turn from "./turn";
 import { LessonLayer } from "./lesson-layer";
-import { LESSON_MODE, STEPS as LESSON_STEPS, advance as lessonAdvance, current as lessonStep, emptyRing, findLunge, findRow, finished as lessonDone, firstUndone, foeMove as lessonFoe, isLesson, lessonGame, skipStep, type Last as LessonLast, type Run as LessonRun } from "./tutorial";
+import { LESSON_MODE, STEPS as LESSON_STEPS, advance as lessonAdvance, canSkip, current as lessonStep, emptyRing, findLunge, findRow, finished as lessonDone, firstUndone, foeMove as lessonFoe, isLesson, lessonGame, skipStep, type Last as LessonLast, type Run as LessonRun } from "./tutorial";
 
 setFeel((ev) => haptic(ev));
 
@@ -329,7 +329,7 @@ function acts() {
       if (c0.chain) html += `<button data-act="stop" class="go">stop here</button>`;
       if (!c0.sent && canSendAny(c0)) html += `<button data-act="send">send men <small>free</small></button>`;
       // a step that won't come can be skipped after a few tries, beside the turn's other buttons (stopping the lesson is up in the corner)
-      if (lesson && lesson.tries >= 3 && !lessonDone(lesson)) html += `<button data-act="lesson-skip" class="x">skip this bit</button>`;
+      if (lesson && canSkip(lesson)) html += `<button data-act="lesson-skip" class="x">skip this bit</button>`;
     }
   }
   if (el.innerHTML !== html) el.innerHTML = html;

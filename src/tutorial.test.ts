@@ -7,7 +7,7 @@ import { act, garrison, inside, isRing, powerFor, preview, type Action, type Gam
 import { rng } from "./geom";
 import { file, readSave, unfile, type Save } from "./record";
 import {
-  CAMPS, LESSON_MODE, LESSON_SEED, LESSON_SIZE, STEPS, advance, crashLunge, current, emptyRing, findLunge, findRow, finished, firstUndone, foeMove, foeSeed, gentleSnipe, isLesson, lessonGame, nearestMan, outsideMen, roadShot, setupActions, skipStep, sortie, stepIndex, type Last, type Run,
+  CAMPS, LESSON_MODE, LESSON_SEED, LESSON_SIZE, STEPS, advance, canSkip, crashLunge, current, emptyRing, findLunge, findRow, finished, firstUndone, foeMove, foeSeed, gentleSnipe, isLesson, lessonGame, nearestMan, outsideMen, roadShot, setupActions, skipStep, sortie, stepIndex, type Last, type Run,
 } from "./tutorial";
 
 const B1 = 0, R1 = 1, B3 = 4, R3 = 5;
@@ -293,6 +293,9 @@ describe("the steps, in order", () => {
       expect(advance(run, s, { who: 0, f, o })).toEqual([]);
     }
     expect(run.tries).toBe(3);
+    expect(canSkip(run)).toBe(true);
+    // the last step has nothing after it: no skip offered, however many tries
+    expect(canSkip({ step: STEPS.length - 1, tries: 9, seen: -1 })).toBe(false);
     skipStep(run);
     expect(current(run).id).toBe("wall");
     expect(run.tries).toBe(0);
