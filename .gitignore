@@ -5,3 +5,10 @@ dist
 .env*
 .claude/
 *.log
+
+# store signing: never in git (docs/apps.md)
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+keystore.properties
