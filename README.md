@@ -16,7 +16,8 @@ Dawood made this game up at school. He and Burooj played it in grades 5 and 6, w
 
 ## Playing
 
-- **Against Dawood-bot**: sloppy, steady or sharp.
+- **Two games**: Classic (4 camps of 8) and the long war.
+- **Against Dawood-bot**: he's in a mood each game, sloppy, steady or sharp, and he goes easier on you after a couple of losses.
 - **Pass and play**: two of you, one phone. The sheet turns round on the desk to face whoever's go it is.
 - **Finished pages** are signed and filed in the drawer, where you can replay them or save them as a picture.
 

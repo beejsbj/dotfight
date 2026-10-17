@@ -71,7 +71,7 @@ function lay(title: string, lines: string[], head: number, body: number, wide: n
 }
 
 /** Write a laid-out note centred on x = 0, first baseline at y = 0, up to `p` (0..1, row by row). */
-function write(g: CanvasRenderingContext2D, L: Lay, p: number, seed: number) {
+function write(g: CanvasRenderingContext2D, L: Lay, p: number, seed: number, plain = false) {
   const pencil = lead(theme).note;
   const n = L.rows.length;
   L.rows.forEach((r, i) => {
@@ -79,7 +79,7 @@ function write(g: CanvasRenderingContext2D, L: Lay, p: number, seed: number) {
     if (upTo <= 0) return;
     const w = handText(g, r.text, 0, r.y, r.size, pencil, { upTo, weight: LESSON_NOTE.weight, rot: r.head ? -0.025 : -0.012 + (i % 2) * 0.008, align: "center" });
     // the heading is ruled off, the way a kid rules off a new topic
-    if (r.head && upTo >= 1) pencilLine(g, { x: -w / 2, y: r.y + r.size * 0.2 }, { x: w / 2, y: r.y + r.size * 0.14 }, Math.max(1.4, r.size * 0.045), seed, false);
+    if (r.head && !plain && upTo >= 1) pencilLine(g, { x: -w / 2, y: r.y + r.size * 0.2 }, { x: w / 2, y: r.y + r.size * 0.14 }, Math.max(1.4, r.size * 0.045), seed, false);
   });
 }
 
@@ -121,16 +121,18 @@ export class LessonLayer {
     else if (this.memo?.key !== key) {
       const m = marks();
       const P = LESSON_NOTE.page;
-      this.memo = { key, marks: m, lay: m.notes.map((n, i) => lay(i === 0 ? title : "", n.lines, P.head, P.body, P.wide)) };
+      this.memo = { key, marks: m, lay: m.notes.map((n, i) => { const k = n.scale ?? 1; return lay(i === 0 ? title : "", n.lines, P.head * k, P.body * k, P.wide * k); }) };
     }
     const memo = this.memo;
     // the page may be turned: a note is written the right way up for whoever it faces
     const flip = Math.cos(v.rot) < 0;
+    const turn = (n: Marks["notes"][number]) => (n.rot ?? 0) + (flip ? Math.PI : 0);
     const pts: Pt[] = [];
     if (memo) {
+      // each note's box, its four corners turned with it (the first note's four come first: the near copy checks them)
       memo.marks.notes.forEach((n, i) => {
-        const L = memo.lay[i];
-        pts.push({ x: n.at.x - L.w / 2, y: n.at.y - L.asc - (flip ? L.h : 0) }, { x: n.at.x + L.w / 2, y: n.at.y + L.h + 24 + (flip ? L.asc : 0) });
+        const L = memo.lay[i], a = turn(n), c = Math.cos(a), s = Math.sin(a);
+        for (const [x, y] of [[-L.w / 2, -L.asc], [L.w / 2, -L.asc], [L.w / 2, L.h + 24], [-L.w / 2, L.h + 24]]) pts.push({ x: n.at.x + c * x - s * y, y: n.at.y + s * x + c * y });
       });
       for (const r of memo.marks.rings) pts.push({ x: r.at.x - r.r, y: r.at.y - r.r }, { x: r.at.x + r.r, y: r.at.y + r.r });
       for (const a of memo.marks.arrows) pts.push(a.from, a.to);
@@ -141,8 +143,8 @@ export class LessonLayer {
       mk.notes.forEach((n, i) => {
         g.save();
         g.translate(n.at.x, n.at.y);
-        if (flip) g.rotate(Math.PI);
-        write(g, memo!.lay[i], p, 501 + i);
+        g.rotate(turn(n));
+        write(g, memo!.lay[i], p, 501 + i, n.plain);
         g.restore();
       });
       // the rings and the arrow once the words are mostly down
@@ -189,11 +191,8 @@ export class LessonLayer {
     const N = LESSON_NOTE.near, v = h.view;
     const top = h.top + 10, bottom = h.H - h.bottom - 10;
     const seen = (q: Pt) => { const s = project(v, q.x, q.y); return s.x >= 0 && s.x <= h.W && s.y >= top && s.y <= bottom; };
-    const noteBox = notePts.slice(0, 2);
-    if (noteBox.length === 2) {
-      const [a, b] = noteBox;
-      if ([a, b, { x: a.x, y: b.y }, { x: b.x, y: a.y }].every(seen)) return null;
-    }
+    const noteBox = notePts.slice(0, 4);
+    if (noteBox.length === 4 && noteBox.every(seen)) return null;
     const m = project(v, h.at.x, h.at.y);
     let y0 = m.y - N.above - L.h; // the first baseline
     if (y0 - L.asc < top) y0 = top + L.asc;

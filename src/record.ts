@@ -166,8 +166,15 @@ export function readDrawer(raw: string | null): Filed[] {
   }
 }
 
-/** The size a new game gets from the picker. */
-export function sizeFor(name: Size["name"], custom?: { bases: number; soldiers: number }): Size {
-  if (name === "custom" && custom) return { name, bases: custom.bases, soldiers: custom.soldiers };
-  return { ...(name === "quick" ? SIZES.quick : name === "long" ? SIZES.long : SIZES.classic) };
+/**
+ * The size a new game gets from the cover: classic (4 of 8) or the long war.
+ * The cover no longer offers the others; a name left over from before (a
+ * remembered "quick" or "custom" pick) is a classic. Dev tools can still ask
+ * for the retired ones by passing their size (`SIZES.quick`, `SIZES.dawood`).
+ */
+export function sizeFor(name: Size["name"] | string | null | undefined): Size {
+  return { ...(name === "long" ? SIZES.long : SIZES.classic) };
 }
+
+/** The cover's two games, the one picked (anything else, or nothing, is a classic). */
+export const coverSize = (name: string | null | undefined): "classic" | "long" => (name === "long" ? "long" : "classic");

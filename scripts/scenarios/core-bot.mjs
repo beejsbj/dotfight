@@ -1,4 +1,4 @@
-// A Quick battle against Dawood-bot on the core rules, by real touch where it
+// A Classic battle (4 camps of 8) against Dawood-bot on the core rules, by real touch where it
 // matters: camps drawn, a soldier arranged outside his wall, a snipe, a send
 // drawn camp to camp, a lunge; then the rest played out (the human seat by
 // the bot's own choices) to dawn, the drawer and the replay.
@@ -7,7 +7,7 @@ import { flickAt, idle, placeAt } from "../lib/phone.mjs";
 export default async function (T, out) {
   const { page } = T;
   const log = async (m) => console.log(m, JSON.stringify(await T.state()), await page.evaluate(() => document.querySelector("#status").textContent));
-  const size = process.env.SIZE ?? "quick";
+  const size = process.env.SIZE ?? "classic";
   await page.waitForTimeout(1200);
   await page.click(`[data-size=${size}]`);
   await page.waitForTimeout(200);

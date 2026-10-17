@@ -222,14 +222,20 @@ export interface Size {
   soldiers: number;
 }
 
+/**
+ * The cover offers two games (Burooj, 2026-10-17): `classic` and `long`.
+ * The rest are retired from the cover but not from the page: a game's size is
+ * in its record (bases and soldiers, not just the name), so saves, drawer
+ * pages, replays and rooms made on them load and play exactly as before, and
+ * the rules lab still measures them.
+ */
 export const SIZES = {
-  /** (to test) */
-  quick: { name: "quick", bases: 3, soldiers: 8 },
-  /** Dawood's own. */
-  classic: { name: "classic", bases: 5, soldiers: 10 },
+  /** The cover's classic: 4 camps of 8 (until 2026-10-17 the cover's "custom" default). */
+  classic: { name: "classic", bases: 4, soldiers: 8 },
   /** The long war: six shaped bases a side (Burooj, 2026-10-02, after round 5: five fielded fewer men than Classic). `soldiers` is a camp's. */
   long: { name: "long", bases: 6, soldiers: 12 },
+  /** Retired from the cover: Quick, 3 camps of 8 (to test). */
+  quick: { name: "quick", bases: 3, soldiers: 8 },
+  /** Retired from the cover: Dawood's own 5 camps of 10, the cover's "classic" until 2026-10-17. Pages played on it are named "classic". */
+  dawood: { name: "classic", bases: 5, soldiers: 10 },
 } as const satisfies Record<string, Size>;
-
-/** What Custom lets you pick. */
-export const CUSTOM = { bases: { min: 1, max: 6 }, soldiers: { min: 3, max: 12 } };

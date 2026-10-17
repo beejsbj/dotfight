@@ -13,7 +13,7 @@ import { toRecord } from "../src/record";
 import { hash } from "../src/room-engine";
 import { SIZES } from "../src/rules";
 
-const wars = ([[SIZES.quick, 11], [SIZES.quick, 12], [SIZES.classic, 21], [SIZES.classic, 22]] as const).map(([size, seed]) => {
+const wars = ([[SIZES.quick, 11], [SIZES.quick, 12], [SIZES.dawood, 21], [SIZES.dawood, 22]] as const).map(([size, seed]) => {
   const { s } = playGame(size, seed);
   const record = toRecord(s);
   const r = newGame(record.size, record.seed, record.page, record.rules);
