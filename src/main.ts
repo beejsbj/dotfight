@@ -1611,8 +1611,9 @@ function coverMenu() {
       <button data-a="pnp" class="ink blue">pass &amp; play<small>one phone</small></button>
       <button data-a="friend" class="ink blue">play a friend<small>send a link</small></button>
     </div>
-    <div class="learn">
-      <button data-a="learn" class="ink blue">learn the game<small>${taught("tutorial") ? "the lesson, again: five minutes with Dawood-bot" : "new? a five-minute lesson with Dawood-bot"}</small></button>
+    <div class="learn">${taught("tutorial")
+      ? `<button data-a="learn" class="sticky worn"><i>the lesson</i><b>play it again</b><small>five minutes with Dawood-bot</small></button>`
+      : `<button data-a="learn" class="sticky fresh"><i>new here?</i><b>learn the game</b><small>five minutes, with Dawood-bot</small></button>`}
     </div>`;
     // as many friends' games as fit; the rest wait in the drawer
     $("#cover .leaf").style.removeProperty("--fit");

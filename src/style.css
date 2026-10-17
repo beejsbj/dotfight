@@ -289,8 +289,51 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 .menu .duo { display: flex; gap: 6px; margin: 2px 0 0; }
 .menu .duo .ink { flex: 1 1 0; min-width: 0; font-size: 25px; padding-left: 14px; white-space: nowrap; }
 .menu .duo .ink + .ink { padding-left: 0; }
-.menu .learn { margin: 4px 0 0; }
-.menu .learn .ink { font-size: 25px; padding-left: 14px; }
+/*
+ * "learn the game": a sticky note stuck on the slip. Bright and fresh for a new
+ * player; once the lesson's been learnt, the same note gone pale and worn, a
+ * corner peeling. Its colour suits the paper (--sticky, per theme below); its
+ * words are always dark, in the hand, whatever the slip's own ink.
+ */
+:root { --sticky: #ffe36e; --sticky-edge: #f2cf3c; --sticky-ink: #34302a; --sticky-pen: #c01e2a; }
+:root[data-theme="legal"] { --sticky: #ffbccb; --sticky-edge: #f39bb0; }
+:root[data-theme="blueprint"] { --sticky: #fff1a6; --sticky-edge: #f0d96a; }
+:root[data-theme="graph"] { --sticky: #ffd88a; --sticky-edge: #f2bd55; }
+:root[data-theme="copy"] { --sticky: #c9f0a8; --sticky-edge: #a6dc7c; }
+.menu .learn { margin: 6px 0 2px; padding-left: 12px; }
+.menu .sticky {
+  position: relative; display: block; width: min(232px, 86%); padding: 7px 12px 9px 14px; text-align: left;
+  font-family: var(--hand); color: var(--sticky-ink); line-height: 1.02;
+  /* the gummed strip along the top is a touch darker; the rest catches the lamp */
+  background: linear-gradient(180deg, var(--sticky-edge) 0 9px, var(--sticky) 9px 70%, color-mix(in srgb, var(--sticky) 88%, #fff) 100%);
+  box-shadow: 0 1px 1px rgba(0,0,0,.18), 2px 7px 9px -3px rgba(0,0,0,.32);
+  /* the bottom right corner lifts off the slip */
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%);
+  transform: rotate(-2.4deg); transform-origin: 20% 0;
+}
+.menu .sticky::after {
+  /* the lifted corner, seen from underneath: paler, with its own shadow */
+  content: ""; position: absolute; right: 0; bottom: 0; width: 15px; height: 15px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--sticky) 70%, #fff) 0 50%, transparent 50%);
+  filter: drop-shadow(-1px -1px 1px rgba(0,0,0,.18));
+}
+.menu .sticky i { display: block; font-style: normal; font-size: 18px; color: var(--sticky-pen); transform: rotate(-1.5deg); }
+.menu .sticky b { display: block; font-size: 29px; font-weight: 700; }
+.menu .sticky small { display: block; font-size: 15.5px; opacity: .78; margin-top: 1px; white-space: nowrap; }
+.menu .sticky:active { transform: rotate(-2.4deg) translateY(1px) scale(.98); }
+/* learnt: the same note, sun-faded and handled, its corner peeling further */
+.menu .sticky.worn {
+  width: min(210px, 80%); padding-top: 6px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--sticky-edge) 45%, var(--paper)) 0 8px, color-mix(in srgb, var(--sticky) 42%, var(--paper)) 8px);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 22px), calc(100% - 22px) 100%, 0 100%);
+  box-shadow: 0 1px 1px rgba(0,0,0,.12), 1px 4px 6px -3px rgba(0,0,0,.25);
+  transform: rotate(1.6deg); opacity: .92;
+}
+.menu .sticky.worn::after { width: 22px; height: 22px; background: linear-gradient(135deg, color-mix(in srgb, var(--sticky) 30%, #fff) 0 50%, transparent 50%); }
+.menu .sticky.worn i { color: color-mix(in srgb, var(--sticky-ink) 70%, transparent); font-size: 16px; }
+.menu .sticky.worn b { font-size: 25px; }
+.menu .sticky.worn small { font-size: 14.5px; opacity: .65; }
+.menu .sticky.worn:active { transform: rotate(1.6deg) translateY(1px) scale(.98); }
 .menu .head { font-family: var(--hand); font-size: 19px; color: var(--pencil); margin: 2px 0 0 18px; letter-spacing: .02em; }
 /* section headings: inked and underlined twice, like a kid ruling off a new topic */
 .menu .sect {
