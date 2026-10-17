@@ -34,6 +34,7 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 - `src/timeline.ts`, `src/hand.ts`: draw-on timing, which soldier a tap means (pure, tested)
 - `src/sound.ts`: synthesised pen, paper and lamp sounds
 - `src/haptics.ts`: the pen felt under the thumb: `navigator.vibrate` on Android, the tick of a hidden checkbox switch on iPhone (from script up to iOS 26.4, only under real taps from 26.5). Pure parts tested
+- `src/tutorial.ts`: the lesson (BJS-462): one fixed page, the steps as data (note, check, what Dawood-bot does), the gentle scripted bot (pure, tested). `src/lesson-layer.ts` pencils its notes on their own cropped layer. The cover's "learn the game"; `pft:taught:lesson:<step>` and `pft:taught:tutorial` record progress; `scripts/scenarios/tutorial.mjs` plays it through by touch
 - `src/main.ts`: turn flow, input, HUD, cover, cards, drawer, replay
 - `rules.html`, `rules/advanced.html`, `src/rulebook/`: the two rulebooks; `figures.ts` draws each mechanic with the game's ink
 
