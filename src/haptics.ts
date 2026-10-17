@@ -14,8 +14,15 @@
 //         round the canvas; a tap on a button ticks, and a tap on the page ticks
 //         only if it picked someone up or drew a camp. A flick is a drag, and
 //         drags never click: the ratchet, the flick and the crosses go unfelt.
+//   - the store apps (Android and iOS, src/native.ts): the system's own haptics
+//     through @capacitor/haptics. Android plays the same durations as
+//     navigator.vibrate; the iPhone plays the tick rhythm with a real impact,
+//     light, medium or heavy, and every event reaches the thumb, drags too.
+//     No checkbox switch in the app.
 //   - anything else: silent.
 // Fewer, well-timed haptics beat buzzing: every event passes one global gate.
+
+import { appOs, type AppOs } from "./native";
 
 export type HapticEvent =
   | "tap" // a card, a button
@@ -113,8 +120,8 @@ export function pattern(ev: HapticEvent, arg = 0): Pattern {
 }
 
 /** How long a pattern keeps the motor (or the tick rhythm) busy, in ms. */
-export function length(p: Pattern, backend: BackendKind) {
-  if (backend === "switch") return p.ios[p.ios.length - 1] ?? 0;
+export function length(p: Pattern, backend: BackendKind, os?: AppOs) {
+  if (backend === "switch" || (backend === "native" && os === "ios")) return p.ios[p.ios.length - 1] ?? 0;
   return p.android.reduce((a, b) => a + b, 0);
 }
 
@@ -195,7 +202,7 @@ export class Dial {
 
 // --- backends -----------------------------------------------------------------
 
-export type BackendKind = "vibrate" | "switch" | "none";
+export type BackendKind = "vibrate" | "switch" | "native" | "none";
 export type IosMode = "script" | "tap";
 
 export interface Env {
@@ -247,6 +254,8 @@ export function iosMode(ua: string): IosMode {
 export interface Backend {
   kind: BackendKind;
   mode?: IosMode;
+  /** native: which app's haptics */
+  os?: AppOs;
   play(p: Pattern, ev: HapticEvent): void;
   /** stop whatever is still to come */
   cancel(): void;
@@ -374,9 +383,70 @@ function tapSwitch(): Backend {
   };
 }
 
+// The store apps: the system's haptics, through @capacitor/haptics.
+export type Impact = "LIGHT" | "MEDIUM" | "HEAVY"; // @capacitor/haptics' ImpactStyle
+export type NativeStep = { at: number; impact: Impact } | { at: number; vibrate: number };
+export interface NativeEngine {
+  impact(style: Impact): void;
+  vibrate(ms: number): void;
+}
+
+/** How hard a pulse of this many ms lands as one impact on an iPhone. Pure. */
+export function impactFor(ms: number): Impact {
+  return ms < 20 ? "LIGHT" : ms < 40 ? "MEDIUM" : "HEAVY";
+}
+
+/**
+ * A pattern as the app plays it, at ms from the start. Pure. Android: each
+ * buzz of the navigator.vibrate pattern at its own time and length. iOS: the
+ * tick rhythm, each tick as hard as the buzz it stands for (the nth tick the
+ * nth buzz, the last buzz for any ticks beyond).
+ */
+export function nativeSteps(p: Pattern, os: AppOs): NativeStep[] {
+  if (os === "android") {
+    const out: NativeStep[] = [];
+    for (let i = 0, at = 0; i < p.android.length; at += p.android[i++]) if (i % 2 === 0 && p.android[i] > 0) out.push({ at, vibrate: p.android[i] });
+    return out;
+  }
+  const buzz = p.android.filter((_, i) => i % 2 === 0);
+  return p.ios.map((at, i) => ({ at, impact: impactFor(buzz[Math.min(i, buzz.length - 1)] ?? 0) }));
+}
+
+/** The app's backend. `load` brings the plugin in (lazily: the web never fetches it); until it's in, nothing is felt. */
+export function nativeBackend(os: AppOs, load: () => Promise<NativeEngine>): Backend {
+  let engine: NativeEngine | null = null;
+  void load().then((e) => { engine = e; }, () => { /* no plugin: stay silent */ });
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  const run = (s: NativeStep) => {
+    if (!engine) return;
+    if ("impact" in s) engine.impact(s.impact);
+    else engine.vibrate(s.vibrate);
+  };
+  const cancel = () => { while (timers.length) clearTimeout(timers.pop()); };
+  return {
+    kind: "native", os,
+    play: (p) => {
+      // a new pattern replaces whatever was still to come
+      cancel();
+      for (const s of nativeSteps(p, os)) {
+        if (s.at <= 0) run(s);
+        else timers.push(setTimeout(() => run(s), s.at));
+      }
+    },
+    cancel,
+  };
+}
+
+// The plugin, as the app's backend wants it. A separate chunk the web never fetches.
+const loadNative = (): Promise<NativeEngine> => import("@capacitor/haptics").then(({ Haptics, ImpactStyle }) => ({
+  impact: (style) => void Haptics.impact({ style: ImpactStyle[style === "LIGHT" ? "Light" : style === "MEDIUM" ? "Medium" : "Heavy"] }).catch(() => {}),
+  vibrate: (ms) => void Haptics.vibrate({ duration: ms }).catch(() => {}),
+}));
+
 const silent: Backend = { kind: "none", play: () => {}, cancel: () => {} };
 
-export function makeBackend(kind: BackendKind, mode: IosMode = "tap"): Backend {
+export function makeBackend(kind: BackendKind, mode: IosMode = "tap", os: AppOs | null = null): Backend {
+  if (kind === "native") return os ? nativeBackend(os, loadNative) : silent;
   return kind === "vibrate" ? vibrateBackend() : kind === "switch" ? (mode === "script" ? scriptSwitch() : tapSwitch()) : silent;
 }
 
@@ -415,7 +485,7 @@ export function createHaptics({ backend, now = () => performance.now(), storage,
       if (!enabled) return false;
       const p = pattern(ev, arg);
       const t = now();
-      if (!gate.allow(p.priority, t, length(p, backend.kind))) return false;
+      if (!gate.allow(p.priority, t, length(p, backend.kind, backend.os))) return false;
       backend.play(p, ev);
       if (log) {
         felt.push({ ev, arg, t: Math.round(t), backend: backend.kind, mode: backend.mode, android: p.android, ios: p.ios });
@@ -436,10 +506,12 @@ const store = typeof localStorage === "undefined" ? undefined : localStorage;
 // dev: ?haptics=vibrate|script|tap|none forces a backend, so headless Chrome can
 // exercise the iPhone's DOM rigs (it has nothing to feel either way)
 const forced = import.meta.env.DEV && typeof location !== "undefined" ? new URLSearchParams(location.search).get("haptics") : null;
-const kind: BackendKind = forced === "script" || forced === "tap" ? "switch" : forced === "vibrate" || forced === "none" ? forced : detect(browserEnv());
+// the store apps always use the system's own haptics
+const app = appOs();
+const kind: BackendKind = app ? "native" : forced === "script" || forced === "tap" ? "switch" : forced === "vibrate" || forced === "none" ? forced : detect(browserEnv());
 const mode: IosMode = forced === "script" || forced === "tap" ? forced : iosMode(typeof navigator === "undefined" ? "" : navigator.userAgent);
 export const haptics: Haptics = createHaptics({
-  backend: makeBackend(kind, mode),
+  backend: makeBackend(kind, mode, app),
   storage: store,
   log: import.meta.env.DEV,
 });

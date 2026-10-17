@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  createHaptics, detect, DETENTS, Dial, Gate, IOS_TICK_GAP, iosMode, length, MIN_GAP, pattern, Ratchet, STORAGE_KEY,
-  TAPPED, type Backend, type BackendKind, type HapticEvent, type Pattern,
+  createHaptics, detect, DETENTS, Dial, Gate, haptics, impactFor, IOS_TICK_GAP, iosMode, length, makeBackend, MIN_GAP, nativeBackend, nativeSteps, pattern, Ratchet, STORAGE_KEY,
+  TAPPED, type Backend, type BackendKind, type HapticEvent, type NativeEngine, type Pattern,
 } from "./haptics";
 
 const EVENTS: HapticEvent[] = ["tap", "pickup", "notch", "brink", "dial", "wobble", "flick", "settle", "land", "kill", "thud", "turn", "stand", "bank", "split", "rule", "home", "jolt", "cheer", "flinch", "unitcam", "volley", "over"];
@@ -302,4 +302,87 @@ describe("Dial", () => {
     expect(pattern("dial", 1).priority).toBeLessThanOrEqual(pattern("notch", 0.5).priority);
   });
 
+});
+
+describe("the store apps' haptics", () => {
+  it("is never chosen on the web", () => {
+    expect(haptics.backend).not.toBe("native"); // no bridge here: the browser's own backends
+  });
+
+  it("plays Android's pattern as the same buzzes at the same times", () => {
+    expect(nativeSteps(pattern("over"), "android")).toEqual([{ at: 0, vibrate: 70 }, { at: 130, vibrate: 70 }, { at: 290, vibrate: 130 }]);
+    expect(nativeSteps(pattern("pickup"), "android")).toEqual([{ at: 0, vibrate: 28 }]);
+    for (const ev of EVENTS) for (const arg of [0, 0.5, 1, 3]) {
+      const p = pattern(ev, arg);
+      const steps = nativeSteps(p, "android");
+      expect(steps.length, ev).toBe((p.android.length + 1) / 2);
+      // the last buzz ends exactly when navigator.vibrate's pattern would
+      const last = steps[steps.length - 1] as { at: number; vibrate: number };
+      expect(last.at + last.vibrate, ev).toBe(length(p, "native", "android"));
+    }
+  });
+
+  it("plays the iPhone's tick rhythm, each tick as hard as the buzz it stands for", () => {
+    expect(impactFor(8)).toBe("LIGHT"); // a dial's click
+    expect(impactFor(18)).toBe("LIGHT"); // a button
+    expect(impactFor(28)).toBe("MEDIUM"); // picking a man up
+    expect(impactFor(50)).toBe("HEAVY"); // a cross
+    expect(nativeSteps(pattern("kill", 2), "ios")).toEqual([{ at: 0, impact: "MEDIUM" }, { at: 75, impact: "HEAVY" }]);
+    expect(nativeSteps(pattern("notch", 0), "ios")).toEqual([{ at: 0, impact: "LIGHT" }]);
+    expect(nativeSteps(pattern("notch", 1), "ios")).toEqual([{ at: 0, impact: "HEAVY" }, { at: IOS_TICK_GAP, impact: "HEAVY" }]);
+    for (const ev of EVENTS) {
+      const p = pattern(ev, 1);
+      expect(nativeSteps(p, "ios").map((s) => s.at), ev).toEqual(p.ios);
+    }
+    expect(length(pattern("thud"), "native", "ios")).toBe(length(pattern("thud"), "switch"));
+  });
+
+  it("plays through the plugin once it has loaded, and a new pattern cuts off the last", async () => {
+    vi.useFakeTimers();
+    try {
+      const felt: string[] = [];
+      const engine: NativeEngine = { impact: (s) => felt.push(s), vibrate: (ms) => felt.push(`${ms}ms`) };
+      let ready!: (e: NativeEngine) => void;
+      const b = nativeBackend("ios", () => new Promise((r) => { ready = r; }));
+      expect(b).toMatchObject({ kind: "native", os: "ios" });
+      expect(b.install).toBeUndefined(); // no switch labels in the app
+      b.play(pattern("tap"), "tap");
+      expect(felt).toEqual([]); // the plugin isn't in yet
+      ready(engine);
+      await Promise.resolve();
+      b.play(pattern("over"), "over");
+      expect(felt).toEqual(["HEAVY"]);
+      vi.advanceTimersByTime(150);
+      expect(felt).toEqual(["HEAVY", "HEAVY"]);
+      b.play(pattern("pickup"), "pickup");
+      vi.advanceTimersByTime(1000);
+      expect(felt).toEqual(["HEAVY", "HEAVY", "MEDIUM"]);
+      b.play(pattern("stand"), "stand");
+      b.cancel();
+      vi.advanceTimersByTime(1000);
+      expect(felt).toEqual(["HEAVY", "HEAVY", "MEDIUM", "HEAVY"]);
+
+      const android: string[] = [];
+      const a = nativeBackend("android", async () => ({ impact: (s) => android.push(s), vibrate: (ms) => android.push(`${ms}ms`) }));
+      await Promise.resolve(); await Promise.resolve();
+      a.play(pattern("split"), "split");
+      vi.advanceTimersByTime(100);
+      expect(android).toEqual(["9ms", "9ms"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stays silent without its plugin, and gates on the iPhone's rhythm", () => {
+    const b = nativeBackend("android", () => Promise.reject(new Error("no plugin")));
+    expect(() => b.play(pattern("kill", 1), "kill")).not.toThrow();
+    expect(makeBackend("native", "tap", null).kind).toBe("none");
+    expect(makeBackend("native", "tap", "ios")).toMatchObject({ kind: "native", os: "ios" });
+    const played: Pattern[] = [];
+    const h = createHaptics({ backend: { kind: "native", os: "ios", play: (p) => played.push(p), cancel: () => {} }, now: () => 0, log: true });
+    expect(h.supported).toBe(true);
+    expect(h.fire("kill", 2)).toBe(true);
+    expect(played).toHaveLength(1);
+    expect(h.felt[0]).toMatchObject({ backend: "native" });
+  });
 });

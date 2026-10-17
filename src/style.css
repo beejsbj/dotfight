@@ -538,3 +538,14 @@ body:not(.playing) #top, body:not(.playing) #bottom { opacity: 0; pointer-events
 #cancel-ring .back.on { display: block; }
 #cancel-ring.in .back { display: none; }
 #cancel-ring[hidden] { display: none; }
+
+/* --- the store apps (src/native.ts): edge to edge, under the notch and over the
+   home indicator. html.app is only ever set inside the app: none of this reaches the web. */
+html.app #cover {
+  padding: calc(env(safe-area-inset-top) + 10px) calc(env(safe-area-inset-right) + 28px) calc(env(safe-area-inset-bottom) + 10px) calc(env(safe-area-inset-left) + 10px);
+}
+html.app .book { max-height: calc(100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+html.app .leaf { max-height: calc((100dvh - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) / var(--fit, 1)); }
+html.app #sheet {
+  padding: calc(env(safe-area-inset-top) + 18px) calc(env(safe-area-inset-right) + 18px) calc(env(safe-area-inset-bottom) + 18px) calc(env(safe-area-inset-left) + 18px);
+}

@@ -27,6 +27,8 @@ import * as motion from "./motion-input";
 import { screenDirToWorld } from "./projection";
 import { addToDrawer, apply, blank, coverSize, file, readDrawer, readSave, settleSave, sizeFor, steps, unfile, type AnyState, type Filed, type Mode, type Save, type Step } from "./record";
 import { GAME } from "./name";
+import { backStep, isNative, roomBase } from "./native";
+import type { NativeApp } from "./native-app";
 import { CORE, FEEL, LONG, RULES, SHAPES, SIZES, type Shape, type Size } from "./rules";
 import { boldAt, lifeOf } from "./boil";
 import { beforeMarch, comrades, LIFE, planFlick, planVolley, unit as seeded, VOLLEY, type VolleyPlan } from "./life";
@@ -2143,7 +2145,7 @@ function replayNext() {
 
 // --- rooms: one page, two phones, a link sent on WhatsApp ----------------------------
 
-const roomApi = httpApi();
+const roomApi = httpApi(roomBase(isNative()));
 let roomEntry: AbortController | null = null;
 let link: RoomLink | null = null;
 let roomDrift = 0; // the move from which our page stopped matching theirs (0: never)
@@ -2319,6 +2321,10 @@ function showShare() {
     if (!a) return;
     sfx.tap();
     if (a === "back") return closeSheet();
+    if (a === "send" && app) {
+      if (await app.share({ title: GAME.name, text, url: l.url })) closeSheet();
+      return;
+    }
     if (a === "send" && navigator.share) {
       try { await navigator.share({ title: GAME.name, text, url: l.url }); closeSheet(); } catch { /* they changed their mind */ }
       return;
@@ -3408,7 +3414,7 @@ function renderNow() {
   const f = currentFrame();
   seeLife(f);
   const bg = farColour(f.lamp);
-  if (document.body.style.backgroundColor !== bg) document.body.style.backgroundColor = bg;
+  if (document.body.style.backgroundColor !== bg) { document.body.style.backgroundColor = bg; app?.desk(bg); }
   document.body.style.setProperty("--lamp", f.lamp.on.toFixed(3));
   document.body.style.setProperty("--dawn", f.lamp.dawn.toFixed(3));
   renderStage(els, f);
@@ -3437,6 +3443,40 @@ function showBoot() {
 const roomPath = location.pathname.match(/^\/r\/([a-z0-9]{6})\/?$/)?.[1];
 showBoot();
 if (roomPath) void openRoom(roomPath);
+
+// --- the store apps (BJS-461): only inside Android's or iOS's app ---------------
+// The plugins are a chunk of their own (native-app.ts) that the web never fetches.
+
+let app: NativeApp | null = null;
+
+/** Android's back button, innermost first; false once only the cover's front is left. */
+function back(): boolean {
+  const sheetEl = $("#sheet");
+  const step = backStep({
+    sheet: sheetEl.hidden ? "none" : sheetEl.querySelector(".card.handoff") ? "gate" : sheetEl.querySelector('[data-a="back"]') ? "back" : "plain",
+    screen,
+    // what Escape would undo: a lunge's ride, or (on your own go) a soldier in hand
+    aiming: !!unit || (!busy && (!!aim || selected !== undefined)),
+    tearing: tearing !== null,
+    coverBack: !!$("#cover .menu").querySelector('[data-a="back"]'),
+  });
+  if (step === "leave") return false;
+  if (step === "sheet-back") sheetEl.querySelector<HTMLElement>('[data-a="back"]')!.click();
+  else if (step === "sheet-close") closeSheet();
+  else if (step === "cancel-aim") window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  else if (step === "keep") { tearing = null; sfx.tap(); coverDraw?.(); }
+  else if (step === "cover-back") $("#cover .menu").querySelector<HTMLElement>('[data-a="back"]')!.click();
+  else if (step === "to-cover") $("#menu-btn").click();
+  return true;
+}
+
+if (isNative()) {
+  document.documentElement.classList.add("app");
+  void import("./native-app").then((m) => {
+    app = m.start({ back, resume: () => link?.wake() });
+    app.desk(document.body.style.backgroundColor);
+  });
+}
 
 // dev-only handle for scripted playtests
 if (import.meta.env.DEV) {

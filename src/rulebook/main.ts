@@ -13,6 +13,10 @@ import { woodTexture } from "../textures";
 import { FIGURES, type Figure } from "./figures";
 import { clock } from "./clock";
 import { openBook } from "./flip";
+import { fixLinks, isNative } from "../native";
+
+// in the store apps the bundle has no clean URLs: /rules is rules.html
+if (isNative()) fixLinks();
 
 const root = document.documentElement;
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches || root.classList.contains("og");

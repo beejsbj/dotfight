@@ -7,6 +7,7 @@
 // does (`push()`). The engine is only touched through `room-engine.ts`.
 
 import type { Setup } from "./room-engine";
+import { isNative, linkOrigin } from "./native";
 import { RoomHttpError, type Entry, type RoomApi, type Seat } from "./room-protocol";
 
 export interface Saved {
@@ -93,7 +94,8 @@ export class RoomLink {
   get code() { return this.data.code; }
   get seat() { return this.data.seat; }
   get names() { return this.data.names; }
-  get url() { return `${location.origin}/r/${this.data.code}`; }
+  /** The link to send: this site's on the web, always the public site's from the app. */
+  get url() { return `${linkOrigin(isNative(), location.origin)}/r/${this.data.code}`; }
   /** Entries on the server that aren't drawn here yet. */
   get queued() { return this.data.log.length - this.data.applied; }
 
