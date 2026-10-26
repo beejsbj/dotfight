@@ -18,7 +18,7 @@ try {
   const ctx = await b.newContext({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1, hasTouch: true });
   const p = await ctx.newPage();
   await p.goto(url);
-  await p.evaluate(() => { localStorage.clear(); localStorage.setItem("pft:muted", "1"); localStorage.setItem("pft:taught:place", "1"); localStorage.setItem("pft:taught:aim", "1"); });
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem("pft:muted", "1"); localStorage.setItem("pft:taught:place", "1"); localStorage.setItem("pft:taught:aim", "1"); localStorage.setItem("pft:theme", "lamplight"); });
   await p.reload();
   await p.waitForFunction(() => window.pft);
   await p.evaluate(() => document.fonts.ready);
@@ -30,7 +30,8 @@ try {
     document.querySelector("#top").style.visibility = "hidden";
     document.querySelector("#bottom").style.visibility = "hidden";
   });
-  await p.waitForFunction(() => !window.pft.busy && window.pft.cam.settled, undefined, { timeout: 20000 });
+  // the cover swings open and only then leaves the page (700ms): until it has, it takes the taps
+  await p.waitForFunction(() => !window.pft.busy && window.pft.cam.settled && document.querySelector("#cover").hidden, undefined, { timeout: 20000 });
   // pick up a soldier near the enemy and hold a pull toward him
   const { me, foe } = await p.evaluate(() => {
     const s = window.pft.s;
@@ -71,6 +72,8 @@ try {
   const ctx = await b.newContext({ viewport: { width: 600, height: 600 } });
   const p = await ctx.newPage();
   await p.goto(url);
+  await p.evaluate(() => localStorage.setItem("pft:theme", "lamplight"));
+  await p.reload();
   await p.waitForFunction(() => window.pft);
   await p.evaluate(() => document.fonts.ready);
   const out = await p.evaluate(() => {
