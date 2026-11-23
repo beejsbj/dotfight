@@ -63,8 +63,10 @@ function lay(title: string, lines: string[], head: number, body: number, wide: n
   let y = 0;
   // a heading too wide for the column breaks at its colon first ("lesson 1 of 6:" / "the flick")
   const heads = wrap && width(title, head) > wide && title.includes(": ") ? title.replace(": ", ":\n").split("\n").flatMap((t) => split(t, head)) : split(title, head);
+  // biome-ignore lint/suspicious/noFocusedTests: fit() sizes text; it is not a focused test
   for (const t of heads) { rows.push({ text: t, size: fit(t, head), y, head: true }); y += head * 1.05; }
   y += head * 0.1;
+  // biome-ignore lint/suspicious/noFocusedTests: fit() sizes text; it is not a focused test
   for (const l of lines) for (const t of split(l, body)) { rows.push({ text: t, size: fit(t, body), y, head: false }); y += body * 1.02; }
   const w = Math.max(...rows.map((r) => width(r.text, r.size)));
   return { rows, w, h: y - body * 1.02, asc: head * 0.8 };

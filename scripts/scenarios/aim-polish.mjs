@@ -16,7 +16,7 @@ const wrap = (a) => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
 export default async function (T, out) {
   const { page } = T;
   page.setDefaultTimeout(120000);
-  const feel = await page.evaluate(async () => (await import("/src/rules.ts")).FEEL);
+  const _feel = await page.evaluate(async () => (await import("/src/rules.ts")).FEEL);
   await page.waitForTimeout(1500); // the cover's lamp comes on first (starting a game at once would cancel it, and every shot would be dark)
   await page.evaluate(() => {
     const r = window.pft.fileWar(7, 6);

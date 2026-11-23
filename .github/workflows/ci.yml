@@ -1,0 +1,36 @@
+# CI: lint, type-check, the full test suite and the production build.
+# Runs on every PR and on push to main. Needs no secrets. No path filters: a required
+# check that skips never reports. The PR gates (pr-gates.yml), the privacy scan
+# (privacy.yml) and review-evidence.yml are separate workflows because they read the
+# PR description or its review threads and so must re-run when those change.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:scripts
+      - run: npm test
+      - run: npm run build

@@ -1,0 +1,53 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.6.8/schema.json",
+	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+	"files": { "includes": ["**", "!!**/dist", "!**/package-lock.json"] },
+	"formatter": { "enabled": false },
+	"assist": { "enabled": false },
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			// BASELINE: the rules below are switched off because the code already breaks them
+			// (hit counts when the baseline was cut, 2026-11). Every other recommended rule is
+			// enforced and `npm run lint` fails on warnings, so a NEW violation of any of them
+			// fails. Re-enable one rule at a time: remove its line, fix what it reports.
+			"style": {
+				"noNonNullAssertion": "off", // 422
+				"noDescendingSpecificity": "off", // 77 (CSS)
+				"useExponentiationOperator": "off", // 31
+				"useTemplate": "off", // 20
+				"useConst": "off", // 2
+				"useImportType": "off" // 1
+			},
+			"suspicious": {
+				"useIterableCallbackReturn": "off", // 53
+				"noAssignInExpressions": "off", // 11
+				"noExplicitAny": "off", // 3, test mocks
+				"noControlCharactersInRegex": "off" // 2, api/_rooms.ts strips control characters on purpose
+			},
+			"a11y": {
+				"useButtonType": "off", // 8
+				"useSemanticElements": "off", // 2
+				"useAriaPropsForRole": "off", // 2
+				"useAriaPropsSupportedByRole": "off" // 2
+			},
+			"complexity": {
+				"useOptionalChain": "off", // 7
+				"useArrowFunction": "off", // 4
+				"noCommaOperator": "off", // 3
+				"noImportantStyles": "off", // 2
+				"noUselessContinue": "off", // 1
+				"useLiteralKeys": "off", // 1
+				"useMathMinMax": "off" // 1
+			},
+			"correctness": {
+				"noVoidTypeReturn": "off", // 2
+				"noConstructorReturn": "off" // 1
+			},
+			"performance": {
+				"noDynamicNamespaceImportAccess": "off" // 1
+			}
+		}
+	}
+}

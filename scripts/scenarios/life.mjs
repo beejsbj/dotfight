@@ -193,7 +193,7 @@ export default async function (T, out) {
     const clip = await box(camp, 110);
     await seq("flinch", 56, 1000 / 24, { flinch: clip }, async (i) => {
       if (i === 2) {
-        const killed = await page.evaluate(({ me, a }) => { const o = window.pft.act({ soldierId: me.id, kind: "shoot", angle: Math.atan2(a.y - me.y, a.x - me.x), length: 1800, bend: 0 }); return window.pft.res?.o.killed.length; }, { me, a: aimAt });
+        const killed = await page.evaluate(({ me, a }) => { window.pft.act({ soldierId: me.id, kind: "shoot", angle: Math.atan2(a.y - me.y, a.x - me.x), length: 1800, bend: 0 }); return window.pft.res?.o.killed.length; }, { me, a: aimAt });
         console.log("flinch shot, killed:", killed);
       }
       await hold();
@@ -330,7 +330,7 @@ export default async function (T, out) {
     const men = await menIn(camp);
     const say = async (name, kind, id, clip, style) => {
       // offered until one is taken (they're rare on purpose), then written on, held and faded
-      await page.evaluate(({ kind, id, style }) => {
+      await page.evaluate(({ kind, id }) => {
         const p = window.pft;
         for (let k = 0; k < 200 && !p.bubbles.cur; k++) { p.bubbles.reset(); p.speak(kind, id, p.wall, 1000 + k * 7); }
         p.poke();

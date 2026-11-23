@@ -1,0 +1,27 @@
+#!/bin/sh
+# Pre-push for PUBLIC repos only: scan what is about to leave this machine for personal paths,
+# emails and identities (the same scanner CI runs): the lines you add, file names, and the author,
+# committer and message of each new commit. Your own names come from ~/.config/privacy-scan/patterns,
+# which lives on your machine and never in the repo, plus the local login and hostname, derived at
+# run time. Skip once with `git push --no-verify`.
+zero=0000000000000000000000000000000000000000
+scan="$(git rev-parse --show-toplevel)/scripts/privacy/privacy-scan.mjs"
+# The public GitHub login is not a secret: derive it from the remote so github.com/<login>/... URLs are not flagged.
+owner=$(git remote get-url origin 2>/dev/null | sed -nE 's#.*github\.com[:/]([^/]+)/.*#\1#p')
+status=0
+while read -r _ local_sha _ remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue # deleting a ref
+  if [ "$remote_sha" = "$zero" ]; then
+    # A new branch: scan every commit that no remote-tracking branch has yet. Works with no origin/HEAD and any default branch.
+    oldest=$(git rev-list "$local_sha" --not --remotes | tail -n 1)
+    [ -n "$oldest" ] || continue # nothing new
+    base=$(git rev-parse -q --verify "$oldest^" || git hash-object -t tree /dev/null)
+    new="$local_sha --not --remotes"
+  else
+    base=$remote_sha
+    new="$remote_sha..$local_sha"
+  fi
+  PRIVACY_REPO_OWNER=$owner BASE_SHA=$base HEAD_SHA=$local_sha node "$scan" diff || status=1
+  git log --format='%an%n%ae%n%cn%n%ce%n%B' $new | PRIVACY_REPO_OWNER=$owner node "$scan" text || status=1
+done
+exit $status

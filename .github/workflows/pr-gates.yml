@@ -1,0 +1,53 @@
+# PR gates, separate from ci.yml because they read the PR description and so must
+# re-run when it is edited (ci.yml should not).
+#
+#   verification-section  the description carries a real "## Verification" section
+#   test-integrity        no test is deleted, skipped or loosened without a stated reason
+#                         ("Test change: <why>" in the description)
+#
+# The scripts live in scripts/pr-gates/ (tests: npm run test:scripts). They guard
+# against accidents, not adversaries: a PR could edit them, which review must catch.
+# See docs/checks.md.
+name: pr-gates
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-gates-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verification-section:
+    name: verification-section
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/pr-gates/verification-section.mjs
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+  test-integrity:
+    name: test-integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/pr-gates/test-integrity.mjs
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}

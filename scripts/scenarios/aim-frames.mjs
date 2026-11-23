@@ -4,7 +4,7 @@
 //   THROTTLE=6 node scripts/playtest.mjs aim-frames <url> <outdir>     (TURNS)
 import { idle } from "../lib/phone.mjs";
 
-export default async function (T, out) {
+export default async function (T, _out) {
   const { page, cdp } = T;
   page.setDefaultTimeout(120000);
   await page.waitForTimeout(1200);

@@ -4,10 +4,10 @@ _2026-10-04. Sequential guarded jobs on `long-war/lab6`; one Vitest worker. The 
 
 ## typecheck
 
-Command: `/home/admin/.local/bin/t3-test-run npm run typecheck`. Exit status: **0**. Recorded wall time: **2 s**.
+Command: `t3-test-run npm run typecheck`. Exit status: **0**. Recorded wall time: **2 s**.
 
 ```text
-Guarded test: three CPUs, 2 GiB RAM, no swap, 20-minute timeout; temp=/mnt/server-ssd/t3-test-tmp/run.fZXKz8fo
+Guarded test: three CPUs, 2 GiB RAM, no swap, 20-minute timeout; temp=<tmp>/run.fZXKz8fo
 
 > dotfight@0.1.0 typecheck
 > tsc --noEmit
@@ -15,16 +15,16 @@ Guarded test: three CPUs, 2 GiB RAM, no swap, 20-minute timeout; temp=/mnt/serve
 
 ## test
 
-Command: `/home/admin/.local/bin/t3-test-run npm test -- --maxWorkers=1`. Exit status: **0**. Recorded wall time: **81 s**.
+Command: `t3-test-run npm test -- --maxWorkers=1`. Exit status: **0**. Recorded wall time: **81 s**.
 
 ```text
-Guarded test: three CPUs, 2 GiB RAM, no swap, 20-minute timeout; temp=/mnt/server-ssd/t3-test-tmp/run.WDgqbWrk
+Guarded test: three CPUs, 2 GiB RAM, no swap, 20-minute timeout; temp=<tmp>/run.WDgqbWrk
 
 > dotfight@0.1.0 test
 > vitest run --maxWorkers=1
 
 
- RUN  v5.0.1 /mnt/server-ssd/BJsWorkspace/Projects/Worktrees/dotfight/long-war-lab6
+ RUN  v5.0.1 <worktrees>/dotfight/long-war-lab6
 
 
  Test Files  34 passed (34)
@@ -38,10 +38,10 @@ Guarded test: three CPUs, 2 GiB RAM, no swap, 20-minute timeout; temp=/mnt/serve
 
 ## build
 
-Command: `/home/admin/.local/bin/t3-test-run npm run build`. Exit status: **0**. Recorded wall time: **3 s**.
+Command: `t3-test-run npm run build`. Exit status: **0**. Recorded wall time: **3 s**.
 
 ```text
-Guarded test: three CPUs, 2 GiB RAM, no swap, 20-minute timeout; temp=/mnt/server-ssd/t3-test-tmp/run.CFqBh9Rs
+Guarded test: three CPUs, 2 GiB RAM, no swap, 20-minute timeout; temp=<tmp>/run.CFqBh9Rs
 
 > dotfight@0.1.0 build
 > tsc --noEmit && vite build

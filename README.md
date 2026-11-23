@@ -42,6 +42,7 @@ Sharing a room link so you can play a friend without passing the phone, a real-t
 npm install
 npm run dev      # http://localhost:5173
 npm test
+npm run lint && npm run typecheck   # what CI also runs, with npm run build
 ```
 
-Working on the code, or an agent working on it? Start with [AGENTS.md](AGENTS.md). On bjslab, tests and browser scripts run through the `t3-test-run` guard; AGENTS.md explains.
+Working on the code, or an agent working on it? Start with [AGENTS.md](AGENTS.md). On a machine with the `t3-test-run` guard, tests and browser scripts run through it; AGENTS.md explains. The checks that run on commit and on every PR are in [docs/checks.md](docs/checks.md). Dotfight is MIT licensed ([LICENSE](LICENSE)).
