@@ -123,7 +123,7 @@ export default async function (T, out) {
   // two things (main.ts updateAim): sliding sideways turns the page to the aim (TURN_DEAD px free,
   // then 2*PI over the phone's width less the free zones), and pulling straight down sets the power.
   // Our page is never turned in a bot war, so straight up the screen is world -PI/2.
-  async function pullToward(me, ang, px) {
+  async function pullToward(_me, ang, px) {
     const dx = await ev((ang) => {
       const TAU = Math.PI * 2, fwd = -Math.PI / 2, dead = 8;
       let d = ang - fwd;

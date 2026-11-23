@@ -19,7 +19,7 @@ export default async function (T, out) {
   await T.shot(`${out}/l0-cards.png`);
   if (process.env.CARDS_ONLY) return;
   const spots = [[500, 1250], [230, 1250], [780, 1250], [250, 1480], [760, 1490], [500, 1500]];
-  for (const [k, [x, y]] of kit.map((sh, i) => [i, spots[i]])) {
+  for (const [k, [x, y]] of kit.map((_sh, i) => [i, spots[i]])) {
     await idle(T);
     // press the card and drag a copy of it up onto the page (it rides 80 px above the finger)
     const card = await page.evaluate((sh) => { const r = document.querySelector(`#kind [data-shape=${sh}]`).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, kit[k]);

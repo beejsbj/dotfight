@@ -18,7 +18,7 @@ Details in `docs/checks.md`. `npm ci` installs the pre-commit hook (lint, typech
 - **A PR that deletes, skips or loosens a test needs one line** `Test change: <why this is right>` in its description.
 - **The privacy scan** fails on a home path, machine mount or email in anything a commit adds, and on a missing `LICENSE`. Use made-up values in docs and tests, and commit with the noreply address above.
 - **Review threads** must be resolved with a reply that shows why (`review-evidence`).
-- Lint is Biome, baselined: new violations fail, and the rules the old code already broke are listed in `biome.json`.
+- Lint is Biome, baselined: new violations fail, and the rules the old code already broke are listed in `biome.jsonc`.
 
 ## How the code stays fast and replayable
 

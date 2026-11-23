@@ -19,7 +19,7 @@ The hook runs the package scripts' own commands. On a machine that meters heavy 
 
 ## Lint: Biome, baselined
 
-`npm run lint` is `biome lint .`. The repo had no linter, so `biome.json` turns on the recommended rules and switches off, in one list, the rules the existing code already breaks. That list is the baseline: **new violations of every other rule fail; the switched-off rules are not enforced anywhere**. Each switched-off rule carries the count it had when the baseline was cut, so it can be re-enabled and fixed one rule at a time. Only linting is wired; the formatter is off (formatting the whole code base would be one huge diff for no gain here).
+`npm run lint` is `biome lint --error-on-warnings .`. The repo had no linter, so `biome.jsonc` turns on the recommended rules and switches off, in one list, the rules the existing code already breaks. That list is the baseline: **new violations of every other rule fail; the switched-off rules are not enforced anywhere**. Each switched-off rule carries the count it had when the baseline was cut, so it can be re-enabled and fixed one rule at a time. Only linting is wired; the formatter is off (formatting the whole code base would be one huge diff for no gain here).
 
 ## Gate 1: a Verification section
 

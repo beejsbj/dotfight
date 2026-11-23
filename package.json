@@ -14,10 +14,11 @@
     "rules-art": "node scripts/rules-page.mjs",
     "lab": "node --import ./scripts/ts-resolve.mjs scripts/rules-lab.ts",
     "prepare": "node scripts/install-hooks.mjs",
-    "lint": "biome lint .",
+    "lint": "biome lint --error-on-warnings .",
     "test:scripts": "node --test scripts/pr-gates/pr-gates.test.mjs scripts/privacy/privacy-scan.test.mjs scripts/hooks.test.mjs"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.8",
     "playwright-core": "^1.63.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
