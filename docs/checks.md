@@ -40,3 +40,4 @@ The scanner holds no personal identifier. Names and hostnames that are private l
 ## Making the checks required
 
 A failing workflow does not block a merge on its own: the default branch's ruleset has to require the checks. They are `ci`, `verification-section`, `test-integrity`, `privacy-scan` and `review-evidence`, with conversations resolved before merge. A repository admin applies the baseline ruleset (cockpit issue 62); until then they report but do not stop a merge.
+<!-- practice -->
