@@ -23,7 +23,6 @@
 			"suspicious": {
 				"useIterableCallbackReturn": "off", // 53
 				"noAssignInExpressions": "off", // 11
-				"noFocusedTests": "off", // 4, false positives on `.only` of non-test objects
 				"noExplicitAny": "off", // 3, test mocks
 				"noControlCharactersInRegex": "off" // 2, api/_rooms.ts strips control characters on purpose
 			},

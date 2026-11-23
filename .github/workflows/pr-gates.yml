@@ -7,7 +7,7 @@
 #
 # The scripts live in scripts/pr-gates/ (tests: npm run test:scripts). They guard
 # against accidents, not adversaries: a PR could edit them, which review must catch.
-# See docs/pr-gates.md.
+# See docs/checks.md.
 name: pr-gates
 
 on:

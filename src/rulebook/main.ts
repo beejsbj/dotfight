@@ -159,6 +159,7 @@ function book() {
 }
 
 function scroll() {
+  // biome-ignore lint/suspicious/noFocusedTests: fit() sizes text; it is not a focused test
   for (const l of lives) fit(l);
   // the fonts have moved things since the browser jumped to the address: jump again
   const at = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "phone": "vite --host 100.88.219.36",
+    "phone": "vite --host \"${PHONE_HOST:?set PHONE_HOST to this machine's address}\"",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
@@ -15,7 +15,7 @@
     "lab": "node --import ./scripts/ts-resolve.mjs scripts/rules-lab.ts",
     "prepare": "node scripts/install-hooks.mjs",
     "lint": "biome lint --error-on-warnings .",
-    "test:scripts": "node --test scripts/pr-gates/pr-gates.test.mjs scripts/privacy/privacy-scan.test.mjs scripts/hooks.test.mjs"
+    "test:scripts": "node --test scripts/pr-gates/pr-gates.test.mjs scripts/privacy/privacy-scan.test.mjs scripts/hooks.test.mjs scripts/guarded-browser.test.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.8",

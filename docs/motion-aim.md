@@ -7,7 +7,7 @@ An experiment (BJS-459), off by default. Touch aiming works as before whatever y
 Browsers only give motion sensors to secure (https) pages. `npm run phone` serves plain http over Tailscale, so the sensors stay silent there and the settings won't offer the levels. Use one of these:
 
 - the PR's Vercel preview (sign in to Vercel on the phone first), or
-- `npm run phone`, then in Android Chrome open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add `http://100.88.219.36:5173`, and relaunch Chrome.
+- `npm run phone`, then in Android Chrome open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add `http://<phone-host>:5173`, and relaunch Chrome.
 
 Then open **settings** on the cover. The **aim with the phone** section appears once the phone has sent a reading. If your phone is set to reduce motion, it appears as a single "aim with the phone…" row: tap it to show the levels. iOS asks for permission when you switch the first level on.
 

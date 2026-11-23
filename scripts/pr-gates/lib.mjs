@@ -6,7 +6,7 @@
 //
 // This guards against accidents, not adversaries: a PR can edit these files, so the
 // real backstop is review plus branch protection. Heuristics are line-based on purpose
-// (no parser), tuned on a Vitest repo's history; see docs/pr-gates.md for what they miss.
+// (no parser), tuned on a Vitest repo's history; see docs/checks.md for what they miss.
 
 // ---------------------------------------------------------------------------
 // Configuration: what counts as a test file, and a stated reason.

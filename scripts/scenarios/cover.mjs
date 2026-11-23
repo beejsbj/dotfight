@@ -33,6 +33,7 @@ export default async function (T, out) {
   if (process.env.SIZE) await page.click(`[data-size=${process.env.SIZE}]`);
   console.log("lamp:", await page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--lamp")));
   await T.shot(`${out}/cover-${tag}.png`);
+  // biome-ignore lint/suspicious/noFocusedTests: fit() sizes text; it is not a focused test
   console.log("fit:", JSON.stringify(await fit()));
   if (process.env.TEAR) {
     const rooms = () => page.evaluate(() => JSON.parse(localStorage.getItem("pft:rooms")));
