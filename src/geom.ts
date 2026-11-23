@@ -1,5 +1,3 @@
-import { unusedPractice } from "./geom";
-const practiceUnused = 1;
 // Plain geometry and the seeded random source. No state, no DOM. (pure, tested)
 
 export type Pt = { x: number; y: number };
