@@ -1,6 +1,6 @@
 // Rules lab (rounds 3 to 6): bot-vs-bot games on the core or long-war rules across
-// worker threads, and the table. No browser. On bjslab, run it inside
-// t3-test-run with --threads 3, in chunks that finish well inside its
+// worker threads, and the table. No browser. On a machine with the
+// t3-test-run guard, run it inside it with --threads 3, in chunks that finish well inside its
 // 20-minute cap (--from/--to), writing --raw files that scripts/lab-table.ts
 // adds up.
 //

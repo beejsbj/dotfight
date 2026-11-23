@@ -1,4 +1,4 @@
-import { hostname, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { guardBrowserJob } from "./lib/guarded-browser.mjs";
 await guardBrowserJob();
@@ -14,7 +14,7 @@ import { phone } from "./lib/phone.mjs";
 const scenario = process.argv[2];
 if (!scenario) throw new Error("usage: node scripts/playtest.mjs <scenario> [url] [outdir]");
 const url = process.argv[3] ?? "http://localhost:5173/";
-const out = process.argv[4] ?? (hostname().split(".")[0] === "bjslab" ? "/mnt/server-ssd/t3-test-artifacts/dotfight" : join(tmpdir(), "pft-playtest"));
+const out = process.argv[4] ?? process.env.PLAYTEST_OUT ?? join(tmpdir(), "pft-playtest");
 mkdirSync(out, { recursive: true });
 // Explicit software ANGLE avoids CPU-throttling SIGUSR2 repeatedly interrupting /dev/shm fallocate on Linux 6.8.
 const T = await phone({

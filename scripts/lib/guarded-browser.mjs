@@ -1,6 +1,7 @@
-// Keep browser jobs outside the T3 control server's resource budget on bjslab.
-import { hostname } from "node:os";
+// Keep browser jobs outside the T3 control server's resource budget on a machine that has the
+// `t3-test-run` guard on its PATH. Elsewhere there is no guard and these are no-ops.
 import { readFileSync, accessSync, constants } from "node:fs";
+import { delimiter, join } from "node:path";
 import { spawn } from "node:child_process";
 
 // Playwright launches Chrome with --disable-dev-shm-usage, which puts its shared
@@ -9,16 +10,25 @@ import { spawn } from "node:child_process";
 // ~2 fps. /dev/shm is RAM, and counts against the job's memory cap instead.
 export const browserOpts = { ignoreDefaultArgs: ["--disable-dev-shm-usage"] };
 
-export function needsGuard(host, cgroup) {
-  return host.split(".")[0] === "bjslab" && !cgroup.includes("/app-t3tests.slice/");
+const RUNNER = "t3-test-run";
+
+/** The guard's path if it is on PATH and executable, else null. */
+export function findRunner(pathVar = process.env.PATH ?? "") {
+  for (const dir of pathVar.split(delimiter).filter(Boolean)) {
+    const candidate = join(dir, RUNNER);
+    try { accessSync(candidate, constants.X_OK); return candidate; } catch { /* keep looking */ }
+  }
+  return null;
+}
+
+export function needsGuard(runner, cgroup) {
+  return Boolean(runner) && !cgroup.includes("/app-t3tests.slice/");
 }
 
 export async function guardBrowserJob() {
-  if (hostname().split(".")[0] !== "bjslab") return;
+  const runner = findRunner();
   // Check actual cgroup membership, not an environment flag a child could inherit.
-  if (!needsGuard(hostname(), readFileSync("/proc/self/cgroup", "utf8"))) return;
-  const runner = "/home/admin/.local/bin/t3-test-run";
-  accessSync(runner, constants.X_OK); // Fail closed if the host guard is missing.
+  if (!needsGuard(runner, readFileSync("/proc/self/cgroup", "utf8"))) return;
   const child = spawn(runner, [process.execPath, ...process.execArgv, ...process.argv.slice(1)], {
     cwd: process.cwd(), env: process.env, stdio: "inherit",
   });

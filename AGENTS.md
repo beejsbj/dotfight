@@ -1,14 +1,24 @@
 # AGENTS.md
 
-Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book under a desk lamp ("Lamplight"). Vite + TypeScript + Canvas 2D, no framework. The owner is Burooj; the game's inventor is his friend **Dawood** (always spelled Dawood; the bot is Dawood-bot). Live at https://dotfight.vercel.app, repo `beejsbj/dotfight` (private), local checkout `/mnt/server-ssd/BJsWorkspace/Projects/dotfight` (the old `pen-flick-tactics` path is a symlink to it).
+Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book under a desk lamp ("Lamplight"). Vite + TypeScript + Canvas 2D, no framework. The owner is Burooj; the game's inventor is his friend **Dawood** (always spelled Dawood; the bot is Dawood-bot). Live at https://dotfight.vercel.app, repo `beejsbj/dotfight` (public; the old name was `pen-flick-tactics`).
 
 ## Ground rules
 
-- **Commit as beejsbj.** Set the repo-local identity (`git config user.name beejsbj; git config user.email burooj.bj@gmail.com`) in every new worktree before committing. Vercel silently blocks deploys authored by any other identity (the global bjslab identity is Otto, and it gets blocked).
-- **Work in a worktree** under `/mnt/server-ssd/BJsWorkspace/Projects/Worktrees/dotfight/<name>` (the workspace convention) on its own branch, and open a PR against `main`. Stack on another PR's branch only when you build on its unmerged work. Run `npm ci` in the worktree: a symlinked `node_modules` misses packages (fonts) and breaks the build.
+- **Commit as beejsbj.** Set the repo-local identity (`git config user.name beejsbj; git config user.email 92740787+beejsbj@users.noreply.github.com`) in every new worktree before committing. Vercel silently blocks deploys authored by any other identity (the dev server's global bot identity gets blocked).
+- **Work in a worktree** under the workspace's worktrees directory for dotfight (see the Cockpit handbook for the convention) on its own branch, and open a PR against `main`. Stack on another PR's branch only when you build on its unmerged work. Run `npm ci` in the worktree: a symlinked `node_modules` misses packages (fonts) and breaks the build.
 - **Merging and anything outward-facing** (renames, domains, publishing) need Burooj's go-ahead.
 - **Stop servers by PID.** `pkill -f` / `pgrep -f` match your own shell's command line and kill it. Find the PID with `ss -ltnp | grep :<port>`.
 - **The name lives in `src/name.ts`.** HTML gets it through `%GAME_NAME%` / `%GAME_NAME_HTML%`, and a test checks the manifest against it. Storage keys (`pft:*`) and the dev hook (`window.pft`) keep the old "pft" prefix on purpose, so players keep their saves.
+
+## Checks every PR passes
+
+Details in `docs/checks.md`. `npm ci` installs the pre-commit hook (lint, typecheck, related tests). CI runs lint, typecheck, the full tests and the build, plus four PR checks:
+
+- **The PR description needs a real `## Verification` section**: what you ran and what it showed, or `Not run: <why>`. The PR template has it.
+- **A PR that deletes, skips or loosens a test needs one line** `Test change: <why this is right>` in its description.
+- **The privacy scan** fails on a home path, machine mount or email in anything a commit adds, and on a missing `LICENSE`. Use made-up values in docs and tests, and commit with the noreply address above.
+- **Review threads** must be resolved with a reply that shows why (`review-evidence`).
+- Lint is Biome, baselined: new violations fail, and the rules the old code already broke are listed in `biome.json`.
 
 ## How the code stays fast and replayable
 
@@ -40,10 +50,10 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 
 ## Seeing it work
 
-- **On bjslab, every browser test, screenshot script, build and test suite runs through `/home/admin/.local/bin/t3-test-run COMMAND`.** The guard admits one job at a time (three CPUs, 2 GiB, no swap, 20-minute timeout) to protect T3 from memory and I/O pressure. The checked-in browser entrypoints enter it automatically; prefix everything else, including ad hoc scripts and older worktrees whose scripts predate it. Use one Vitest worker: `t3-test-run npm test -- --maxWorkers=1`. If it defers (another job, low headroom, unhealthy T3), report why and retry once the condition clears; never bypass it or launch parallel copies. It wraps finite jobs, not the dev server. Default playtest captures persist in `/mnt/server-ssd/t3-test-artifacts/dotfight`; pass an output directory to keep separate runs. Launch Chrome with `browserOpts` from `scripts/lib/guarded-browser.mjs`: without it Chrome keeps its frame buffers in the guard's write-capped `$TMPDIR` and the game crawls at ~2 fps, so every playtest times out waiting for idle. Branches cut before this fix need `main` merged in.
+- **On the dev server that has the `t3-test-run` guard, every browser test, screenshot script, build and test suite runs through `t3-test-run COMMAND`.** The guard admits one job at a time (three CPUs, 2 GiB, no swap, 20-minute timeout) to protect T3 from memory and I/O pressure. The checked-in browser entrypoints enter it automatically; prefix everything else, including ad hoc scripts and older worktrees whose scripts predate it. Use one Vitest worker: `t3-test-run npm test -- --maxWorkers=1`. If it defers (another job, low headroom, unhealthy T3), report why and retry once the condition clears; never bypass it or launch parallel copies. It wraps finite jobs, not the dev server. Playtest captures go to the output directory argument, else `$PLAYTEST_OUT`, else a temp directory; on the dev server point one of them at the persistent artifacts directory. Launch Chrome with `browserOpts` from `scripts/lib/guarded-browser.mjs`: without it Chrome keeps its frame buffers in the guard's write-capped `$TMPDIR` and the game crawls at ~2 fps, so every playtest times out waiting for idle. Branches cut before this fix need `main` merged in.
 - `npm run dev`, then drive it in headless Chrome at phone size: `node scripts/playtest.mjs <scenario> http://localhost:5173/ /tmp/out`. It uses playwright-core with `/usr/bin/google-chrome` and real CDP touch events, and takes `W`, `H`, `DPR`, `THROTTLE` and `TAUGHT=0` from the environment. Scenarios are in `scripts/scenarios/` (`first`, `pnp`, `tour`, `sizes`, `fog`, `perf`, `haptics`, `boil`, `redraw`, …). `redraw` checks that every dirty-rectangle layer matches a full redraw while leaning in and aiming (`pft.redrawCheck()`). The haptics scenario reads what was felt from `pft.haptics.felt`; add `?haptics=tap` or `?haptics=script` to the URL to run the iPhone rigs.
 - In dev builds, `window.pft` exposes state, camera, timelines, `speed`, `frames()`, `renderNow`, and helpers that file, resume and replay seeded bot-v-bot wars (`fileWar`, `resumeRecord`).
-- `npm run phone` serves on bjslab's Tailscale address for testing on a real phone.
+- `npm run phone` serves on the dev server's Tailscale address for testing on a real phone.
 - **Bugs only a real phone shows** (its GPU, its Chrome): serve with `npx vite --config scripts/vite.remote.config.ts --host <tailscale ip>`, open the page on the phone (Burooj's S23+ is reachable through its remote-control MCP; see the Cockpit handbook's `s23+` section), and run code in it with `node scripts/remote-eval.mjs '<js>'`. Use `window.pft`, not `import("/src/…")`: after a hot reload that import is a different copy of the module. `scripts/remote-playtest.mjs` drives a Chrome running elsewhere over CDP (the Mac's, for a real desktop GPU).
 - **Share art:** after changing the title, cover or rulebook look, regenerate with `npm run share-art -- <devurl>` and `npm run rules-art -- <devurl> --og`, and look at the images.
 - **Vercel previews** sit behind a Vercel login, so only production is public. Send people production links.
@@ -54,7 +64,7 @@ Dotfight: a pen-flick war game for phones, played on a hand-drawn exercise book 
 
 ## Coordination
 
-- Linear (team BJS, project "dotfight") holds status and decisions. Use the `cockpit linear` CLI with the app actor. On bjslab, source `/home/admin/.config/cockpit/env` only inside the subprocess that runs cockpit, and check `cockpit linear linear-doctor` reports `app actor: OK` before writing.
+- Linear (team BJS, project "dotfight") holds status and decisions. Use the `cockpit linear` CLI with the app actor. On the dev server, source `~/.config/cockpit/env` only inside the subprocess that runs cockpit, and check `cockpit linear linear-doctor` reports `app actor: OK` before writing.
 - Key issues:
   - BJS-128: rules with Dawood
   - BJS-457: room link / online play
